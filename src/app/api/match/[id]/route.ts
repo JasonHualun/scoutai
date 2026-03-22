@@ -51,8 +51,8 @@ export async function GET(
         console.log('API Route - Home team:', teams[0].team.name, 'ID:', homeTeamId);
         console.log('API Route - Away team:', teams[1].team.name, 'ID:', awayTeamId);
         const [homeFormRes, awayFormRes] = await Promise.allSettled([
-          getTeamRecentForm(homeTeamId),
-          getTeamRecentForm(awayTeamId),
+          homeTeamId ? getTeamRecentForm(homeTeamId) : Promise.resolve(null),
+          awayTeamId ? getTeamRecentForm(awayTeamId) : Promise.resolve(null),
         ]);
         homeForm =
           homeFormRes.status === "fulfilled" ? homeFormRes.value : null;
