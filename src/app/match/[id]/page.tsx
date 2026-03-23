@@ -191,7 +191,7 @@ export default function MatchDetailPage({
 }: {
   params: { id: string };
 }) {
-  const resolvedParams = React.use(params as any);
+  const resolvedParams = React.use(params as any) as { id: string };
   const fixtureId = Number(resolvedParams.id);
 
   const fallbackMatch: Match = {
