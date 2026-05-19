@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { AuthStatus } from "@/components/AuthStatus";
+import { AlertNotifier } from "@/components/AlertNotifier";
 
 export const metadata: Metadata = {
   title: "ScoutAI - 足球赛事分析",
@@ -27,6 +28,7 @@ export default function RootLayout({
       <body className="antialiased bg-background text-foreground">
         <AuthProvider>
           <div className="min-h-screen bg-[color:var(--background)] text-[color:var(--foreground)]">
+            <AlertNotifier />
             <header className="sticky top-0 z-30 border-b border-white/5 bg-black/70 backdrop-blur-xl">
               <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-6">
                 <Link href="/" className="flex items-center gap-3">

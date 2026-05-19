@@ -108,3 +108,15 @@ test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await expect(page.locator("body")).not.toContainText("50%");
   await expect(page.locator("body")).not.toContainText("1.35");
 });
+
+test("alerts page uses real notification controls instead of demo alerts", async ({ page }) => {
+  await page.goto("/alerts", { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "异常提醒" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开启 Chrome 通知" })).toBeVisible();
+  await expect(page.getByText("演示数据")).toHaveCount(0);
+
+  await page.waitForTimeout(500);
+  await page.getByRole("button", { name: "发送测试通知" }).click();
+  await expect(page.getByText("ScoutAI 通知测试")).toBeVisible();
+});
