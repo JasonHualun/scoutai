@@ -50,6 +50,58 @@ async function mockUpcomingMatch(page: Page, fixtureId: number) {
   });
 }
 
+async function mockFavoriteMatches(page: Page) {
+  await page.route("**/api/football/all", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fixtures: [
+          {
+            fixture: {
+              id: 91001,
+              date: "2026-05-23T18:30:00+00:00",
+              status: { short: "NS", elapsed: null },
+            },
+            league: { id: 39, name: "Premier League", round: "Regular Season - 37" },
+            teams: {
+              home: { name: "Arsenal" },
+              away: { name: "Chelsea" },
+            },
+            goals: { home: null, away: null },
+          },
+          {
+            fixture: {
+              id: 91002,
+              date: "2026-05-23T19:15:00+00:00",
+              status: { short: "NS", elapsed: null },
+            },
+            league: { id: 78, name: "Bundesliga", round: "Regular Season - 34" },
+            teams: {
+              home: { name: "Bayern Munich" },
+              away: { name: "Borussia Dortmund" },
+            },
+            goals: { home: null, away: null },
+          },
+          {
+            fixture: {
+              id: 91003,
+              date: "2026-05-23T20:00:00+00:00",
+              status: { short: "NS", elapsed: null },
+            },
+            league: { id: 135, name: "Serie A", round: "Regular Season - 37" },
+            teams: {
+              home: { name: "Inter" },
+              away: { name: "AC Milan" },
+            },
+            goals: { home: null, away: null },
+          },
+        ],
+      }),
+    });
+  });
+}
+
 test("core pages render without mojibake", async ({ page }) => {
   for (const route of routes) {
     const response = await page.goto(route, { waitUntil: "domcontentloaded" });
@@ -119,4 +171,18 @@ test("alerts page uses real notification controls instead of demo alerts", async
   await page.waitForTimeout(500);
   await page.getByRole("button", { name: "发送测试通知" }).click();
   await expect(page.getByText("ScoutAI 通知测试")).toBeVisible();
+});
+
+test("favorites page shows portfolio recommendations for saved matches", async ({ page }) => {
+  await mockFavoriteMatches(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem("scoutai_favorites", JSON.stringify([91001, 91002, 91003]));
+  });
+
+  await page.goto("/favorites", { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "收藏组合参考" })).toBeVisible();
+  await expect(page.getByText("组合总模拟")).toBeVisible();
+  await expect(page.getByText("低波动组合")).toBeVisible();
+  await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
 });
