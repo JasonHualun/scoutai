@@ -17,6 +17,7 @@ import {
 } from "@/lib/membership";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
 import { useAuthStore } from "@/lib/authStore";
+import { supabase } from "@/lib/supabase";
 
 type MatchStatus = "live" | "upcoming" | "finished";
 type RecentForm = ("W" | "D" | "L")[];
@@ -101,6 +102,13 @@ type ApiMatchCard = Match & { leagueId?: number };
 
 type ApiMatchListResponse = {
   matches?: ApiMatchCard[];
+};
+
+type PreferencesRow = {
+  risk_level?: string | null;
+  capital?: number | null;
+  preferred_markets?: string[] | null;
+  preferred_models?: string[] | null;
 };
 
 type ApiBet = {
@@ -379,6 +387,30 @@ function ProMetric({
   );
 }
 
+function riskLabel(level: UserPreferences["risk_level"]) {
+  return {
+    conservative: "保守型",
+    balanced: "稳健型",
+    aggressive: "进取型",
+  }[level];
+}
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function normalizeRiskLevel(value: unknown): UserPreferences["risk_level"] {
+  return value === "conservative" || value === "balanced" || value === "aggressive"
+    ? value
+    : "balanced";
+}
+
+function normalizeStringList(value: unknown, fallback: string[]) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? value
+    : fallback;
+}
+
 function createDraftOrderNo() {
   const date = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
@@ -608,6 +640,9 @@ export default function MatchDetailPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [serverPrediction, setServerPrediction] = useState<PredictionResult | null>(null);
+  const [userPrefs, setUserPrefs] = useState<UserPreferences | null>(null);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [customExposurePercent, setCustomExposurePercent] = useState<number | null>(null);
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
   const [membershipLoading, setMembershipLoading] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -730,18 +765,74 @@ export default function MatchDetailPage() {
     };
   }, [session, user?.email]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreferences() {
+      if (!session || !user) {
+        setUserPrefs(null);
+        return;
+      }
+
+      setPrefsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .select("risk_level, capital, preferred_markets, preferred_models")
+          .eq("user_id", user.id)
+          .maybeSingle<PreferencesRow>();
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        const riskLevel = normalizeRiskLevel(data?.risk_level);
+        setUserPrefs({
+          risk_level: riskLevel,
+          capital:
+            typeof data?.capital === "number" && Number.isFinite(data.capital)
+              ? data.capital
+              : defaultPrefs.capital,
+          preferred_markets: normalizeStringList(
+            data?.preferred_markets,
+            defaultPrefs.preferred_markets
+          ),
+          preferred_models: normalizeStringList(
+            data?.preferred_models,
+            defaultPrefs.preferred_models
+          ),
+        });
+      } catch {
+        if (!cancelled) setUserPrefs(defaultPrefs);
+      } finally {
+        if (!cancelled) setPrefsLoading(false);
+      }
+    }
+
+    loadPreferences();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, user]);
+
+  useEffect(() => {
+    setCustomExposurePercent(null);
+  }, [fixtureId, userPrefs?.capital, userPrefs?.risk_level]);
+
   const analysisBody = useMemo(
     () => buildAnalysisBody(match, stats ?? neutralPredictionStats, odds ?? emptyOdds, recentForm),
     [match, odds, recentForm, stats]
   );
 
+  const activePrefs = isPro && userPrefs ? userPrefs : defaultPrefs;
+
   const localPrediction = useMemo(
-    () => calculateFootballPrediction(analysisBody, defaultPrefs),
-    [analysisBody]
+    () => calculateFootballPrediction(analysisBody, activePrefs),
+    [activePrefs, analysisBody]
   );
 
   const prediction = serverPrediction ?? localPrediction;
   const topSignal = prediction.valueSignals[0];
+  const backupSignal = prediction.valueSignals[1] ?? topSignal;
   const modelDisagreement = Math.min(
     100,
     Math.max(8, Math.round(100 - prediction.confidence + Math.abs(topSignal.edge ?? 0) * 0.6))
@@ -782,6 +873,39 @@ export default function MatchDetailPage() {
         : !odds
           ? "当前缺少真实赔率，价值差暂不计算。"
           : "已结合当前可用数据计算。";
+  const simulatedPoints = Math.max(0, Math.round(activePrefs.capital || 0));
+  const recommendedExposurePercent =
+    simulatedPoints > 0
+      ? clampValue((prediction.staking.mainAmount / simulatedPoints) * 100, 0, prediction.staking.riskCapPercent)
+      : 0;
+  const riskCapPercent = Math.max(0.5, prediction.staking.riskCapPercent);
+  const selectedExposurePercent = clampValue(
+    customExposurePercent ?? recommendedExposurePercent,
+    0,
+    riskCapPercent
+  );
+  const selectedExposureAmount = Math.round((simulatedPoints * selectedExposurePercent) / 100);
+  const backupExposurePercent = Math.min(selectedExposurePercent * 0.6, riskCapPercent * 0.6);
+  const backupExposureAmount = Math.round((simulatedPoints * backupExposurePercent) / 100);
+  const selectedPercentLabel = selectedExposurePercent.toFixed(1).replace(".0", "");
+  const recommendedPercentLabel = recommendedExposurePercent.toFixed(1).replace(".0", "");
+  const backupPercentLabel = backupExposurePercent.toFixed(1).replace(".0", "");
+  const modelTags = activePrefs.preferred_models.length
+    ? activePrefs.preferred_models
+    : defaultPrefs.preferred_models;
+  const marketTags = activePrefs.preferred_markets.length
+    ? activePrefs.preferred_markets
+    : defaultPrefs.preferred_markets;
+  const purchaseRecommendation =
+    topSignal.edge == null
+      ? "缺少真实赔率，先作为赛前观察；等盘口更新后再确认。"
+      : topSignal.edge <= 0
+        ? "模型没有明显高于市场，建议观望或等待临场变化。"
+        : selectedExposurePercent > riskCapPercent * 0.8
+          ? "所选比例接近单场上限，只适合进取观察；临场数据变化要及时下调。"
+          : topSignal.edge >= 5 && prediction.confidence >= 55
+            ? "模型优势较清晰，可按当前比例作为本场模拟参考。"
+            : "优势存在但不算强，建议低比例观察。";
 
   function openUpgrade() {
     setPaymentError(null);
@@ -1114,6 +1238,148 @@ export default function MatchDetailPage() {
             value={isPro ? "已启用" : "待解锁"}
             detail="充值实时数据 API 后会展示临场盘口变化。"
           />
+        </div>
+
+        <div
+          className={`mt-4 rounded-2xl border border-[color:var(--accent)]/25 bg-[linear-gradient(180deg,rgba(0,255,135,0.08),rgba(0,0,0,0.24))] p-4 ${
+            isPro ? "" : "opacity-70"
+          }`}
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
+                会员模拟方案
+              </div>
+              <h3 className="text-base font-semibold">本场购买参考</h3>
+              <p className="mt-1 text-xs leading-5 text-white/52">
+                按你的模拟积分、风险偏好和模型选择，给出本场主方案、备选方案和比例上限。
+              </p>
+            </div>
+            <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/65">
+              {prefsLoading
+                ? "正在同步会员偏好"
+                : isPro
+                  ? `${riskLabel(activePrefs.risk_level)} · ${simulatedPoints} 模拟积分`
+                  : "Pro 解锁后按你的设置计算"}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-[11px] text-white/45">模型建议比例</div>
+              <div className="mt-1 text-2xl font-semibold text-[color:var(--accent)]">
+                {recommendedPercentLabel}%
+              </div>
+              <div className="mt-1 text-[11px] text-white/45">
+                约 {prediction.staking.mainAmount} 模拟积分
+              </div>
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-[11px] text-white/45">你选择的本场比例</div>
+              <div className="mt-1 text-2xl font-semibold text-white">
+                {selectedPercentLabel}%
+              </div>
+              <div className="mt-1 text-[11px] text-white/45">
+                约 {selectedExposureAmount} 模拟积分
+              </div>
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-[11px] text-white/45">单场风控上限</div>
+              <div className="mt-1 text-2xl font-semibold text-white">
+                {riskCapPercent.toFixed(1).replace(".0", "")}%
+              </div>
+              <div className="mt-1 text-[11px] text-white/45">
+                由 {riskLabel(activePrefs.risk_level)} 自动限制
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3">
+            <div className="flex items-center justify-between gap-3 text-[11px] text-white/45">
+              <span>0%</span>
+              <span>调整本场模拟比例</span>
+              <span>{riskCapPercent.toFixed(1).replace(".0", "")}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={riskCapPercent}
+              step={0.5}
+              value={selectedExposurePercent}
+              disabled={!isPro || prefsLoading}
+              onChange={(event) => setCustomExposurePercent(Number(event.target.value))}
+              className="mt-3 h-2 w-full accent-[color:var(--accent)] disabled:opacity-50"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!isPro || prefsLoading}
+                onClick={() => setCustomExposurePercent(null)}
+                className="rounded-full border border-white/15 bg-black/30 px-3 py-1.5 text-[11px] font-semibold text-white/65 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                使用模型建议比例
+              </button>
+              {!isPro && (
+                <button
+                  type="button"
+                  onClick={openUpgrade}
+                  className="rounded-full bg-[color:var(--accent)] px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300"
+                >
+                  解锁会员模拟方案
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+              <div className="text-[11px] text-white/45">主方案</div>
+              <div className="mt-1 text-base font-semibold text-white">
+                {topSignal.label} · {selectedExposureAmount} 模拟积分
+              </div>
+              <div className="mt-1 text-[11px] leading-5 text-white/45">
+                模型概率 {topSignal.modelProbability}% · 公平赔率 {topSignal.fairOdds.toFixed(2)}
+                {topSignal.edge == null ? " · 暂无市场差" : ` · 价值差 ${topSignal.edge}%`}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+              <div className="text-[11px] text-white/45">备选方案</div>
+              <div className="mt-1 text-base font-semibold text-white">
+                {backupSignal.label} · {backupExposureAmount} 模拟积分
+              </div>
+              <div className="mt-1 text-[11px] leading-5 text-white/45">
+                备选比例 {backupPercentLabel}% · 用于主方向不够清晰时参考
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 p-3 text-xs leading-6 text-[color:var(--accent)]">
+            <span className="font-semibold">本场参考：</span>
+            {purchaseRecommendation}
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div>
+              <div className="mb-2 text-[11px] text-white/45">本场启用模型</div>
+              <div className="flex flex-wrap gap-2">
+                {modelTags.map((model) => (
+                  <span key={model} className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/65">
+                    {model}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mb-2 text-[11px] text-white/45">关注市场</div>
+              <div className="flex flex-wrap gap-2">
+                {marketTags.map((market) => (
+                  <span key={market} className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/65">
+                    {market}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
         {!isPro && (

@@ -74,6 +74,8 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "概率预测" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型委员会深度预测" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "本场购买参考" })).toBeVisible();
+  await expect(page.getByText("调整本场模拟比例")).toBeVisible();
 
   await expect(page.getByText("免费版 · 基础预测")).toBeVisible();
   await expect(page.getByText("Pro 高级版 · ¥69.9/月")).toBeVisible();
