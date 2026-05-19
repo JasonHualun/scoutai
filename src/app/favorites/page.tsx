@@ -408,7 +408,7 @@ export default function FavoritesPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">收藏</h1>
           <p className="mt-2 text-sm text-white/60">
-            你关注的比赛会显示在这里，Pro 会在收藏里生成模拟组合和购买参考。
+            先在热门赛事里点“加入组合池”，Pro 会在这里筛选收藏比赛并生成模拟组合参考。
           </p>
         </div>
         <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/60">
@@ -425,6 +425,9 @@ export default function FavoritesPage() {
       ) : isEmpty ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-6 text-sm text-white/60">
           <div className="mb-3 text-base text-white/75">暂无收藏比赛</div>
+          <p className="mb-4 max-w-xl text-xs leading-5 text-white/55">
+            去热门赛事页，把你想重点观察的比赛点“加入组合池”。收藏 2-4 场后，这里会生成组合参考和模拟比例。
+          </p>
           <Link
             href="/"
             className="inline-flex items-center rounded-full border border-[color:var(--accent)]/60 px-3 py-1.5 text-xs text-[color:var(--accent)] hover:bg-[color:var(--accent)]/10"

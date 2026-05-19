@@ -271,6 +271,28 @@ export default function HomeClient({ initialMatches }: Props) {
         ))}
       </section>
 
+      <section className="rounded-2xl border border-[color:var(--accent)]/25 bg-[linear-gradient(135deg,rgba(0,255,135,0.12),rgba(0,0,0,0.18))] p-4 shadow-[0_16px_60px_rgba(0,0,0,0.55)]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">
+              Portfolio
+            </div>
+            <h2 className="mt-1 text-base font-semibold text-white">
+              想让系统帮你做组合？先把比赛加入组合池
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-white/58">
+              在比赛卡片上点“加入组合池”，收藏页会从这些比赛里筛选更值得重点观察的场次，并生成模拟组合参考。
+            </p>
+          </div>
+          <Link
+            href="/favorites"
+            className="inline-flex shrink-0 items-center justify-center rounded-full border border-[color:var(--accent)]/45 bg-black/25 px-4 py-2 text-xs font-semibold text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black"
+          >
+            查看收藏组合
+          </Link>
+        </div>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-[2fr,1fr]">
         <div className="space-y-3">
           {sortedMatches.length === 0 ? (
@@ -349,12 +371,14 @@ export default function HomeClient({ initialMatches }: Props) {
                     <button
                       type="button"
                       onClick={(event) => toggleFavorite(match.id, event)}
-                      aria-label={isFavorite ? "取消收藏" : "收藏比赛"}
-                      className={`absolute bottom-4 right-16 z-10 text-xl transition hover:scale-110 ${
-                        isFavorite ? "text-yellow-300" : "text-white/30 hover:text-white/70"
+                      aria-label={isFavorite ? "移出组合池" : "加入组合池"}
+                      className={`absolute bottom-3 right-16 z-10 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
+                        isFavorite
+                          ? "border-yellow-300/35 bg-yellow-300/12 text-yellow-200"
+                          : "border-white/12 bg-black/55 text-white/55 hover:border-[color:var(--accent)]/55 hover:text-[color:var(--accent)]"
                       }`}
                     >
-                      {isFavorite ? "★" : "☆"}
+                      {isFavorite ? "★ 已入组合池" : "☆ 加入组合池"}
                     </button>
                   </div>
                 );

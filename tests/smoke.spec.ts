@@ -184,5 +184,6 @@ test("favorites page shows portfolio recommendations for saved matches", async (
   await expect(page.getByRole("heading", { name: "收藏组合参考" })).toBeVisible();
   await expect(page.getByText("组合总模拟")).toBeVisible();
   await expect(page.getByText("低波动组合")).toBeVisible();
+  await expect(page.getByText("加入组合池").first()).toBeVisible();
   await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
 });
