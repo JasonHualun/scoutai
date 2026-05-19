@@ -97,6 +97,12 @@ type ApiMatchResponse = {
   teamIds?: { home?: number | null; away?: number | null };
 };
 
+type ApiMatchCard = Match & { leagueId?: number };
+
+type ApiMatchListResponse = {
+  matches?: ApiMatchCard[];
+};
+
 type ApiBet = {
   name: string;
   values?: Array<{ value: string; odd?: string }>;
@@ -109,34 +115,34 @@ type ApiRecentFixture = {
 
 type ApiRecentForm = { response?: ApiRecentFixture[] };
 
-const fallbackStats: RealtimeStats = {
+const neutralPredictionStats: RealtimeStats = {
   possessionHome: 50,
   possessionAway: 50,
-  shotsHome: 10,
-  shotsAway: 8,
-  shotsOnTargetHome: 4,
-  shotsOnTargetAway: 3,
-  cornersHome: 4,
-  cornersAway: 4,
-  yellowCardsHome: 1,
-  yellowCardsAway: 1,
-  dangerousAttacksHome: 30,
-  dangerousAttacksAway: 25,
-  xGHome: 1.35,
-  xGAway: 1.05,
+  shotsHome: 0,
+  shotsAway: 0,
+  shotsOnTargetHome: 0,
+  shotsOnTargetAway: 0,
+  cornersHome: 0,
+  cornersAway: 0,
+  yellowCardsHome: 0,
+  yellowCardsAway: 0,
+  dangerousAttacksHome: 0,
+  dangerousAttacksAway: 0,
+  xGHome: 0,
+  xGAway: 0,
 };
 
-const fallbackOdds: OddsData = {
-  homeWin: 2.05,
-  draw: 3.35,
-  awayWin: 3.55,
-  handicap: "主让 0/0.5",
-  overUnder: "2.5",
+const emptyOdds: OddsData = {
+  homeWin: 0,
+  draw: 0,
+  awayWin: 0,
+  handicap: "暂无",
+  overUnder: "暂无",
 };
 
-const fallbackForm = {
-  home: ["W", "D", "W", "L", "W"] as RecentForm,
-  away: ["L", "W", "D", "D", "W"] as RecentForm,
+const emptyForm: { home: RecentForm; away: RecentForm } = {
+  home: [],
+  away: [],
 };
 
 const defaultPrefs: UserPreferences = {
@@ -198,7 +204,7 @@ function mapStats(teams?: ApiTeamStats[]): RealtimeStats | null {
   const home = teams[0].statistics;
   const away = teams[1].statistics;
 
-  return {
+  const stats = {
     possessionHome: statValue(home, "Ball Possession"),
     possessionAway: statValue(away, "Ball Possession"),
     shotsHome: statValue(home, "Total Shots"),
@@ -214,6 +220,22 @@ function mapStats(teams?: ApiTeamStats[]): RealtimeStats | null {
     xGHome: statValue(home, "Expected Goals"),
     xGAway: statValue(away, "Expected Goals"),
   };
+
+  const hasAnyRealStat =
+    stats.shotsHome > 0 ||
+    stats.shotsAway > 0 ||
+    stats.shotsOnTargetHome > 0 ||
+    stats.shotsOnTargetAway > 0 ||
+    stats.cornersHome > 0 ||
+    stats.cornersAway > 0 ||
+    stats.yellowCardsHome > 0 ||
+    stats.yellowCardsAway > 0 ||
+    stats.dangerousAttacksHome > 0 ||
+    stats.dangerousAttacksAway > 0 ||
+    stats.xGHome > 0 ||
+    stats.xGAway > 0;
+
+  return hasAnyRealStat ? stats : null;
 }
 
 function mapOdds(bets?: ApiBet[]): OddsData | null {
@@ -224,13 +246,20 @@ function mapOdds(bets?: ApiBet[]): OddsData | null {
   const handicap = bets.find((bet) => bet.name === "Asian Handicap");
   const value = (name: string) =>
     Number(winner?.values?.find((item) => item.value === name)?.odd);
+  const homeWin = value("Home");
+  const draw = value("Draw");
+  const awayWin = value("Away");
+
+  if (![homeWin, draw, awayWin].every((odd) => Number.isFinite(odd) && odd > 1)) {
+    return null;
+  }
 
   return {
-    homeWin: value("Home") || fallbackOdds.homeWin,
-    draw: value("Draw") || fallbackOdds.draw,
-    awayWin: value("Away") || fallbackOdds.awayWin,
-    handicap: handicap?.values?.[0]?.value ?? fallbackOdds.handicap,
-    overUnder: overUnder?.values?.[0]?.value ?? fallbackOdds.overUnder,
+    homeWin,
+    draw,
+    awayWin,
+    handicap: handicap?.values?.[0]?.value ?? "暂无",
+    overUnder: overUnder?.values?.[0]?.value ?? "暂无",
   };
 }
 
@@ -571,9 +600,9 @@ export default function MatchDetailPage() {
     awayScore: 0,
     status: "upcoming",
   });
-  const [stats, setStats] = useState<RealtimeStats>(fallbackStats);
-  const [odds, setOdds] = useState<OddsData>(fallbackOdds);
-  const [recentForm, setRecentForm] = useState(fallbackForm);
+  const [stats, setStats] = useState<RealtimeStats | null>(null);
+  const [odds, setOdds] = useState<OddsData | null>(null);
+  const [recentForm, setRecentForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -599,8 +628,22 @@ export default function MatchDetailPage() {
         const json = (await res.json()) as ApiMatchResponse;
         const fixture = json.fixture?.response?.[0];
         const teams = json.statistics?.response;
+        let nextStatus: MatchStatus = "upcoming";
+        let fallbackMatch: ApiMatchCard | null = null;
+
+        if (!fixture) {
+          try {
+            const listRes = await fetch("/api/football/matches");
+            const listJson = (await listRes.json()) as ApiMatchListResponse;
+            fallbackMatch =
+              listJson.matches?.find((item) => Number(item.id) === fixtureId) ?? null;
+          } catch {
+            fallbackMatch = null;
+          }
+        }
 
         if (fixture) {
+          nextStatus = statusFromShort(fixture.fixture.status.short);
           setMatch({
             id: fixture.fixture.id,
             league: translateLeague(`${fixture.league.name} · ${fixture.league.round ?? ""}`.trim()),
@@ -610,7 +653,20 @@ export default function MatchDetailPage() {
             minute: fixture.fixture.status.elapsed ?? undefined,
             homeScore: fixture.goals.home ?? 0,
             awayScore: fixture.goals.away ?? 0,
-            status: statusFromShort(fixture.fixture.status.short),
+            status: nextStatus,
+          });
+        } else if (fallbackMatch) {
+          nextStatus = fallbackMatch.status;
+          setMatch({
+            id: fallbackMatch.id,
+            league: fallbackMatch.league,
+            homeTeam: fallbackMatch.homeTeam,
+            awayTeam: fallbackMatch.awayTeam,
+            kickOff: fallbackMatch.kickOff,
+            minute: fallbackMatch.minute,
+            homeScore: fallbackMatch.homeScore,
+            awayScore: fallbackMatch.awayScore,
+            status: fallbackMatch.status,
           });
         } else if (teams && teams.length >= 2) {
           setMatch((current) => ({
@@ -620,23 +676,23 @@ export default function MatchDetailPage() {
           }));
         }
 
-        const nextStats = mapStats(teams);
-        if (nextStats) setStats(nextStats);
+        const nextStats = nextStatus === "upcoming" ? null : mapStats(teams);
+        setStats(nextStats);
 
         const bets = json.odds?.response?.[0]?.bookmakers?.[0]?.bets;
         const nextOdds = mapOdds(bets);
-        if (nextOdds) setOdds(nextOdds);
+        setOdds(nextOdds);
 
         const homeForm = mapForm(json.recentForm?.home, json.teamIds?.home);
         const awayForm = mapForm(json.recentForm?.away, json.teamIds?.away);
         setRecentForm({
-          home: homeForm.length ? homeForm : fallbackForm.home,
-          away: awayForm.length ? awayForm : fallbackForm.away,
+          home: homeForm,
+          away: awayForm,
         });
       } catch {
-        setStats(fallbackStats);
-        setOdds(fallbackOdds);
-        setRecentForm(fallbackForm);
+        setStats(null);
+        setOdds(null);
+        setRecentForm(emptyForm);
       } finally {
         setLoading(false);
       }
@@ -675,7 +731,7 @@ export default function MatchDetailPage() {
   }, [session, user?.email]);
 
   const analysisBody = useMemo(
-    () => buildAnalysisBody(match, stats, odds, recentForm),
+    () => buildAnalysisBody(match, stats ?? neutralPredictionStats, odds ?? emptyOdds, recentForm),
     [match, odds, recentForm, stats]
   );
 
@@ -706,6 +762,26 @@ export default function MatchDetailPage() {
         timeZone: "Asia/Shanghai",
       })
     : null;
+  const detailStatusLabel = loading
+    ? "数据同步中"
+    : match.status === "upcoming"
+      ? "等待开赛"
+      : stats
+        ? "真实数据已更新"
+        : "等待数据更新";
+  const realtimeEmptyText =
+    match.status === "upcoming"
+      ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
+      : "当前接口暂未返回有效实时统计，已隐藏占位数据。";
+  const oddsEmptyText = "当前接口暂未返回真实赔率，价值差暂不计算。";
+  const predictionDataNote =
+    !stats && !odds
+      ? "当前为赛前基础估算，等待真实赔率和实时数据接入后会自动校准。"
+      : !stats
+        ? "当前缺少实时统计，概率主要来自赛前信息。"
+        : !odds
+          ? "当前缺少真实赔率，价值差暂不计算。"
+          : "已结合当前可用数据计算。";
 
   function openUpgrade() {
     setPaymentError(null);
@@ -819,7 +895,7 @@ export default function MatchDetailPage() {
               {match.awayScore}
             </div>
             <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs text-white/65">
-              {loading ? "数据同步中" : "模型已更新"}
+              {detailStatusLabel}
             </span>
           </div>
         </div>
@@ -836,6 +912,7 @@ export default function MatchDetailPage() {
               <p className="mt-1 text-[11px] text-white/50">
                 {prediction.modelVersion} · 置信度 {prediction.confidence}%
               </p>
+              <p className="mt-1 text-[11px] text-white/40">{predictionDataNote}</p>
             </div>
             <div className="text-right">
               <div className="text-[11px] text-white/45">最可能比分</div>
@@ -909,41 +986,55 @@ export default function MatchDetailPage() {
       <section className="grid gap-4 md:grid-cols-[1fr,1fr]">
         <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
           <h2 className="text-sm font-semibold">实时数据对比</h2>
-          <div className="mt-3 space-y-2">
-            <StatRow label="控球率" home={stats.possessionHome} away={stats.possessionAway} isPercent />
-            <StatRow label="射门" home={stats.shotsHome} away={stats.shotsAway} />
-            <StatRow label="射正" home={stats.shotsOnTargetHome} away={stats.shotsOnTargetAway} />
-            <StatRow label="角球" home={stats.cornersHome} away={stats.cornersAway} />
-            <StatRow label="黄牌" home={stats.yellowCardsHome} away={stats.yellowCardsAway} />
-            <StatRow label="危险进攻" home={stats.dangerousAttacksHome} away={stats.dangerousAttacksAway} />
-            <StatRow label="xG" home={stats.xGHome} away={stats.xGAway} />
-          </div>
+          {stats ? (
+            <div className="mt-3 space-y-2">
+              <StatRow label="控球率" home={stats.possessionHome} away={stats.possessionAway} isPercent />
+              <StatRow label="射门" home={stats.shotsHome} away={stats.shotsAway} />
+              <StatRow label="射正" home={stats.shotsOnTargetHome} away={stats.shotsOnTargetAway} />
+              <StatRow label="角球" home={stats.cornersHome} away={stats.cornersAway} />
+              <StatRow label="黄牌" home={stats.yellowCardsHome} away={stats.yellowCardsAway} />
+              <StatRow label="危险进攻" home={stats.dangerousAttacksHome} away={stats.dangerousAttacksAway} />
+              <StatRow label="xG" home={stats.xGHome} away={stats.xGAway} />
+            </div>
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/25 p-4 text-xs leading-6 text-white/55">
+              {realtimeEmptyText}
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
           <h2 className="text-sm font-semibold">赔率与近况</h2>
-          <div className="mt-3 grid gap-3 text-xs md:grid-cols-3">
-            {[
-              ["主胜", odds.homeWin],
-              ["平局", odds.draw],
-              ["客胜", odds.awayWin],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl bg-black/25 p-3">
-                <div className="text-white/45">{label}</div>
-                <div className="mt-1 text-base font-semibold">{Number(value).toFixed(2)}</div>
+          {odds ? (
+            <>
+              <div className="mt-3 grid gap-3 text-xs md:grid-cols-3">
+                {[
+                  ["主胜", odds.homeWin],
+                  ["平局", odds.draw],
+                  ["客胜", odds.awayWin],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl bg-black/25 p-3">
+                    <div className="text-white/45">{label}</div>
+                    <div className="mt-1 text-base font-semibold">{Number(value).toFixed(2)}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
-            <div className="rounded-xl bg-black/25 p-3">
-              <div className="text-white/45">让球</div>
-              <div className="mt-1 text-white/80">{odds.handicap}</div>
+              <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+                <div className="rounded-xl bg-black/25 p-3">
+                  <div className="text-white/45">让球</div>
+                  <div className="mt-1 text-white/80">{odds.handicap}</div>
+                </div>
+                <div className="rounded-xl bg-black/25 p-3">
+                  <div className="text-white/45">大小球</div>
+                  <div className="mt-1 text-white/80">{odds.overUnder}</div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/25 p-4 text-xs leading-6 text-white/55">
+              {oddsEmptyText}
             </div>
-            <div className="rounded-xl bg-black/25 p-3">
-              <div className="text-white/45">大小球</div>
-              <div className="mt-1 text-white/80">{odds.overUnder}</div>
-            </div>
-          </div>
+          )}
 
           <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
             {[
@@ -952,22 +1043,26 @@ export default function MatchDetailPage() {
             ].map(([team, form]) => (
               <div key={String(team)} className="rounded-xl bg-black/25 p-3">
                 <div className="mb-2 text-white/60">{String(team)} 近 5 场</div>
-                <div className="flex gap-2">
-                  {(form as RecentForm).map((result, index) => (
-                    <span
-                      key={`${result}-${index}`}
-                      className={`flex h-7 w-7 items-center justify-center rounded-full border text-[11px] ${
-                        result === "W"
-                          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
-                          : result === "D"
-                            ? "border-slate-400/40 bg-slate-500/15 text-slate-200"
-                            : "border-red-400/40 bg-red-500/15 text-red-300"
-                      }`}
-                    >
-                      {formLabel(result)}
-                    </span>
-                  ))}
-                </div>
+                {(form as RecentForm).length > 0 ? (
+                  <div className="flex gap-2">
+                    {(form as RecentForm).map((result, index) => (
+                      <span
+                        key={`${result}-${index}`}
+                        className={`flex h-7 w-7 items-center justify-center rounded-full border text-[11px] ${
+                          result === "W"
+                            ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
+                            : result === "D"
+                              ? "border-slate-400/40 bg-slate-500/15 text-slate-200"
+                              : "border-red-400/40 bg-red-500/15 text-red-300"
+                        }`}
+                      >
+                        {formLabel(result)}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-white/40">暂无近况数据</div>
+                )}
               </div>
             ))}
           </div>

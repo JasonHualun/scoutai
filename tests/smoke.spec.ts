@@ -50,3 +50,55 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
   await expect(page.getByText("支付宝")).toBeVisible();
   await expect(page.getByText("付款完成后，通常 30 分钟内人工开通。")).toBeVisible();
 });
+
+test("upcoming match does not show fake realtime stats", async ({ page }) => {
+  await page.route("**/api/match/12345", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fixture: {
+          response: [
+            {
+              fixture: {
+                id: 12345,
+                date: "2026-05-23T18:30:00+00:00",
+                status: { short: "NS", elapsed: null },
+              },
+              league: { name: "Premier League", round: "Regular Season - 37" },
+              teams: {
+                home: { id: 1, name: "Arsenal" },
+                away: { id: 2, name: "Chelsea" },
+              },
+              goals: { home: null, away: null },
+            },
+          ],
+        },
+        statistics: {
+          response: [
+            { team: { id: 1, name: "Arsenal" }, statistics: [] },
+            { team: { id: 2, name: "Chelsea" }, statistics: [] },
+          ],
+        },
+        odds: { response: [] },
+        recentForm: { home: null, away: null },
+        teamIds: { home: 1, away: 2 },
+      }),
+    });
+  });
+
+  const matchResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/match/12345")
+  );
+  await page.goto("/match/12345", { waitUntil: "domcontentloaded" });
+  await matchResponse;
+
+  await expect(page.getByText("等待开赛")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText("当前接口暂未返回真实赔率，价值差暂不计算。")).toBeVisible();
+  await expect(page.getByText("暂无近况数据")).toHaveCount(2);
+  await expect(page.locator("body")).not.toContainText("50%");
+  await expect(page.locator("body")).not.toContainText("1.35");
+});
