@@ -185,12 +185,12 @@ export const riskProfileList = [
 ];
 
 export const leagueOptions = [
-  { id: 39, name: "英超" },
-  { id: 140, name: "西甲" },
-  { id: 78, name: "德甲" },
-  { id: 61, name: "法甲" },
-  { id: 135, name: "意甲" },
-  { id: 1, name: "世界杯" },
+  { id: 39, name: "英超", short: "ENG", description: "节奏快，热门场次多" },
+  { id: 140, name: "西甲", short: "ESP", description: "强队盘和技术流对比" },
+  { id: 78, name: "德甲", short: "GER", description: "进球节奏和大小球更活跃" },
+  { id: 61, name: "法甲", short: "FRA", description: "强弱差和冷门风险并存" },
+  { id: 135, name: "意甲", short: "ITA", description: "防守结构和平局权重更高" },
+  { id: 1, name: "世界杯", short: "FIFA", description: "杯赛淘汰制和临场波动" },
 ];
 
 export const leagueGroups = [

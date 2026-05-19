@@ -297,16 +297,34 @@ export default function OnboardingPage() {
             </div>
           </section>
 
-          <section className="rounded-xl bg-black/25 p-4">
-            <h2 className="text-sm font-semibold">关注联赛</h2>
-            <p className="mt-1 text-xs text-white/50">
-              首页会优先展示你关注的赛事，目前只开放五大联赛和世界杯。
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/75 md:grid-cols-6">
+          <section className="rounded-2xl border border-[color:var(--accent)]/25 bg-[linear-gradient(180deg,rgba(0,255,135,0.08),rgba(0,0,0,0.22))] p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
+                  首页优先展示
+                </div>
+                <h2 className="text-xl font-semibold tracking-tight">关注联赛</h2>
+                <p className="mt-2 text-sm leading-6 text-white/60">
+                  这些赛事会影响首页推荐和热门排序。先选你最常看的联赛，之后可以在设置里调整。
+                </p>
+              </div>
+              <div className="rounded-full border border-white/10 bg-black/35 px-4 py-2 text-xs font-semibold text-white/75">
+                已选 {selectedLeagueIds.length} / {leagueOptions.length}
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {leagueOptions.map((league) => {
                 const checked = selectedLeagueIds.includes(league.id);
                 return (
-                  <label key={league.id} className="flex cursor-pointer items-center gap-2">
+                  <label
+                    key={league.id}
+                    className={`min-h-24 cursor-pointer rounded-2xl border p-4 transition ${
+                      checked
+                        ? "border-[color:var(--accent)] bg-[color:var(--accent)]/12 shadow-[0_0_28px_rgba(0,255,135,0.18)]"
+                        : "border-white/10 bg-black/28 hover:border-white/25 hover:bg-white/[0.03]"
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       checked={checked}
@@ -317,8 +335,28 @@ export default function OnboardingPage() {
                             : [...prev, league.id]
                         )
                       }
+                      className="sr-only"
                     />
-                    <span>{league.name}</span>
+                    <span className="flex items-start justify-between gap-3">
+                      <span>
+                        <span className="block text-lg font-semibold text-white">{league.name}</span>
+                        <span className="mt-1 block text-[11px] uppercase tracking-[0.16em] text-[color:var(--accent)]/70">
+                          {league.short}
+                        </span>
+                        <span className="mt-3 block text-xs leading-5 text-white/50">
+                          {league.description}
+                        </span>
+                      </span>
+                      <span
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-sm font-bold ${
+                          checked
+                            ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-black"
+                            : "border-white/15 bg-black/35 text-transparent"
+                        }`}
+                      >
+                        ✓
+                      </span>
+                    </span>
                   </label>
                 );
               })}
