@@ -1,26 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
-import { analyzeWithMinimax, MatchAnalysisData, UserPreferences } from "@/lib/minimax";
+import {
+  analyzeWithMinimax,
+  calculateAnalysisPrediction,
+  MatchAnalysisData,
+  UserPreferences,
+} from "@/lib/minimax";
+import { normalizeMembership } from "@/lib/membership";
 
 export async function POST(req: NextRequest) {
   try {
-    // Parse body first (can only read once)
     const matchData: MatchAnalysisData = await req.json();
 
-    // Verify auth via Bearer token
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "未授权" }, { status: 401 });
     }
-    const token = authHeader.slice(7);
 
+    const token = authHeader.slice(7);
     const supabase = createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
     if (authError || !user) {
       return NextResponse.json({ error: "Token 无效" }, { status: 401 });
     }
 
-    // Fetch user preferences
+    const { data: membership, error: membershipError } = await supabase
+      .from("memberships")
+      .select("plan, pro_until")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (membershipError) {
+      console.error("[analyze] membership check failed:", membershipError.message);
+      return NextResponse.json(
+        { error: "会员系统尚未配置，请联系管理员" },
+        { status: 402 }
+      );
+    }
+
+    const normalizedMembership = normalizeMembership(membership, user);
+    if (normalizedMembership.plan !== "pro") {
+      return NextResponse.json(
+        { error: "Pro 高级版用户可使用 Claude 深度分析" },
+        { status: 402 }
+      );
+    }
+
     const { data: prefs, error: prefsError } = await supabase
       .from("user_preferences")
       .select("risk_level, capital, preferred_markets, preferred_models")
@@ -28,7 +57,10 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (prefsError || !prefs) {
-      return NextResponse.json({ error: "未找到用户偏好设置，请先完成个性化设置" }, { status: 400 });
+      return NextResponse.json(
+        { error: "未找到用户偏好设置，请先完成个性化设置" },
+        { status: 400 }
+      );
     }
 
     const userPrefs: UserPreferences = {
@@ -38,10 +70,13 @@ export async function POST(req: NextRequest) {
       preferred_models: prefs.preferred_models ?? [],
     };
 
+    const prediction = calculateAnalysisPrediction(matchData, userPrefs);
     const analysis = await analyzeWithMinimax(matchData, userPrefs);
-    return NextResponse.json({ analysis });
-  } catch (e: any) {
-    console.error("[analyze] error:", e);
-    return NextResponse.json({ error: e.message ?? "分析失败" }, { status: 500 });
+
+    return NextResponse.json({ analysis, prediction });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "分析失败";
+    console.error("[analyze] error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,9 +1,12 @@
 const errorMap: Record<string, string> = {
-  "Already registered": "该邮箱已被注册",
-  "User already registered": "该邮箱已被注册",
-  "Email not confirmed": "邮箱未验证，请查收验证邮件",
-  "Email rate limit exceeded": "邮件发送过于频繁，请1小时后再试",
-  "Password should be at least 6 characters": "密码至少需要6个字符",
+  "Already registered": "该邮箱已经注册",
+  "User already registered": "该邮箱已经注册",
+  "该邮箱已经注册": "该邮箱已经注册，请直接登录",
+  "请直接登录": "该邮箱已经注册，请直接登录",
+  "没有找到已开通的订单": "没有找到已开通的订单，请检查邮箱和订单编号",
+  "Email not confirmed": "邮箱尚未验证，请查收验证邮件",
+  "Email rate limit exceeded": "邮件发送过于频繁，请稍后再试",
+  "Password should be at least 6 characters": "密码至少需要 6 个字符",
   "Unable to validate email address": "邮箱格式不正确",
   "Signup requires a valid password": "请输入有效的密码",
   "User not found": "用户不存在",
@@ -16,8 +19,9 @@ const errorMap: Record<string, string> = {
 
 export function translateAuthError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  for (const [eng, chn] of Object.entries(errorMap)) {
-    if (message.includes(eng)) return chn;
+  for (const [source, translated] of Object.entries(errorMap)) {
+    if (message.includes(source)) return translated;
   }
+  if (/[\u4e00-\u9fff]/.test(message)) return message;
   return "操作失败，请稍后重试";
 }

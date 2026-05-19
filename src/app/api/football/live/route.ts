@@ -1,16 +1,26 @@
 import { NextResponse } from "next/server";
 import { getLiveMatches } from "@/lib/football-api";
+import {
+  isSupportedLeague,
+  translateLeague,
+  translateTeam,
+} from "@/lib/league-translations";
+import { formatBeijingClock } from "@/lib/time-format";
 
 export const revalidate = 300;
 
-const FEATURED_LEAGUE_IDS = new Set([
-  // api-football IDs
-  39, 140, 78, 135, 61, 2, 3, 1, 4, 5, 10,
-  // football-data.org IDs
-  2021, 2002, 2014, 2019, 2015, 2001, 2018, 2152, 2000,
-]);
-
 type MatchStatus = "live" | "upcoming" | "finished";
+
+type FixtureLike = {
+  fixture: {
+    id: number;
+    date: string;
+    status: { short: string; elapsed?: number | null };
+  };
+  league: { id: number; name: string; round?: string | null };
+  teams: { home: { name: string }; away: { name: string } };
+  goals: { home?: number | null; away?: number | null };
+};
 
 type MatchCard = {
   id: number;
@@ -26,25 +36,21 @@ type MatchCard = {
   status: MatchStatus;
 };
 
-function mapFixtureToMatchCard(fixture: any): MatchCard {
-  const statusShort = fixture.fixture.status.short as string;
+function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
+  const statusShort = fixture.fixture.status.short;
   let status: MatchStatus = "upcoming";
   if (["1H", "2H", "ET", "BT"].includes(statusShort)) status = "live";
   else if (["FT", "AET", "PEN"].includes(statusShort)) status = "finished";
 
   const fixtureDate = fixture.fixture.date;
-  const d = new Date(fixtureDate);
-  const rawHours = d.getUTCHours() + 8;
-  const hours = String(rawHours >= 24 ? rawHours - 24 : rawHours).padStart(2, "0");
-  const mins = String(d.getUTCMinutes()).padStart(2, "0");
 
   return {
     id: fixture.fixture.id,
     leagueId: fixture.league.id,
-    league: `${fixture.league.name} · ${fixture.league.round ?? ""}`.trim(),
-    homeTeam: fixture.teams.home.name,
-    awayTeam: fixture.teams.away.name,
-    kickOff: `${hours}:${mins}`,
+    league: translateLeague(`${fixture.league.name} · ${fixture.league.round ?? ""}`.trim()),
+    homeTeam: translateTeam(fixture.teams.home.name),
+    awayTeam: translateTeam(fixture.teams.away.name),
+    kickOff: formatBeijingClock(fixtureDate),
     date: fixtureDate,
     minute: fixture.fixture.status.elapsed ?? undefined,
     homeScore: fixture.goals.home ?? 0,
@@ -54,32 +60,25 @@ function mapFixtureToMatchCard(fixture: any): MatchCard {
 }
 
 export async function GET() {
-  console.log('Using API key:', process.env.FOOTBALL_API_KEY?.slice(0, 8));
-  console.log('Using API key 2:', process.env.FOOTBALL_API_KEY_2?.slice(0, 8));
-
   try {
     const data = await getLiveMatches();
-    console.log('API response status:', data?.errors ? 'error' : 'ok');
-    console.log('API response data:', JSON.stringify(data).slice(0, 200));
-
-    const fixtures = (data.response ?? []).filter(
-      (f: any) => FEATURED_LEAGUE_IDS.has(f.league.id)
+    const fixtures = ((data.response as FixtureLike[]) ?? []).filter((fixture) =>
+      isSupportedLeague(fixture.league.id, fixture.league.name)
     );
-    const matches: MatchCard[] = fixtures.map(mapFixtureToMatchCard);
+    const matches = fixtures.map(mapFixtureToMatchCard);
+
     return NextResponse.json({
       matches,
       updatedAt: new Date().toISOString(),
     });
-  } catch (e: any) {
-    console.log('API error:', e?.message);
+  } catch (error) {
     return NextResponse.json(
       {
         matches: [],
         updatedAt: new Date().toISOString(),
-        error: e?.message ?? "Failed to load live matches",
+        error: error instanceof Error ? error.message : "Failed to load live matches",
       },
       { status: 200 }
     );
   }
 }
-

@@ -1,3 +1,10 @@
+import {
+  isSupportedLeague,
+  translateLeague,
+  translateTeam,
+} from "./league-translations";
+import { beijingDateString } from "./time-format";
+
 const API_URL = process.env.FOOTBALL_API_URL || "https://v3.football.api-sports.io";
 const API_KEY = process.env.FOOTBALL_API_KEY;
 
@@ -9,16 +16,92 @@ type CacheEntry<T> = {
   timestamp: number;
 };
 
+type FootballApiResponse = {
+  response?: unknown[];
+  results?: number;
+  errors?: unknown;
+};
+
+type FixtureItem = {
+  league?: { id?: number; name?: string; round?: string | null };
+  teams?: {
+    home?: { id?: number; name?: string };
+    away?: { id?: number; name?: string };
+  };
+};
+
+type FallbackMatch = {
+  id: number;
+  utcDate: string;
+  status: string;
+  minute?: number | null;
+  competition?: { id?: number; name?: string };
+  season?: { currentMatchday?: number };
+  homeTeam?: { id?: number; name?: string };
+  awayTeam?: { id?: number; name?: string };
+  score?: {
+    fullTime?: { home?: number | null; away?: number | null };
+    halfTime?: { home?: number | null; away?: number | null };
+  };
+};
+
 const CACHE_TTL_MS = 60 * 1000;
-const UPCOMING_CACHE_TTL_MS = 10 * 60 * 1000; // 未来赛事缓存 10 分钟
+const UPCOMING_CACHE_TTL_MS = 10 * 60 * 1000;
+const FALLBACK_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "WC"];
 
-const cache = new Map<string, CacheEntry<any>>();
-
-// 主 API 额度耗尽标记
+const cache = new Map<string, CacheEntry<unknown>>();
 let primaryExhausted = false;
 
-// 将 football-data.org 的 match 对象转换成与 api-football response[] 元素一致的结构
-function mapFdMatch(match: any) {
+function isSupportedFixture(item: unknown) {
+  if (!item || typeof item !== "object") return false;
+  const fixture = item as FixtureItem;
+  return isSupportedLeague(fixture.league?.id, fixture.league?.name);
+}
+
+function localizeFixture(item: unknown) {
+  if (!item || typeof item !== "object") return item;
+  const fixture = item as FixtureItem;
+
+  return {
+    ...fixture,
+    league: fixture.league
+      ? {
+          ...fixture.league,
+          name: translateLeague(fixture.league.name ?? ""),
+        }
+      : fixture.league,
+    teams: fixture.teams
+      ? {
+          ...fixture.teams,
+          home: fixture.teams.home
+            ? {
+                ...fixture.teams.home,
+                name: translateTeam(fixture.teams.home.name ?? ""),
+              }
+            : fixture.teams.home,
+          away: fixture.teams.away
+            ? {
+                ...fixture.teams.away,
+                name: translateTeam(fixture.teams.away.name ?? ""),
+              }
+            : fixture.teams.away,
+        }
+      : fixture.teams,
+  };
+}
+
+function filterAndLocalizeFixtures<T extends FootballApiResponse>(data: T): T {
+  if (!Array.isArray(data.response)) return data;
+
+  const response = data.response.filter(isSupportedFixture).map(localizeFixture);
+  return {
+    ...data,
+    response,
+    results: response.length,
+  };
+}
+
+function mapFdMatch(match: FallbackMatch) {
   const statusMap: Record<string, string> = {
     LIVE: "1H",
     IN_PLAY: "1H",
@@ -29,7 +112,8 @@ function mapFdMatch(match: any) {
     POSTPONED: "PST",
     CANCELLED: "CANC",
   };
-  const result = {
+
+  return {
     fixture: {
       id: match.id,
       date: match.utcDate,
@@ -41,7 +125,9 @@ function mapFdMatch(match: any) {
     league: {
       id: match.competition?.id ?? 0,
       name: match.competition?.name ?? "",
-      round: match.season?.currentMatchday ? `Matchday ${match.season.currentMatchday}` : "",
+      round: match.season?.currentMatchday
+        ? `Matchday ${match.season.currentMatchday}`
+        : "",
     },
     teams: {
       home: { name: match.homeTeam?.name ?? "", id: match.homeTeam?.id ?? 0 },
@@ -52,64 +138,73 @@ function mapFdMatch(match: any) {
       away: match.score?.fullTime?.away ?? match.score?.halfTime?.away ?? 0,
     },
   };
-  console.log('[mapFdMatch] mapped result:', JSON.stringify(result).slice(0, 200));
-  return result;
 }
 
-async function fetchFromFallback(path: "live" | "today"): Promise<any> {
+async function fetchFromFallback(
+  path: "live" | "today",
+  days = 0
+): Promise<FootballApiResponse> {
   if (!FD_API_KEY) throw new Error("FOOTBALL_DATA_API_KEY 未配置");
 
-  const today = new Date().toISOString().split('T')[0];
-  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const today = beijingDateString();
+  const rangeEnd = beijingDateString(days);
 
-  const url =
+  const urls =
     path === "live"
-      ? `${FD_API_URL}/matches?status=LIVE`
-      : `${FD_API_URL}/matches?dateFrom=${today}&dateTo=${nextWeek}`;
+      ? [`${FD_API_URL}/matches?status=LIVE`]
+      : FALLBACK_COMPETITIONS.map(
+          (code) =>
+            `${FD_API_URL}/competitions/${code}/matches?dateFrom=${today}&dateTo=${rangeEnd}`
+        );
 
-  console.log(`[fallback] Fetching from football-data.org: ${url}`);
+  const results = await Promise.allSettled(
+    urls.map(async (url) => {
+      const res = await fetch(url, {
+        headers: { "X-Auth-Token": FD_API_KEY },
+        next: { revalidate: 300 },
+      });
 
-  const res = await fetch(url, {
-    headers: { "X-Auth-Token": FD_API_KEY },
-    next: { revalidate: 300 },
-  });
+      if (!res.ok) throw new Error(`football-data.org 请求失败: ${res.status}`);
+      return ((await res.json()) as { matches?: FallbackMatch[] }).matches ?? [];
+    })
+  );
 
-  console.log('[fallback] response status:', res.status);
-  const text = await res.text();
-  console.log('[fallback] response body:', text.slice(0, 500));
+  const matches = results
+    .filter((result): result is PromiseFulfilledResult<FallbackMatch[]> => result.status === "fulfilled")
+    .flatMap((result) => result.value);
 
-  if (!res.ok) throw new Error(`football-data.org 请求失败: ${res.status}`);
-
-  const json = JSON.parse(text);
-  const matches: any[] = json.matches ?? [];
-  console.log('[fallback] matches count:', json?.matches?.length);
-  console.log('[fallback] first match:', JSON.stringify(json?.matches?.[0])?.slice(0, 300));
   const seen = new Set<number>();
-  const uniqueMatches = matches.filter((m) => {
-    if (seen.has(m.id)) return false;
-    seen.add(m.id);
-    return true;
+  const fixtures = matches
+    .filter((match) => {
+      if (seen.has(match.id)) return false;
+      seen.add(match.id);
+      return true;
+    })
+    .map(mapFdMatch);
+
+  return filterAndLocalizeFixtures({
+    response: fixtures,
+    results: fixtures.length,
+    errors: {},
   });
-  const fixtures = uniqueMatches.map(mapFdMatch);
-  console.log('[fallback] mapped fixtures count:', fixtures.length);
-  return { response: fixtures, results: fixtures.length, errors: {} };
 }
 
-async function fetchWithCache<T>(key: string, path: string, searchParams?: Record<string, string | number>, ttl = CACHE_TTL_MS) {
+async function fetchWithCache<T extends FootballApiResponse>(
+  key: string,
+  path: string,
+  searchParams?: Record<string, string | number>,
+  ttl = CACHE_TTL_MS
+) {
   const now = Date.now();
   const entry = cache.get(key);
-  if (entry && now - entry.timestamp < ttl) {
-    return entry.data as T;
-  }
+  if (entry && now - entry.timestamp < ttl) return entry.data as T;
 
-  if (!API_KEY) {
-    throw new Error("FOOTBALL_API_KEY 未配置");
-  }
+  if (!API_KEY) throw new Error("FOOTBALL_API_KEY 未配置");
 
   const url = new URL(path, API_URL);
   if (searchParams) {
-    Object.entries(searchParams).forEach(([k, v]) => {
-      url.searchParams.set(k, String(v));
+    Object.entries(searchParams).forEach(([paramKey, value]) => {
+      url.searchParams.set(paramKey, String(value));
     });
   }
 
@@ -118,133 +213,124 @@ async function fetchWithCache<T>(key: string, path: string, searchParams?: Recor
     next: { revalidate: 300 },
   });
 
-  if (!res.ok) {
-    throw new Error(`Football API 请求失败: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Football API 请求失败: ${res.status}`);
 
-  const json = await res.json();
+  const json = (await res.json()) as T;
+  const errors = json.errors;
+  const hasApiErrors =
+    Array.isArray(errors)
+      ? errors.length > 0
+      : !!errors && typeof errors === "object"
+        ? Object.keys(errors).length > 0
+        : Boolean(errors);
 
-  console.log('[fetchWithCache] data.errors:', JSON.stringify(json?.errors));
-  console.log('[fetchWithCache] is array:', Array.isArray(json?.errors));
-  console.log('[fetchWithCache] results:', json?.results);
-
-  // 检测额度耗尽（errors:[] 空数组表示无错误，不触发切换）
-  if (json?.errors && !Array.isArray(json.errors) && json.errors?.requests) {
-    console.log('[primary] API quota exhausted:', json.errors.requests);
+  if (hasApiErrors) {
     primaryExhausted = true;
     throw new Error("PRIMARY_EXHAUSTED");
   }
 
   cache.set(key, { data: json, timestamp: now });
-  return json as T;
+  return json;
 }
 
 export async function getTodayMatches() {
-  if (primaryExhausted) {
-    console.log('[getTodayMatches] primary exhausted, using fallback');
-    return fetchFromFallback("today");
-  }
-  const today = new Date().toISOString().slice(0, 10);
+  if (primaryExhausted) return fetchFromFallback("today");
+
+  const today = beijingDateString();
   try {
-    return await fetchWithCache<any>(
-      `today:${today}`,
-      "/fixtures",
-      { date: today, timezone: "Asia/Shanghai" }
-    );
-  } catch (e: any) {
-    if (e?.message === "PRIMARY_EXHAUSTED") {
-      console.log('[getTodayMatches] switching to fallback');
+    const data = await fetchWithCache<FootballApiResponse>("today:" + today, "/fixtures", {
+      date: today,
+      timezone: "Asia/Shanghai",
+    });
+    return filterAndLocalizeFixtures(data);
+  } catch (error) {
+    if (error instanceof Error && error.message === "PRIMARY_EXHAUSTED") {
       return fetchFromFallback("today");
     }
-    throw e;
+    throw error;
   }
 }
 
 export async function getLiveMatches() {
-  if (primaryExhausted) {
-    console.log('[getLiveMatches] primary exhausted, using fallback');
-    return fetchFromFallback("live");
-  }
+  if (primaryExhausted) return fetchFromFallback("live");
+
   try {
-    const data = await fetchWithCache<any>(
-      "live:all",
-      "/fixtures",
-      { live: "all", timezone: "Asia/Shanghai" }
-    );
-    console.log('[getLiveMatches] response count:', data?.response?.length);
-    console.log('[getLiveMatches] primaryExhausted:', primaryExhausted);
-    return data;
-  } catch (e: any) {
-    if (e?.message === "PRIMARY_EXHAUSTED") {
-      console.log('[getLiveMatches] switching to fallback');
+    const data = await fetchWithCache<FootballApiResponse>("live:all", "/fixtures", {
+      live: "all",
+      timezone: "Asia/Shanghai",
+    });
+    return filterAndLocalizeFixtures(data);
+  } catch (error) {
+    if (error instanceof Error && error.message === "PRIMARY_EXHAUSTED") {
       return fetchFromFallback("live");
     }
-    throw e;
+    throw error;
   }
+}
+
+export async function getFixtureById(fixtureId: number) {
+  const data = await fetchWithCache<FootballApiResponse>(`fixture:${fixtureId}`, "/fixtures", {
+    id: fixtureId,
+  });
+  return filterAndLocalizeFixtures(data);
 }
 
 export async function getMatchStatistics(fixtureId: number) {
-  return fetchWithCache<any>(
-    `stats:${fixtureId}`,
-    "/fixtures/statistics",
-    { fixture: fixtureId }
-  );
+  return fetchWithCache<FootballApiResponse>(`stats:${fixtureId}`, "/fixtures/statistics", {
+    fixture: fixtureId,
+  });
 }
 
 export async function getMatchOdds(fixtureId: number) {
-  return fetchWithCache<any>(
-    `odds:${fixtureId}`,
-    "/odds",
-    { fixture: fixtureId }
-  );
+  return fetchWithCache<FootballApiResponse>(`odds:${fixtureId}`, "/odds", {
+    fixture: fixtureId,
+  });
 }
 
 export async function getHeadToHead(team1Id: number, team2Id: number) {
-  return fetchWithCache<any>(
-    `h2h:${team1Id}:${team2Id}`,
-    "/fixtures/headtohead",
-    { h2h: `${team1Id}-${team2Id}` }
-  );
+  return fetchWithCache<FootballApiResponse>(`h2h:${team1Id}:${team2Id}`, "/fixtures/headtohead", {
+    h2h: `${team1Id}-${team2Id}`,
+  });
 }
 
 export async function getTeamRecentForm(teamId: number) {
-  return fetchWithCache<any>(
-    `form:${teamId}`,
-    "/fixtures",
-    { team: teamId, last: 5 }
-  );
+  return fetchWithCache<FootballApiResponse>(`form:${teamId}`, "/fixtures", {
+    team: teamId,
+    last: 5,
+  });
 }
 
 export async function getUpcomingMatches(days = 3) {
-  // api-football 免费版 from/to 必须带 league+season，改为逐日用 date 参数查询
   const dates: string[] = [];
-  for (let i = 1; i <= days; i++) {
-    dates.push(new Date(Date.now() + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+  for (let i = 1; i <= days; i += 1) {
+    dates.push(beijingDateString(i));
   }
 
-  if (primaryExhausted) {
-    return fetchFromFallback("today"); // today path 已覆盖 today→+7 天
-  }
+  if (primaryExhausted) return fetchFromFallback("today", days);
 
   const results = await Promise.allSettled(
     dates.map((date) =>
-      fetchWithCache<any>(`day:${date}`, "/fixtures", { date, timezone: "Asia/Shanghai" }, UPCOMING_CACHE_TTL_MS)
+      fetchWithCache<FootballApiResponse>(
+        `day:${date}`,
+        "/fixtures",
+        { date, timezone: "Asia/Shanghai" },
+        UPCOMING_CACHE_TTL_MS
+      )
     )
   );
 
-  // 若任一天触发额度耗尽，整体切换 fallback
   const exhausted = results.some(
-    (r) => r.status === "rejected" && (r as PromiseRejectedResult).reason?.message === "PRIMARY_EXHAUSTED"
+    (result) =>
+      result.status === "rejected" &&
+      result.reason instanceof Error &&
+      result.reason.message === "PRIMARY_EXHAUSTED"
   );
-  if (exhausted) {
-    return fetchFromFallback("today");
-  }
 
-  const allFixtures = results
-    .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled")
-    .flatMap((r) => r.value?.response ?? []);
+  if (exhausted) return fetchFromFallback("today", days);
 
-  console.log(`[getUpcomingMatches] ${days} days fetched: ${allFixtures.length} fixtures`);
-  return { response: allFixtures };
+  const response = results
+    .filter((result): result is PromiseFulfilledResult<FootballApiResponse> => result.status === "fulfilled")
+    .flatMap((result) => result.value.response ?? []);
+
+  return filterAndLocalizeFixtures({ response, results: response.length, errors: {} });
 }
-

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -19,17 +19,35 @@ type MatchCard = {
   leagueId?: number;
 };
 
-function mapFixtureToMatchCard(fixture: any): MatchCard {
-  const statusShort = fixture.fixture.status.short as string;
+type FixtureLike = {
+  fixture: {
+    id: number;
+    date: string;
+    status: { short: string; elapsed?: number | null };
+  };
+  league: { id?: number; name: string; round?: string | null };
+  teams: { home: { name: string }; away: { name: string } };
+  goals: { home?: number | null; away?: number | null };
+};
+
+const FAVORITES_KEY = "scoutai_favorites";
+
+const statusLabel: Record<MatchStatus, string> = {
+  live: "进行中",
+  upcoming: "未开赛",
+  finished: "已结束",
+};
+
+function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
+  const statusShort = fixture.fixture.status.short;
   let status: MatchStatus = "upcoming";
   if (["1H", "2H", "ET", "BT"].includes(statusShort)) status = "live";
   else if (["FT", "AET", "PEN"].includes(statusShort)) status = "finished";
 
-  const fixtureDate = fixture.fixture.date;
-  const d = new Date(fixtureDate);
-  const rawHours = d.getUTCHours() + 8;
+  const date = new Date(fixture.fixture.date);
+  const rawHours = date.getUTCHours() + 8;
   const hours = String(rawHours >= 24 ? rawHours - 24 : rawHours).padStart(2, "0");
-  const mins = String(d.getUTCMinutes()).padStart(2, "0");
+  const mins = String(date.getUTCMinutes()).padStart(2, "0");
 
   return {
     id: fixture.fixture.id,
@@ -45,45 +63,33 @@ function mapFixtureToMatchCard(fixture: any): MatchCard {
   };
 }
 
-const statusLabel: Record<MatchStatus, string> = {
-  live: "进行中",
-  upcoming: "即将开始",
-  finished: "已结束",
-};
-
-const FAVORITES_KEY = "scoutai_favorites";
-
 export default function FavoritesPage() {
   const [favoriteMatches, setFavoriteMatches] = useState<MatchCard[]>([]);
-  const [loading, setLoading] = useState(true);
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        // 1. 从 localStorage 读取收藏的 ID 列表
         const raw = localStorage.getItem(FAVORITES_KEY);
         const ids: number[] = raw ? JSON.parse(raw) : [];
         setFavoriteIds(ids);
 
-        if (ids.length === 0) {
-          setLoading(false);
-          return;
-        }
+        if (ids.length === 0) return;
 
-        // 2. 调用 /api/football/all 获取今日+进行中比赛
         const res = await fetch("/api/football/all");
-        const json = await res.json();
+        const json = (await res.json()) as { fixtures?: FixtureLike[] };
 
         if (Array.isArray(json.fixtures)) {
           const idSet = new Set(ids.map(String));
-          const filtered = json.fixtures
-            .filter((f: any) => idSet.has(String(f.fixture.id)))
-            .map(mapFixtureToMatchCard);
-          setFavoriteMatches(filtered);
+          setFavoriteMatches(
+            json.fixtures
+              .filter((fixture) => idSet.has(String(fixture.fixture.id)))
+              .map(mapFixtureToMatchCard)
+          );
         }
       } catch (error) {
-        console.error("加载收藏失败:", error);
+        console.error("[favorites] failed to load:", error);
       } finally {
         setLoading(false);
       }
@@ -93,36 +99,33 @@ export default function FavoritesPage() {
   }, []);
 
   function handleUnfavorite(id: number) {
-    // 更新 localStorage
-    const updated = favoriteIds.filter((fid) => fid !== id);
+    const updated = favoriteIds.filter((favoriteId) => favoriteId !== id);
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
     setFavoriteIds(updated);
-
-    // 更新显示列表
-    setFavoriteMatches((prev) => prev.filter((m) => m.id !== id));
+    setFavoriteMatches((prev) => prev.filter((match) => match.id !== id));
   }
 
   const isEmpty = !loading && favoriteMatches.length === 0;
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">收藏</h1>
-      <p className="text-sm text-white/60">
-        这里展示你关注的比赛列表，方便快速进入详情与数据面板。
-      </p>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">收藏</h1>
+        <p className="mt-2 text-sm text-white/60">
+          你关注的比赛会显示在这里，方便快速进入数据面板和 AI 分析。
+        </p>
+      </div>
 
       {loading ? (
         <div className="rounded-2xl border border-white/10 bg-[color:var(--card)]/70 p-6 text-sm text-white/60">
-          加载中…
+          加载收藏中...
         </div>
       ) : isEmpty ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-6 text-sm text-white/60">
-          <div className="mb-1 text-base">
-            <span className="mr-1">⭐</span>暂无收藏比赛，去首页收藏你感兴趣的比赛吧
-          </div>
+          <div className="mb-3 text-base text-white/75">暂无收藏比赛</div>
           <Link
             href="/"
-            className="mt-2 inline-flex items-center rounded-full border border-[color:var(--accent)]/60 px-3 py-1.5 text-xs text-[color:var(--accent)] hover:bg-[color:var(--accent)]/10"
+            className="inline-flex items-center rounded-full border border-[color:var(--accent)]/60 px-3 py-1.5 text-xs text-[color:var(--accent)] hover:bg-[color:var(--accent)]/10"
           >
             返回热门赛事
           </Link>
@@ -132,7 +135,7 @@ export default function FavoritesPage() {
           {favoriteMatches.map((match) => (
             <div
               key={match.id}
-              className="relative flex items-center gap-4 rounded-2xl border border-white/5 bg-[color:var(--card)]/80 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.7)]"
+              className="flex items-center gap-4 rounded-2xl border border-white/5 bg-[color:var(--card)]/80 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.6)]"
             >
               <Link
                 href={`/match/${match.id}`}
@@ -150,24 +153,14 @@ export default function FavoritesPage() {
                   <div className="mt-1 text-[11px] text-white/50">
                     {statusLabel[match.status]} · {match.kickOff}
                     {match.status === "live" && match.minute && (
-                      <span className="ml-2 text-red-400">
-                        {match.minute}&apos;
-                      </span>
+                      <span className="ml-2 text-red-400">{match.minute}&apos;</span>
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-lg font-semibold">
-                    {match.homeScore}
-                    <span className="mx-1 text-xs text-white/40">:</span>
-                    {match.awayScore}
-                  </div>
-                  {match.status === "live" && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-                      LIVE
-                    </span>
-                  )}
+                <div className="text-lg font-semibold">
+                  {match.homeScore}
+                  <span className="mx-1 text-xs text-white/40">:</span>
+                  {match.awayScore}
                 </div>
               </Link>
               <button

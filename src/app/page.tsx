@@ -1,33 +1,45 @@
-import { getTodayMatches, getLiveMatches, getUpcomingMatches } from "@/lib/football-api";
 import HomeClient, { MatchCard } from "@/components/HomeClient";
+import {
+  getLiveMatches,
+  getTodayMatches,
+  getUpcomingMatches,
+} from "@/lib/football-api";
+import { translateLeague, translateTeam } from "@/lib/league-translations";
+import { formatBeijingClock } from "@/lib/time-format";
 
 type MatchStatus = "live" | "upcoming" | "finished";
 
-function mapFixtureToMatchCard(fixture: any): MatchCard {
-  const statusShort = fixture.fixture.status.short as string;
+type FixtureLike = {
+  fixture: {
+    id: number;
+    date: string;
+    status: { short: string; elapsed?: number | null };
+  };
+  league: { id?: number; name: string; round?: string | null };
+  teams: { home: { name: string }; away: { name: string } };
+  goals: { home?: number | null; away?: number | null };
+};
+
+function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
+  const statusShort = fixture.fixture.status.short;
   let status: MatchStatus = "upcoming";
   if (["1H", "2H", "ET", "BT"].includes(statusShort)) status = "live";
   else if (["FT", "AET", "PEN"].includes(statusShort)) status = "finished";
 
   const fixtureDate = fixture.fixture.date;
-  const d = new Date(fixtureDate);
-  const rawHours = d.getUTCHours() + 8;
-  const hours = String(rawHours >= 24 ? rawHours - 24 : rawHours).padStart(2, "0");
-  const mins = String(d.getUTCMinutes()).padStart(2, "0");
-  const kickOff = `${hours}:${mins}`;
 
   return {
     id: fixture.fixture.id,
-    league: `${fixture.league.name} · ${fixture.league.round ?? ""}`.trim(),
-    homeTeam: fixture.teams.home.name,
-    awayTeam: fixture.teams.away.name,
-    kickOff,
+    league: translateLeague(`${fixture.league.name} · ${fixture.league.round ?? ""}`.trim()),
+    homeTeam: translateTeam(fixture.teams.home.name),
+    awayTeam: translateTeam(fixture.teams.away.name),
+    kickOff: formatBeijingClock(fixtureDate),
     date: fixtureDate,
     minute: fixture.fixture.status.elapsed ?? undefined,
     homeScore: fixture.goals.home ?? 0,
     awayScore: fixture.goals.away ?? 0,
     status,
-    leagueId: fixture.league.id,
+    leagueId: fixture.league.id ?? 0,
   };
 }
 
@@ -42,32 +54,33 @@ export default async function Home() {
     ]);
 
     const todayFixtures =
-      todayRes.status === "fulfilled" ? todayRes.value.response ?? [] : [];
+      todayRes.status === "fulfilled"
+        ? ((todayRes.value.response as FixtureLike[] | undefined) ?? [])
+        : [];
     const liveFixtures =
-      liveRes.status === "fulfilled" ? liveRes.value.response ?? [] : [];
+      liveRes.status === "fulfilled"
+        ? ((liveRes.value.response as FixtureLike[] | undefined) ?? [])
+        : [];
     const upcomingFixtures =
-      upcomingRes.status === "fulfilled" ? upcomingRes.value.response ?? [] : [];
+      upcomingRes.status === "fulfilled"
+        ? ((upcomingRes.value.response as FixtureLike[] | undefined) ?? [])
+        : [];
 
-    console.log('[page] live:', liveFixtures.length, 'today:', todayFixtures.length, 'upcoming:', upcomingFixtures.length);
-    if (upcomingRes.status === "rejected") console.error('[page] upcoming failed:', upcomingRes.reason);
-
-    // live 优先（状态最新），然后今天，最后未来；按 id 去重
-    const liveResults = liveFixtures.map(mapFixtureToMatchCard);
-    const todayResults = todayFixtures.map(mapFixtureToMatchCard);
-    const upcomingResults = upcomingFixtures.map(mapFixtureToMatchCard);
+    if (upcomingRes.status === "rejected") {
+      console.error("[page] upcoming fixtures failed:", upcomingRes.reason);
+    }
 
     const seen = new Set<string>();
-    const allMatches = [...liveResults, ...todayResults, ...upcomingResults].filter(m => {
-      const key = String(m.id);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    console.log('[page] total after dedup:', allMatches.length, '| upcoming status sample:', upcomingResults.slice(0,3).map(m => ({ id: m.id, status: m.status, date: m.date?.slice(0,10), league: m.leagueId })));
-    matches = allMatches;
-  } catch (e) {
-    console.error('[page] fetch error:', e);
+    matches = [...liveFixtures, ...todayFixtures, ...upcomingFixtures]
+      .map(mapFixtureToMatchCard)
+      .filter((match) => {
+        const key = String(match.id);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  } catch (error) {
+    console.error("[page] failed to load fixtures:", error);
     matches = [];
   }
 

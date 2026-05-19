@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -24,48 +24,35 @@ type AlertItem = {
   read: boolean;
 };
 
-const typeMeta: Record<
-  AlertType,
-  { icon: string; label: string; tone: string }
-> = {
-  goal: { icon: "⚽", label: "进球", tone: "text-emerald-300" },
-  yellow_card: { icon: "🟡", label: "黄牌", tone: "text-amber-300" },
-  red_card: { icon: "🔴", label: "红牌", tone: "text-red-300" },
-  corner: { icon: "🚩", label: "角球", tone: "text-sky-300" },
-  odds_shift: { icon: "📈", label: "赔率异动", tone: "text-cyan-300" },
-  upset_warning: { icon: "🔥", label: "爆冷预警", tone: "text-orange-300" },
-  ai_update: { icon: "💡", label: "AI 分析更新", tone: "text-[color:var(--accent)]" },
+const typeMeta: Record<AlertType, { label: string; tone: string }> = {
+  goal: { label: "进球", tone: "text-emerald-300" },
+  yellow_card: { label: "黄牌", tone: "text-amber-300" },
+  red_card: { label: "红牌", tone: "text-red-300" },
+  corner: { label: "角球", tone: "text-sky-300" },
+  odds_shift: { label: "赔率异动", tone: "text-cyan-300" },
+  upset_warning: { label: "爆冷预警", tone: "text-orange-300" },
+  ai_update: { label: "AI 分析更新", tone: "text-[color:var(--accent)]" },
 };
 
 const mockAlerts: AlertItem[] = [
   {
     id: "1",
-    match_id: "ucl-psg-bvb",
+    match_id: "demo-1",
     match_name: "巴黎圣日耳曼 vs 多特蒙德",
     score: "2 : 1",
     type: "upset_warning",
-    content: "模型检测到多特进攻质量提升，爆冷概率上升至 18%。",
-    created_at: "2026-03-10 63'",
+    content: "模型检测到客队进攻质量提升，爆冷概率上升至 18%。",
+    created_at: "演示数据",
     read: false,
   },
   {
     id: "2",
-    match_id: "ucl-psg-bvb",
-    match_name: "巴黎圣日耳曼 vs 多特蒙德",
-    score: "1 : 1",
+    match_id: "demo-2",
+    match_name: "曼城 vs 阿森纳",
+    score: "0 : 0",
     type: "odds_shift",
-    content: "主胜赔率从 1.65 降至 1.48，市场看多情绪增强。",
-    created_at: "2026-03-10 48'",
-    read: true,
-  },
-  {
-    id: "3",
-    match_id: "ucl-psg-bvb",
-    match_name: "巴黎圣日耳曼 vs 多特蒙德",
-    score: "1 : 0",
-    type: "goal",
-    content: "巴黎禁区内连续传递后破门，xG 累积至 1.2。",
-    created_at: "2026-03-10 32'",
+    content: "主胜赔率快速下调，市场对主队方向的关注度升高。",
+    created_at: "演示数据",
     read: true,
   },
 ];
@@ -77,24 +64,21 @@ export default function AlertsPage() {
   useEffect(() => {
     async function load() {
       try {
-        if (!supabase) {
-          setAlerts(mockAlerts);
-          return;
-        }
         const {
           data: { user },
         } = await supabase.auth.getUser();
+
         if (!user) {
-          setAlerts([]);
+          setAlerts(mockAlerts);
           return;
         }
+
         const { data, error } = await supabase
           .from("alerts")
-          .select(
-            "id, match_id, match_name, score, type, content, created_at, read"
-          )
+          .select("id, match_id, match_name, score, type, content, created_at, read")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
+
         if (error) {
           setAlerts(mockAlerts);
         } else {
@@ -104,54 +88,47 @@ export default function AlertsPage() {
         setAlerts(mockAlerts);
       }
     }
+
     load();
   }, []);
 
-  const unreadCount = alerts.filter((a) => !a.read).length;
+  const unreadCount = alerts.filter((alert) => !alert.read).length;
   const visibleAlerts =
-    filter === "unread" ? alerts.filter((a) => !a.read) : alerts;
-  const isEmpty = visibleAlerts.length === 0;
+    filter === "unread" ? alerts.filter((alert) => !alert.read) : alerts;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">异常提醒</h1>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">异常提醒</h1>
+          <p className="mt-2 text-sm text-white/60">
+            聚合进球、红黄牌、赔率异动和模型预警。
+          </p>
+        </div>
         <div className="flex items-center gap-2 text-xs">
-          <button
-            type="button"
-            onClick={() => setFilter("all")}
-            className={`rounded-full px-3 py-1 ${
-              filter === "all"
-                ? "bg-[color:var(--accent)]/15 text-[color:var(--accent)]"
-                : "bg-black/40 text-white/60"
-            }`}
-          >
-            全部
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("unread")}
-            className={`relative rounded-full px-3 py-1 ${
-              filter === "unread"
-                ? "bg-[color:var(--accent)]/15 text-[color:var(--accent)]"
-                : "bg-black/40 text-white/60"
-            }`}
-          >
-            未读
-            {unreadCount > 0 && (
-              <span className="absolute -right-1 -top-1 inline-flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[9px] text-white">
-                {unreadCount}
-              </span>
-            )}
-          </button>
+          {[
+            ["all", "全部"],
+            ["unread", `未读 ${unreadCount}`],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key as "all" | "unread")}
+              className={`rounded-full px-3 py-1.5 ${
+                filter === key
+                  ? "bg-[color:var(--accent)]/15 text-[color:var(--accent)]"
+                  : "bg-black/40 text-white/60"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {isEmpty ? (
+      {visibleAlerts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/70 p-6 text-sm text-white/60">
-          <div className="text-base">
-            <span className="mr-1">🔔</span>暂无异常提醒。
-          </div>
+          暂无异常提醒。
         </div>
       ) : (
         <div className="space-y-3">
@@ -160,43 +137,28 @@ export default function AlertsPage() {
             return (
               <Link
                 key={alert.id}
-                href={`/match/${alert.match_id}`}
-                className={`flex items-start justify-between gap-4 rounded-2xl border bg-[color:var(--card)]/85 p-4 shadow-[0_14px_50px_rgba(0,0,0,0.8)] transition hover:border-[color:var(--accent)]/50 ${
+                href={alert.match_id.startsWith("demo") ? "/" : `/match/${alert.match_id}`}
+                className={`flex items-start justify-between gap-4 rounded-2xl border bg-[color:var(--card)]/85 p-4 shadow-[0_14px_50px_rgba(0,0,0,0.65)] transition hover:border-[color:var(--accent)]/50 ${
                   alert.read ? "border-white/8" : "border-[color:var(--accent)]/60"
                 }`}
               >
-                <div className="flex flex-1 items-start gap-3">
-                  <div
-                    className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-lg ${meta.tone}`}
-                  >
-                    {meta.icon}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full bg-white/5 px-2 py-0.5 text-[11px] ${meta.tone}`}>
+                      {meta.label}
+                    </span>
+                    {!alert.read && (
+                      <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] text-red-300">
+                        未读
+                      </span>
+                    )}
+                    <span className="text-[11px] text-white/45">{alert.created_at}</span>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] ${meta.tone} bg-white/5`}
-                      >
-                        {meta.label}
-                      </span>
-                      {!alert.read && (
-                        <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] text-red-300">
-                          未读
-                        </span>
-                      )}
-                      <span className="text-[11px] text-[#888888] font-light">
-                        {alert.created_at}
-                      </span>
-                    </div>
-                    <div className="text-sm text-white">
-                      {alert.match_name}{" "}
-                      <span className="ml-1 text-xs text-white/50">
-                        {alert.score}
-                      </span>
-                    </div>
-                    <p className="text-xs font-light text-[#888888]">
-                      {alert.content}
-                    </p>
+                  <div className="text-sm text-white">
+                    {alert.match_name}
+                    <span className="ml-2 text-xs text-white/50">{alert.score}</span>
                   </div>
+                  <p className="text-xs leading-5 text-white/60">{alert.content}</p>
                 </div>
               </Link>
             );
@@ -206,4 +168,3 @@ export default function AlertsPage() {
     </div>
   );
 }
-

@@ -1,14 +1,28 @@
-'use client';
+"use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
-import { useAuthStore } from "@/lib/authStore";
+import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import {
+  calculateFootballPrediction,
+  MatchAnalysisData,
+  PredictionResult,
+  UserPreferences,
+} from "@/lib/football-prediction";
+import {
+  Membership,
+  PRO_MONTHLY_PRICE_CNY,
+  freeMembership,
+} from "@/lib/membership";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
+import { useAuthStore } from "@/lib/authStore";
 
 type MatchStatus = "live" | "upcoming" | "finished";
+type RecentForm = ("W" | "D" | "L")[];
 
 type Match = {
-  id: string;
+  id: number;
   league: string;
   homeTeam: string;
   awayTeam: string;
@@ -37,31 +51,70 @@ type RealtimeStats = {
 };
 
 type OddsData = {
-  opening: {
-    homeWin: number;
-    draw: number;
-    awayWin: number;
-    handicap: string;
-    overUnder: string;
-  };
-  live: {
-    homeWin: number;
-    draw: number;
-    awayWin: number;
-    handicap: string;
-    overUnder: string;
-  };
-  upsetProbability: number;
+  homeWin: number;
+  draw: number;
+  awayWin: number;
+  handicap: string;
+  overUnder: string;
 };
 
-type RecentForm = ("W" | "D" | "L")[];
+type PaymentApplication = {
+  id: string;
+  order_no: string;
+  email: string;
+  amount: number;
+  currency: "CNY" | "USD";
+  months: number;
+  status: "pending" | "confirmed" | "rejected";
+  created_at: string;
+};
+
+type ApiFixture = {
+  fixture: {
+    id: number;
+    date: string;
+    status: { short: string; elapsed?: number | null };
+  };
+  league: { name: string; round?: string | null };
+  teams: {
+    home: { id?: number; name: string };
+    away: { id?: number; name: string };
+  };
+  goals: { home?: number | null; away?: number | null };
+};
+
+type ApiStatItem = { type: string; value: number | string | null };
+type ApiTeamStats = {
+  team: { id: number; name: string };
+  statistics: ApiStatItem[];
+};
+
+type ApiMatchResponse = {
+  fixture?: { response?: ApiFixture[] } | null;
+  statistics?: { response?: ApiTeamStats[] } | null;
+  odds?: { response?: Array<{ bookmakers?: Array<{ bets?: ApiBet[] }> }> } | null;
+  recentForm?: { home?: ApiRecentForm | null; away?: ApiRecentForm | null };
+  teamIds?: { home?: number | null; away?: number | null };
+};
+
+type ApiBet = {
+  name: string;
+  values?: Array<{ value: string; odd?: string }>;
+};
+
+type ApiRecentFixture = {
+  teams: { home: { id: number }; away: { id: number } };
+  goals: { home?: number | null; away?: number | null };
+};
+
+type ApiRecentForm = { response?: ApiRecentFixture[] };
 
 const fallbackStats: RealtimeStats = {
   possessionHome: 50,
   possessionAway: 50,
   shotsHome: 10,
   shotsAway: 8,
-  shotsOnTargetHome: 5,
+  shotsOnTargetHome: 4,
   shotsOnTargetAway: 3,
   cornersHome: 4,
   cornersAway: 4,
@@ -69,50 +122,182 @@ const fallbackStats: RealtimeStats = {
   yellowCardsAway: 1,
   dangerousAttacksHome: 30,
   dangerousAttacksAway: 25,
-  xGHome: 1.4,
-  xGAway: 1.1,
+  xGHome: 1.35,
+  xGAway: 1.05,
 };
 
 const fallbackOdds: OddsData = {
-  opening: {
-    homeWin: 2.0,
-    draw: 3.5,
-    awayWin: 3.8,
-    handicap: "主让 0.5",
-    overUnder: "2.5 大球",
-  },
-  live: {
-    homeWin: 1.8,
-    draw: 3.8,
-    awayWin: 4.2,
-    handicap: "主让 0.75",
-    overUnder: "2.75 大球",
-  },
-  upsetProbability: 10,
+  homeWin: 2.05,
+  draw: 3.35,
+  awayWin: 3.55,
+  handicap: "主让 0/0.5",
+  overUnder: "2.5",
 };
 
-const fallbackForm: { home: RecentForm; away: RecentForm } = {
-  home: ["W", "D", "W", "L", "W"],
-  away: ["L", "W", "D", "D", "W"],
+const fallbackForm = {
+  home: ["W", "D", "W", "L", "W"] as RecentForm,
+  away: ["L", "W", "D", "D", "W"] as RecentForm,
 };
 
-function PaywalledContent({ children }: { children: React.ReactNode }) {
+const defaultPrefs: UserPreferences = {
+  risk_level: "balanced",
+  capital: 1000,
+  preferred_markets: ["胜平负", "大小球"],
+  preferred_models: ["xG-Dixon-Coles", "赔率去水"],
+};
+
+const PRO_ORIGINAL_PRICE_CNY = "¥199";
+
+const proBenefits = [
+  {
+    title: "先筛掉不值得碰的比赛",
+    detail: "把概率、赔率和热度放在一起看，少浪费时间在信号很乱的场次上。",
+  },
+  {
+    title: "看懂热门队是不是过热",
+    detail: "热门不等于稳，Pro 会提示赔率偏热、平局尾部和爆冷风险。",
+  },
+  {
+    title: "直接读人话版赛前报告",
+    detail: "不只给数字，还会说明为什么看好、哪里危险、什么时候该谨慎。",
+  },
+  {
+    title: "后续接入实时盘口更有价值",
+    detail: "实时数据 API 充值后，临场盘口和赔率变化会进入 Pro 分析。",
+  },
+];
+
+function statusFromShort(short: string): MatchStatus {
+  if (["1H", "2H", "ET", "BT"].includes(short)) return "live";
+  if (["FT", "AET", "PEN"].includes(short)) return "finished";
+  return "upcoming";
+}
+
+function formatKickoff(dateStr?: string) {
+  if (!dateStr) return "--:--";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(dateStr));
+}
+
+function statValue(items: ApiStatItem[] | undefined, type: string) {
+  const item = items?.find((stat) => stat.type === type);
+  if (!item) return 0;
+  const raw =
+    typeof item.value === "string" ? Number(item.value.replace("%", "")) : item.value;
+  return Number.isFinite(raw) ? Number(raw) : 0;
+}
+
+function mapStats(teams?: ApiTeamStats[]): RealtimeStats | null {
+  if (!teams || teams.length < 2) return null;
+  const home = teams[0].statistics;
+  const away = teams[1].statistics;
+
+  return {
+    possessionHome: statValue(home, "Ball Possession"),
+    possessionAway: statValue(away, "Ball Possession"),
+    shotsHome: statValue(home, "Total Shots"),
+    shotsAway: statValue(away, "Total Shots"),
+    shotsOnTargetHome: statValue(home, "Shots on Target"),
+    shotsOnTargetAway: statValue(away, "Shots on Target"),
+    cornersHome: statValue(home, "Corner Kicks"),
+    cornersAway: statValue(away, "Corner Kicks"),
+    yellowCardsHome: statValue(home, "Yellow Cards"),
+    yellowCardsAway: statValue(away, "Yellow Cards"),
+    dangerousAttacksHome: statValue(home, "Dangerous Attacks"),
+    dangerousAttacksAway: statValue(away, "Dangerous Attacks"),
+    xGHome: statValue(home, "Expected Goals"),
+    xGAway: statValue(away, "Expected Goals"),
+  };
+}
+
+function mapOdds(bets?: ApiBet[]): OddsData | null {
+  if (!bets) return null;
+
+  const winner = bets.find((bet) => bet.name === "Match Winner");
+  const overUnder = bets.find((bet) => bet.name === "Goals Over/Under");
+  const handicap = bets.find((bet) => bet.name === "Asian Handicap");
+  const value = (name: string) =>
+    Number(winner?.values?.find((item) => item.value === name)?.odd);
+
+  return {
+    homeWin: value("Home") || fallbackOdds.homeWin,
+    draw: value("Draw") || fallbackOdds.draw,
+    awayWin: value("Away") || fallbackOdds.awayWin,
+    handicap: handicap?.values?.[0]?.value ?? fallbackOdds.handicap,
+    overUnder: overUnder?.values?.[0]?.value ?? fallbackOdds.overUnder,
+  };
+}
+
+function mapForm(raw: ApiRecentForm | null | undefined, teamId?: number | null): RecentForm {
+  if (!raw?.response?.length || !teamId) return [];
+
+  return raw.response.slice(0, 5).map((fixture) => {
+    const isHome = fixture.teams.home.id === teamId;
+    const gf = isHome ? fixture.goals.home ?? 0 : fixture.goals.away ?? 0;
+    const ga = isHome ? fixture.goals.away ?? 0 : fixture.goals.home ?? 0;
+    if (gf > ga) return "W";
+    if (gf < ga) return "L";
+    return "D";
+  });
+}
+
+function formLabel(result: "W" | "D" | "L") {
+  return { W: "胜", D: "平", L: "负" }[result];
+}
+
+function buildAnalysisBody(
+  match: Match,
+  stats: RealtimeStats,
+  odds: OddsData,
+  form: { home: RecentForm; away: RecentForm }
+): MatchAnalysisData {
+  return {
+    homeTeam: match.homeTeam,
+    awayTeam: match.awayTeam,
+    league: match.league,
+    homeForm: form.home.join("-"),
+    awayForm: form.away.join("-"),
+    homeStats: {
+      possession: stats.possessionHome,
+      shots: stats.shotsHome,
+      shotsOnTarget: stats.shotsOnTargetHome,
+      xG: stats.xGHome,
+      corners: stats.cornersHome,
+    },
+    awayStats: {
+      possession: stats.possessionAway,
+      shots: stats.shotsAway,
+      shotsOnTarget: stats.shotsOnTargetAway,
+      xG: stats.xGAway,
+      corners: stats.cornersAway,
+    },
+    odds,
+  };
+}
+
+function ProbabilityBar({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+}) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-[color:var(--accent)]/20 bg-black/40">
-      <div className="pointer-events-none blur-sm">
-        <div className="opacity-75">{children}</div>
+    <div>
+      <div className="mb-1 flex justify-between text-[11px] text-white/55">
+        <span>{label}</span>
+        <span>{value.toFixed(1)}%</span>
       </div>
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black/90" />
-      <div className="pointer-events-auto absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
-        <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--accent)]">
-          ScoutAI · 高级策略
-        </div>
-        <p className="max-w-xs text-xs text-white/70">
-          解锁完整投资建议与爆冷概率，需要开通会员或连接授权账号。
-        </p>
-        <button className="mt-1 rounded-full bg-[color:var(--accent)] px-4 py-1.5 text-xs font-semibold text-black shadow-[0_0_30px_rgba(0,255,135,0.8)] transition hover:bg-emerald-300">
-          解锁高级会员
-        </button>
+      <div className="h-2 overflow-hidden rounded-full bg-white/5">
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${value}%` }} />
       </div>
     </div>
   );
@@ -131,743 +316,760 @@ function StatRow({
 }) {
   const total = home + away || 1;
   const homePct = (home / total) * 100;
-  const awayPct = (away / total) * 100;
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-black/30 px-3 py-2 text-xs">
-      <div className="flex w-10 justify-start font-mono text-[10px] text-white/70">
-        {isPercent ? `${home}%` : home}
+    <div className="rounded-lg border border-white/5 bg-black/25 px-3 py-2 text-xs">
+      <div className="flex justify-between text-white/70">
+        <span>{isPercent ? `${home}%` : home}</span>
+        <span className="text-white/50">{label}</span>
+        <span>{isPercent ? `${away}%` : away}</span>
       </div>
-      <div className="flex-1">
-        <div className="flex justify-between text-[11px] text-white/50">
-          <span>{label}</span>
-          <span className="font-mono text-[10px] text-white/40">
-            {isPercent ? `${away}%` : away}
-          </span>
-        </div>
-        <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-white/5">
-          <div
-            className="h-full bg-[color:var(--accent)]"
-            style={{ width: `${homePct}%` }}
-          />
-          <div
-            className="h-full bg-red-500/70"
-            style={{ width: `${awayPct}%` }}
-          />
-        </div>
+      <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/5">
+        <div className="bg-[color:var(--accent)]" style={{ width: `${homePct}%` }} />
+        <div className="flex-1 bg-red-500/70" />
       </div>
     </div>
   );
 }
 
-function FormBadge({ result }: { result: "W" | "D" | "L" }) {
-  const map: Record<"W" | "D" | "L", { label: string; className: string }> = {
-    W: {
-      label: "胜",
-      className:
-        "bg-emerald-500/20 text-emerald-300 border-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.4)]",
-    },
-    D: {
-      label: "平",
-      className: "bg-slate-500/20 text-slate-200 border-slate-400/40",
-    },
-    L: {
-      label: "负",
-      className: "bg-red-500/20 text-red-300 border-red-400/40",
-    },
-  };
-  const cfg = map[result];
+function ProMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
   return (
-    <span
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold ${cfg.className}`}
-    >
-      {cfg.label}
-    </span>
+    <div className="rounded-xl border border-white/5 bg-black/25 p-3">
+      <div className="text-[11px] text-white/45">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-white">{value}</div>
+      <div className="mt-1 text-[11px] leading-5 text-white/45">{detail}</div>
+    </div>
   );
 }
 
-export default function MatchDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const resolvedParams = React.use(params as any) as { id: string };
-  const fixtureId = Number(resolvedParams.id);
+function createDraftOrderNo() {
+  const date = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date())
+    .replaceAll("-", "");
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `PRO-${date}-${random}`;
+}
 
-  const fallbackMatch: Match = {
-    id: "unknown",
+function msUntilBeijingMidnight() {
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+  const beijingNow = new Date(utcMs + 8 * 60 * 60_000);
+  const nextBeijingMidnightUtc =
+    Date.UTC(
+      beijingNow.getUTCFullYear(),
+      beijingNow.getUTCMonth(),
+      beijingNow.getUTCDate() + 1
+    ) -
+    8 * 60 * 60_000;
+
+  return Math.max(0, nextBeijingMidnightUtc - now.getTime());
+}
+
+function formatCountdown(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+function UpgradeModal({
+  open,
+  onClose,
+  email,
+  orderNo,
+  application,
+  submitting,
+  error,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  email?: string | null;
+  orderNo: string;
+  application: PaymentApplication | null;
+  submitting: boolean;
+  error: string | null;
+  onSubmit: () => void;
+}) {
+  const [promoCountdown, setPromoCountdown] = useState(() =>
+    formatCountdown(msUntilBeijingMidnight())
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const tick = () => setPromoCountdown(formatCountdown(msUntilBeijingMidnight()));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-5 shadow-[0_25px_90px_rgba(0,0,0,0.85)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]/80">
+              Pro
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+              首月 Pro 体验：把难懂的比赛先筛掉
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              免费版给基础概率；Pro 会把风险、热度、盘口信号和 AI 解读合成一份更容易看的赛前判断。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60 hover:text-white"
+          >
+            关闭
+          </button>
+        </div>
+
+        <div className="mt-5 overflow-hidden rounded-2xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10">
+          <div className="grid gap-4 p-4 md:grid-cols-[1.2fr_0.8fr] md:items-center">
+            <div>
+              <div className="text-xs font-semibold text-[color:var(--accent)]">
+                新用户首月优惠
+              </div>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <span className="pb-1 text-sm text-white/42 line-through">
+                  原价 {PRO_ORIGINAL_PRICE_CNY}/月
+                </span>
+                <span className="text-4xl font-semibold tracking-tight text-white">
+                  {PRO_MONTHLY_PRICE_CNY}
+                </span>
+                <span className="pb-1 text-sm text-white/65">首月体验</span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-white/55">
+                当前先人工核对到账，不会自动续费；后续续费价格会在付款前明确显示。
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-center">
+              <div className="text-[11px] text-white/45">今日优惠倒计时</div>
+              <div className="mt-1 font-mono text-2xl font-semibold text-[color:var(--accent)]">
+                {promoCountdown}
+              </div>
+              <div className="mt-1 text-[11px] text-white/45">按北京时间刷新</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {proBenefits.map((benefit) => (
+            <div key={benefit.title} className="rounded-xl border border-white/6 bg-black/25 p-3">
+              <div className="text-sm font-semibold text-white">{benefit.title}</div>
+              <div className="mt-1 text-xs leading-5 text-white/50">{benefit.detail}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+            <div className="text-[11px] text-white/45">注册邮箱</div>
+            <div className="mt-1 break-all text-sm font-semibold text-white">
+              {email ?? "请先登录后再提交申请"}
+            </div>
+            <div className="mt-3 text-[11px] text-white/45">订单编号</div>
+            <div className="mt-1 break-all rounded-lg bg-black/35 px-3 py-2 text-xs font-semibold text-[color:var(--accent)]">
+              {application?.order_no ?? orderNo}
+            </div>
+            <div className="mt-3 text-[11px] text-white/45">应付金额</div>
+            <div className="mt-1 text-lg font-semibold text-white">{PRO_MONTHLY_PRICE_CNY}</div>
+            <div className="mt-3 rounded-lg border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-[11px] leading-5 text-[color:var(--accent)]">
+              付款时如能填写备注，请填订单编号，方便后台快速核对。
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+              <div className="mb-2 text-xs font-semibold text-white">微信支付</div>
+              <Image
+                src="/payments/wechat.jpg"
+                alt="微信支付收款码"
+                width={414}
+                height={586}
+                className="mx-auto h-64 w-full rounded-lg bg-white object-contain"
+              />
+            </div>
+            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+              <div className="mb-2 text-xs font-semibold text-white">支付宝</div>
+              <Image
+                src="/payments/alipay.jpg"
+                alt="支付宝收款码"
+                width={640}
+                height={960}
+                className="mx-auto h-64 w-full rounded-lg bg-white object-contain"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3 text-xs leading-6 text-white/58">
+          <div>付款完成后，通常 30 分钟内人工开通。</div>
+          <div>客服开通时间：每日 09:00 - 18:00。非工作时间付款会顺延处理。</div>
+          <div>若 30 分钟后仍未开通，请联系客服并提供订单编号。</div>
+        </div>
+
+        {application ? (
+          <div className="mt-4 rounded-xl border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-2 text-xs leading-6 text-[color:var(--accent)]">
+            付款申请已提交：{application.order_no}。管理员核对到账后会为 {application.email} 开通 Pro。
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={submitting || !email}
+            className="mt-4 w-full rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_28px_rgba(0,255,135,0.55)] hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? "提交中..." : email ? "我已付款，提交开通申请" : "请先登录"}
+          </button>
+        )}
+
+        {error && (
+          <div className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function MatchDetailPage() {
+  const params = useParams<{ id: string }>();
+  const fixtureId = Number(params.id);
+  const user = useAuthStore((state) => state.user);
+  const session = useAuthStore((state) => state.session);
+
+  const [match, setMatch] = useState<Match>({
+    id: fixtureId,
     league: "未知联赛",
     homeTeam: "主队",
     awayTeam: "客队",
     kickOff: "--:--",
-    minute: 0,
     homeScore: 0,
     awayScore: 0,
     status: "upcoming",
-  };
-  const [match, setMatch] = useState<Match>(fallbackMatch);
-  const [stats, setStats] = useState<RealtimeStats | null>(null);
-  const [odds, setOdds] = useState<OddsData | null>(null);
-  const [recentForm, setRecentForm] = useState<{
-    home: RecentForm;
-    away: RecentForm;
-  } | null>(null);
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [loadingOdds, setLoadingOdds] = useState(true);
-  const [loadingForm, setLoadingForm] = useState(true);
+  });
+  const [stats, setStats] = useState<RealtimeStats>(fallbackStats);
+  const [odds, setOdds] = useState<OddsData>(fallbackOdds);
+  const [recentForm, setRecentForm] = useState(fallbackForm);
+  const [loading, setLoading] = useState(true);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [serverPrediction, setServerPrediction] = useState<PredictionResult | null>(null);
+  const [membership, setMembership] = useState<Membership>(() => freeMembership());
+  const [membershipLoading, setMembershipLoading] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [paymentOrderNo, setPaymentOrderNo] = useState("");
+  const [paymentApplication, setPaymentApplication] = useState<PaymentApplication | null>(null);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
-  const user = useAuthStore((s) => s.user);
-  const session = useAuthStore((s) => s.session);
-
-  const aiPrediction = {
-    predictedScore: "2 - 1",
-    winProbHome: 58,
-    winProbDraw: 22,
-    winProbAway: 20,
-    stakeSuggestion: "建议投入 3% 资金（示例数据）",
-    direction: "主胜 -1 方向（让一球）",
-    expectedReturn: "预期收益率约 18%（基于当前赔率与模型边际）",
-    riskLevel: "中" as const,
-    analysisLines: [
-      "模型结合双方进攻效率与射门分布，认为主队胜面更大。",
-      "若盘口继续朝主队方向下调，价值空间将逐步收窄。",
-      "你可以根据自己的风险偏好适当调整投入比例。",
-    ],
-    updatedAt: "基于最近一次数据更新",
-  };
+  const isPro = membership.plan === "pro" && membership.status === "active";
 
   useEffect(() => {
     if (!fixtureId || Number.isNaN(fixtureId)) return;
 
     async function load() {
+      setLoading(true);
       try {
-        console.log('Loading fixture ID:', fixtureId);
         const res = await fetch(`/api/match/${fixtureId}`);
-        const json = await res.json();
-        console.log('API response:', json);
+        const json = (await res.json()) as ApiMatchResponse;
+        const fixture = json.fixture?.response?.[0];
+        const teams = json.statistics?.response;
 
-        if (json.statistics && Array.isArray(json.statistics.response)) {
-          const teams = json.statistics.response;
-          if (teams.length >= 2) {
-            const homeTeam = translateTeam(teams[0].team.name as string);
-            const awayTeam = translateTeam(teams[1].team.name as string);
-            setMatch((prev) => ({
-              ...prev,
-              id: String(fixtureId),
-              homeTeam,
-              awayTeam,
-            }));
-
-            const homeStatsRaw = teams[0].statistics as any[];
-            const awayStatsRaw = teams[1].statistics as any[];
-
-            function val(arr: any[], type: string): number {
-              const item = arr.find((s) => s.type === type);
-              if (!item) return 0;
-              const v =
-                typeof item.value === "string"
-                  ? parseFloat(String(item.value).replace("%", ""))
-                  : item.value;
-              return Number.isFinite(v) ? v : 0;
-            }
-
-            const realStats: RealtimeStats = {
-              possessionHome: val(homeStatsRaw, "Ball Possession"),
-              possessionAway: val(awayStatsRaw, "Ball Possession"),
-              shotsHome: val(homeStatsRaw, "Total Shots"),
-              shotsAway: val(awayStatsRaw, "Total Shots"),
-              shotsOnTargetHome: val(homeStatsRaw, "Shots on Target"),
-              shotsOnTargetAway: val(awayStatsRaw, "Shots on Target"),
-              cornersHome: val(homeStatsRaw, "Corner Kicks"),
-              cornersAway: val(awayStatsRaw, "Corner Kicks"),
-              yellowCardsHome: val(homeStatsRaw, "Yellow Cards"),
-              yellowCardsAway: val(awayStatsRaw, "Yellow Cards"),
-              dangerousAttacksHome: val(
-                homeStatsRaw,
-                "Dangerous Attacks"
-              ),
-              dangerousAttacksAway: val(
-                awayStatsRaw,
-                "Dangerous Attacks"
-              ),
-              xGHome: val(homeStatsRaw, "Expected Goals"),
-              xGAway: val(awayStatsRaw, "Expected Goals"),
-            };
-            setStats(realStats);
-          }
-        } else {
-          setStats(fallbackStats);
-        }
-        setLoadingStats(false);
-
-        if (json.odds && Array.isArray(json.odds.response)) {
-          const first = json.odds.response[0];
-          const bookmaker = first?.bookmakers?.[0];
-          const bets = bookmaker?.bets ?? [];
-          const matchWinner = bets.find(
-            (b: any) => b.name === "Match Winner"
-          );
-          const ou = bets.find(
-            (b: any) => b.name === "Goals Over/Under"
-          );
-          const asian = bets.find(
-            (b: any) => b.name === "Asian Handicap"
-          );
-
-          const openingOdds: OddsData["opening"] = {
-            homeWin:
-              parseFloat(
-                matchWinner?.values?.find((v: any) => v.value === "Home")
-                  ?.odd
-              ) || fallbackOdds.opening.homeWin,
-            draw:
-              parseFloat(
-                matchWinner?.values?.find((v: any) => v.value === "Draw")
-                  ?.odd
-              ) || fallbackOdds.opening.draw,
-            awayWin:
-              parseFloat(
-                matchWinner?.values?.find((v: any) => v.value === "Away")
-                  ?.odd
-              ) || fallbackOdds.opening.awayWin,
-            handicap: asian?.values?.[0]?.value ?? fallbackOdds.opening.handicap,
-            overUnder: ou?.values?.[0]?.value ?? fallbackOdds.opening.overUnder,
-          };
-
-          const liveOdds: OddsData["live"] = {
-            ...openingOdds,
-          };
-
-          setOdds({
-            opening: openingOdds,
-            live: liveOdds,
-            upsetProbability: fallbackOdds.upsetProbability,
+        if (fixture) {
+          setMatch({
+            id: fixture.fixture.id,
+            league: translateLeague(`${fixture.league.name} · ${fixture.league.round ?? ""}`.trim()),
+            homeTeam: translateTeam(fixture.teams.home.name),
+            awayTeam: translateTeam(fixture.teams.away.name),
+            kickOff: formatKickoff(fixture.fixture.date),
+            minute: fixture.fixture.status.elapsed ?? undefined,
+            homeScore: fixture.goals.home ?? 0,
+            awayScore: fixture.goals.away ?? 0,
+            status: statusFromShort(fixture.fixture.status.short),
           });
-        } else {
-          setOdds(fallbackOdds);
+        } else if (teams && teams.length >= 2) {
+          setMatch((current) => ({
+            ...current,
+            homeTeam: translateTeam(teams[0].team.name),
+            awayTeam: translateTeam(teams[1].team.name),
+          }));
         }
-        setLoadingOdds(false);
 
-        if (json.recentForm) {
-          function mapForm(raw: any): RecentForm {
-            const fixtures = raw?.response ?? [];
-            return fixtures.map((f: any) => {
-              const goalsHome = f.goals.home;
-              const goalsAway = f.goals.away;
-              const isHome = f.teams.home.id === f.team?.id;
-              const gf = isHome ? goalsHome : goalsAway;
-              const ga = isHome ? goalsAway : goalsHome;
-              if (gf > ga) return "W";
-              if (gf < ga) return "L";
-              return "D";
-            });
-          }
+        const nextStats = mapStats(teams);
+        if (nextStats) setStats(nextStats);
 
-          const homeForm =
-            json.recentForm.home != null
-              ? mapForm(json.recentForm.home)
-              : fallbackForm.home;
-          const awayForm =
-            json.recentForm.away != null
-              ? mapForm(json.recentForm.away)
-              : fallbackForm.away;
-          setRecentForm({ home: homeForm, away: awayForm });
-        } else {
-          setRecentForm(fallbackForm);
-        }
-        setLoadingForm(false);
+        const bets = json.odds?.response?.[0]?.bookmakers?.[0]?.bets;
+        const nextOdds = mapOdds(bets);
+        if (nextOdds) setOdds(nextOdds);
+
+        const homeForm = mapForm(json.recentForm?.home, json.teamIds?.home);
+        const awayForm = mapForm(json.recentForm?.away, json.teamIds?.away);
+        setRecentForm({
+          home: homeForm.length ? homeForm : fallbackForm.home,
+          away: awayForm.length ? awayForm : fallbackForm.away,
+        });
       } catch {
         setStats(fallbackStats);
         setOdds(fallbackOdds);
         setRecentForm(fallbackForm);
-        setLoadingStats(false);
-        setLoadingOdds(false);
-        setLoadingForm(false);
+      } finally {
+        setLoading(false);
       }
     }
 
     load();
   }, [fixtureId]);
 
-  async function handleAnalyze() {
-    if (!user || !session) {
-      setAiError("请先登录后再使用 AI 分析");
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMembership() {
+      if (!session) {
+        setMembership(freeMembership());
+        return;
+      }
+
+      setMembershipLoading(true);
+      try {
+        const res = await fetch("/api/membership", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const json = (await res.json()) as { membership?: Membership };
+        if (!cancelled) setMembership(json.membership ?? freeMembership(user?.email));
+      } catch {
+        if (!cancelled) setMembership(freeMembership(user?.email));
+      } finally {
+        if (!cancelled) setMembershipLoading(false);
+      }
+    }
+
+    loadMembership();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, user?.email]);
+
+  const analysisBody = useMemo(
+    () => buildAnalysisBody(match, stats, odds, recentForm),
+    [match, odds, recentForm, stats]
+  );
+
+  const localPrediction = useMemo(
+    () => calculateFootballPrediction(analysisBody, defaultPrefs),
+    [analysisBody]
+  );
+
+  const prediction = serverPrediction ?? localPrediction;
+  const topSignal = prediction.valueSignals[0];
+  const modelDisagreement = Math.min(
+    100,
+    Math.max(8, Math.round(100 - prediction.confidence + Math.abs(topSignal.edge ?? 0) * 0.6))
+  );
+  const upsetRisk = Math.min(
+    78,
+    Math.max(
+      12,
+      Math.round(
+        prediction.probabilities.awayWin * 0.7 +
+          prediction.probabilities.draw * 0.35 +
+          (topSignal.edge != null && topSignal.edge < 0 ? 8 : 0)
+      )
+    )
+  );
+  const proUntilLabel = membership.proUntil
+    ? new Date(membership.proUntil).toLocaleDateString("zh-CN", {
+        timeZone: "Asia/Shanghai",
+      })
+    : null;
+
+  function openUpgrade() {
+    setPaymentError(null);
+    setPaymentApplication(null);
+    setPaymentOrderNo(createDraftOrderNo());
+    setUpgradeOpen(true);
+  }
+
+  async function handleSubmitPaymentApplication() {
+    if (!session) {
+      setPaymentError("请先登录后再提交付款申请");
       return;
     }
+
+    setPaymentSubmitting(true);
+    setPaymentError(null);
+
+    try {
+      const res = await fetch("/api/payment-applications", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ orderNo: paymentOrderNo || createDraftOrderNo(), months: 1 }),
+      });
+
+      const json = (await res.json()) as {
+        application?: PaymentApplication;
+        error?: string;
+      };
+
+      if (!res.ok) throw new Error(json.error ?? "提交付款申请失败");
+      setPaymentApplication(json.application ?? null);
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "提交付款申请失败");
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }
+
+  async function handleAnalyze() {
     setAiLoading(true);
     setAiError(null);
     setAiAnalysis(null);
 
+    if (!user || !session) {
+      openUpgrade();
+      setAiLoading(false);
+      return;
+    }
+
+    if (!isPro) {
+      openUpgrade();
+      setAiLoading(false);
+      return;
+    }
+
     try {
-      const s = stats ?? fallbackStats;
-      const o = odds ?? fallbackOdds;
-      const f = recentForm ?? fallbackForm;
-
-      const body = {
-        homeTeam: match.homeTeam,
-        awayTeam: match.awayTeam,
-        league: match.league,
-        homeForm: f.home.join("-"),
-        awayForm: f.away.join("-"),
-        homeStats: {
-          possession: s.possessionHome,
-          shots: s.shotsHome,
-          shotsOnTarget: s.shotsOnTargetHome,
-          xG: s.xGHome,
-          corners: s.cornersHome,
-        },
-        awayStats: {
-          possession: s.possessionAway,
-          shots: s.shotsAway,
-          shotsOnTarget: s.shotsOnTargetAway,
-          xG: s.xGAway,
-          corners: s.cornersAway,
-        },
-        odds: {
-          homeWin: o.opening.homeWin,
-          draw: o.opening.draw,
-          awayWin: o.opening.awayWin,
-          handicap: o.opening.handicap,
-          overUnder: o.opening.overUnder,
-        },
-      };
-
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(analysisBody),
       });
 
-      const json = await res.json();
+      const json = (await res.json()) as {
+        analysis?: string;
+        prediction?: PredictionResult;
+        error?: string;
+      };
       if (!res.ok) throw new Error(json.error ?? "分析失败");
-      setAiAnalysis(json.analysis);
-    } catch (e: any) {
-      setAiError(e.message ?? "AI 分析失败，请稍后重试");
+
+      setAiAnalysis(json.analysis ?? null);
+      if (json.prediction) setServerPrediction(json.prediction);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "AI 分析失败，请稍后重试";
+      setAiError(message);
     } finally {
       setAiLoading(false);
     }
   }
 
-  const statsToShow = stats ?? fallbackStats;
-  const oddsToShow = odds ?? fallbackOdds;
-  const formToShow = recentForm ?? fallbackForm;
-
   return (
     <div className="space-y-6">
-      {/* 顶部返回 + 比赛基本信息 */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-2 text-xs text-white/60 hover:text-white"
-      >
-        <span className="text-lg">←</span>
-        返回热门赛事
+      <Link href="/" className="inline-flex items-center gap-2 text-xs text-white/60 hover:text-white">
+        ← 返回热门赛事
       </Link>
 
-      {/* 1. 顶部主队 vs 客队 */}
-      <section className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4 shadow-[0_18px_75px_rgba(0,0,0,0.85)]">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+      <section className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4 shadow-[0_18px_75px_rgba(0,0,0,0.75)]">
+        <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
           <div>
             <div className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--accent)]/80">
               {translateLeague(match.league)}
             </div>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight md:text-2xl">
-              {match.homeTeam}{" "}
-              <span className="text-sm text-white/40">vs</span>{" "}
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+              {match.homeTeam} <span className="text-base text-white/40">vs</span>{" "}
               {match.awayTeam}
             </h1>
-            <p className="mt-1 text-xs text-white/60">
+            <p className="mt-2 text-xs text-white/55">
               开球时间：{match.kickOff}
+              {match.status === "live" && ` · 进行中 ${match.minute ?? 0}'`}
             </p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-baseline gap-2 text-3xl font-semibold">
-              <span>{match.homeScore}</span>
-              <span className="text-base text-white/40">:</span>
-              <span>{match.awayScore}</span>
+          <div className="flex items-center gap-5">
+            <div className="text-4xl font-semibold">
+              {match.homeScore}
+              <span className="mx-2 text-xl text-white/35">:</span>
+              {match.awayScore}
             </div>
-            <div className="flex flex-col items-end gap-2">
-              {match.status === "live" && match.minute && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-                  进行中 · {match.minute}&apos;
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 text-[10px] font-medium text-white/70">
-                实时状态 · ScoutAI 模型监控中
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 2. AI 预测区块 + 付费遮罩 */}
-      <section className="grid gap-4 md:grid-cols-[1.4fr,1fr]">
-        <div className="space-y-4 rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold tracking-tight">AI 预测</h2>
-            <span className="text-[10px] text-white/50">
-              {aiPrediction.updatedAt}
+            <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs text-white/65">
+              {loading ? "数据同步中" : "模型已更新"}
             </span>
           </div>
+        </div>
+      </section>
 
-          <div className="flex items-center gap-6">
+      <section className="grid gap-4 md:grid-cols-[1.35fr,1fr]">
+        <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[11px] text-white/50">预测比分</div>
+              <div className="mb-2 inline-flex rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white/55">
+                免费版 · 基础预测
+              </div>
+              <h2 className="text-sm font-semibold">基础概率预测</h2>
+              <p className="mt-1 text-[11px] text-white/50">
+                {prediction.modelVersion} · 置信度 {prediction.confidence}%
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] text-white/45">最可能比分</div>
               <div className="text-2xl font-semibold text-[color:var(--accent)]">
-                {aiPrediction.predictedScore}
-              </div>
-            </div>
-            <div className="flex-1">
-              <div className="mb-1 flex justify-between text-[11px] text-white/60">
-                <span>胜平负概率</span>
-                <span className="font-mono text-[10px] text-white/45">
-                  主胜 {aiPrediction.winProbHome}% · 平{" "}
-                  {aiPrediction.winProbDraw}% · 客胜{" "}
-                  {aiPrediction.winProbAway}%
-                </span>
-              </div>
-              <div className="flex h-3 overflow-hidden rounded-full bg-white/5 text-[10px]">
-                <div
-                  className="flex items-center justify-center bg-[color:var(--accent)] text-[9px] font-semibold text-black shadow-[0_0_18px_rgba(0,255,135,0.8)]"
-                  style={{ width: `${aiPrediction.winProbHome}%` }}
-                >
-                  主
-                </div>
-                <div
-                  className="flex items-center justify-center bg-slate-500/80 text-[9px] text-white"
-                  style={{ width: `${aiPrediction.winProbDraw}%` }}
-                >
-                  平
-                </div>
-                <div
-                  className="flex items-center justify-center bg-red-500/80 text-[9px] text-white"
-                  style={{ width: `${aiPrediction.winProbAway}%` }}
-                >
-                  客
-                </div>
+                {prediction.predictedScore.label}
               </div>
             </div>
           </div>
 
-          <PaywalledContent>
-            <div className="space-y-3 p-3 text-xs text-white/80">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div>
-                  <div className="text-[11px] text-white/50">建议投入金额</div>
-                  <div className="mt-0.5 font-medium">
-                    {aiPrediction.stakeSuggestion}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] text-white/50">推荐方向</div>
-                  <div className="mt-0.5 font-medium text-[color:var(--accent)]">
-                    {aiPrediction.direction}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] text-white/50">预期收益 & 风险</div>
-                  <div className="mt-0.5 font-medium">
-                    {aiPrediction.expectedReturn} · 风险等级：{" "}
-                    <span
-                      className={
-                        aiPrediction.riskLevel === "低"
-                          ? "text-emerald-300"
-                          : aiPrediction.riskLevel === "中"
-                            ? "text-amber-300"
-                            : "text-red-300"
-                      }
-                    >
-                      {aiPrediction.riskLevel}
-                    </span>
-                  </div>
-                </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            <ProbabilityBar label="主胜" value={prediction.probabilities.homeWin} tone="bg-[color:var(--accent)]" />
+            <ProbabilityBar label="平局" value={prediction.probabilities.draw} tone="bg-slate-400" />
+            <ProbabilityBar label="客胜" value={prediction.probabilities.awayWin} tone="bg-red-500" />
+          </div>
+
+          <div className="mt-5 grid gap-3 text-xs md:grid-cols-3">
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-white/45">预期进球</div>
+              <div className="mt-1 text-base font-semibold">
+                {prediction.expectedGoals.home.toFixed(2)} - {prediction.expectedGoals.away.toFixed(2)}
               </div>
-              <ul className="space-y-1 text-[11px] text-white/70">
-                {aiPrediction.analysisLines.map((line, idx) => (
-                  <li key={idx}>· {line}</li>
-                ))}
-              </ul>
             </div>
-          </PaywalledContent>
-        </div>
-
-        {/* 3. 实时数据左右对比 */}
-        <div className="space-y-3 rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
-          <h2 className="text-sm font-semibold tracking-tight">实时数据对比</h2>
-          {loadingStats && !stats ? (
-            <p className="mt-2 text-[11px] text-white/55">数据加载中...</p>
-          ) : stats ? (
-            <div className="mt-2 space-y-2">
-              <StatRow
-                label="控球率"
-                home={stats.possessionHome}
-                away={stats.possessionAway}
-                isPercent
-              />
-              <StatRow
-                label="射门（总数）"
-                home={stats.shotsHome}
-                away={stats.shotsAway}
-              />
-              <StatRow
-                label="射正"
-                home={stats.shotsOnTargetHome}
-                away={stats.shotsOnTargetAway}
-              />
-              <StatRow
-                label="角球"
-                home={stats.cornersHome}
-                away={stats.cornersAway}
-              />
-              <StatRow
-                label="黄牌"
-                home={stats.yellowCardsHome}
-                away={stats.yellowCardsAway}
-              />
-              <StatRow
-                label="危险进攻"
-                home={stats.dangerousAttacksHome}
-                away={stats.dangerousAttacksAway}
-              />
-              <StatRow
-                label="预期进球 xG"
-                home={stats.xGHome}
-                away={stats.xGAway}
-              />
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-white/45">大 2.5</div>
+              <div className="mt-1 text-base font-semibold">{prediction.probabilities.over25}%</div>
             </div>
-          ) : (
-            <p className="mt-2 text-[11px] text-white/55">数据暂时不可用。</p>
-          )}
-        </div>
-      </section>
-
-      {/* 4. 赔率分析 + 付费爆冷概率 */}
-      <section className="grid gap-4 md:grid-cols-[1.2fr,1fr]">
-        <div className="space-y-3 rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
-          <h2 className="text-sm font-semibold tracking-tight">赔率分析</h2>
-          <p className="text-[11px] text-white/55">
-            数据来自 API-Football，可能存在一定延迟。
-          </p>
-
-          <div className="mt-2 grid gap-3 text-xs md:grid-cols-2">
-            <div className="space-y-2 rounded-xl bg-black/30 p-3">
-              <div className="text-[11px] text-white/50">欧赔（开盘 → 即时）</div>
-              {[
-                {
-                  label: "主胜",
-                  open: odds?.opening?.homeWin ?? "--",
-                  live: odds?.live?.homeWin ?? "--",
-                  trend: "down",
-                },
-                {
-                  label: "平局",
-                  open: odds?.opening?.draw ?? "--",
-                  live: odds?.live?.draw ?? "--",
-                  trend: "up",
-                },
-                {
-                  label: "客胜",
-                  open: odds?.opening?.awayWin ?? "--",
-                  live: odds?.live?.awayWin ?? "--",
-                  trend: "up",
-                },
-              ].map((row) => (
-                <div
-                  key={row.label}
-                  className="flex items-center justify-between rounded-lg border border-white/5 bg-black/40 px-2 py-1.5"
-                >
-                  <span className="text-[11px] text-white/70">{row.label}</span>
-                  <div className="flex items-center gap-2 font-mono text-[11px]">
-                    <span className="text-white/45">
-                      {typeof row.open === "number"
-                        ? row.open.toFixed(2)
-                        : row.open}
-                    </span>
-                    <span className="text-white/30">→</span>
-                    <span className="text-white">
-                      {typeof row.live === "number"
-                        ? row.live.toFixed(2)
-                        : row.live}
-                    </span>
-                    <span
-                      className={
-                        row.trend === "down"
-                          ? "text-emerald-400"
-                          : "text-red-400"
-                      }
-                    >
-                      {row.trend === "down" ? "↓" : "↑"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-2 rounded-xl bg-black/30 p-3">
-              <div className="text-[11px] text-white/50">亚盘 / 大小球</div>
-              <div className="rounded-lg border border-white/5 bg-black/40 p-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-white/60">初盘让球</span>
-                  <span className="text-xs text-white">
-                    {odds?.opening?.handicap ?? "--"}
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[11px]">
-                  <span className="text-white/60">即时让球</span>
-                  <span className="text-xs text-[color:var(--accent)]">
-                    {odds?.live?.handicap ?? "--"}
-                  </span>
-                </div>
-              </div>
-              <div className="rounded-lg border border-white/5 bg-black/40 p-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-white/60">初盘大小球</span>
-                  <span className="text-xs text-white">
-                    {odds?.opening?.overUnder ?? "--"}
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[11px]">
-                  <span className="text-white/60">即时大小球</span>
-                  <span className="text-xs text-[color:var(--accent)]">
-                    {odds?.live?.overUnder ?? "--"}
-                  </span>
-                </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-white/45">双方进球</div>
+              <div className="mt-1 text-base font-semibold">
+                {prediction.probabilities.bothTeamsToScore}%
               </div>
             </div>
           </div>
         </div>
 
-        <PaywalledContent>
-          <div className="space-y-2 p-4 text-xs text-white/80">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold tracking-tight">
-                爆冷概率评估
-              </h2>
-              <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-300">
-                爆冷概率：{odds?.upsetProbability ?? "--"}%
-              </span>
-            </div>
-            <p className="text-[11px] text-white/70">
-              综合欧赔、亚盘、进攻质量与比赛节奏，对潜在爆冷风险进行量化评分。
-            </p>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
+        <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
+          <div className="mb-2 inline-flex rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white/55">
+            免费版
+          </div>
+          <h2 className="text-sm font-semibold">基础价值信号</h2>
+          <div className="mt-3 space-y-2">
+            {prediction.valueSignals.map((signal) => (
               <div
-                className="h-full bg-gradient-to-r from-emerald-400 via-amber-300 to-red-500"
-                style={{
-                  width: `${
-                    typeof odds?.upsetProbability === "number"
-                      ? odds.upsetProbability
-                      : 0
-                  }%`,
-                }}
-              />
-            </div>
-            <p className="text-[11px] text-white/75">
-              当前模型认为，若主队在接下来一段时间内未能扩大比分，爆冷概率可能继续上升。
-            </p>
+                key={signal.market}
+                className="flex items-center justify-between rounded-lg border border-white/5 bg-black/25 px-3 py-2 text-xs"
+              >
+                <div>
+                  <div className="font-medium text-white">{signal.label}</div>
+                  <div className="mt-0.5 text-[11px] text-white/45">
+                    公平赔率 {signal.fairOdds.toFixed(2)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-white/75">{signal.modelProbability}%</div>
+                  <div
+                    className={`text-[11px] ${
+                      signal.edge != null && signal.edge > 0
+                        ? "text-[color:var(--accent)]"
+                        : "text-white/40"
+                    }`}
+                  >
+                    {signal.edge == null ? "缺少市场赔率" : `差值 ${signal.edge}%`}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        </PaywalledContent>
+        </div>
       </section>
 
-      {/* 5. MiniMax AI 智能分析 */}
-      <section className="rounded-2xl border border-[color:var(--accent)]/20 bg-[color:var(--card)]/90 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-tight">🤖 AI 智能分析</h2>
-          {!aiAnalysis && !aiLoading && (
+      <section className="grid gap-4 md:grid-cols-[1fr,1fr]">
+        <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
+          <h2 className="text-sm font-semibold">实时数据对比</h2>
+          <div className="mt-3 space-y-2">
+            <StatRow label="控球率" home={stats.possessionHome} away={stats.possessionAway} isPercent />
+            <StatRow label="射门" home={stats.shotsHome} away={stats.shotsAway} />
+            <StatRow label="射正" home={stats.shotsOnTargetHome} away={stats.shotsOnTargetAway} />
+            <StatRow label="角球" home={stats.cornersHome} away={stats.cornersAway} />
+            <StatRow label="黄牌" home={stats.yellowCardsHome} away={stats.yellowCardsAway} />
+            <StatRow label="危险进攻" home={stats.dangerousAttacksHome} away={stats.dangerousAttacksAway} />
+            <StatRow label="xG" home={stats.xGHome} away={stats.xGAway} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
+          <h2 className="text-sm font-semibold">赔率与近况</h2>
+          <div className="mt-3 grid gap-3 text-xs md:grid-cols-3">
+            {[
+              ["主胜", odds.homeWin],
+              ["平局", odds.draw],
+              ["客胜", odds.awayWin],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl bg-black/25 p-3">
+                <div className="text-white/45">{label}</div>
+                <div className="mt-1 text-base font-semibold">{Number(value).toFixed(2)}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-white/45">让球</div>
+              <div className="mt-1 text-white/80">{odds.handicap}</div>
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-white/45">大小球</div>
+              <div className="mt-1 text-white/80">{odds.overUnder}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
+            {[
+              [match.homeTeam, recentForm.home],
+              [match.awayTeam, recentForm.away],
+            ].map(([team, form]) => (
+              <div key={String(team)} className="rounded-xl bg-black/25 p-3">
+                <div className="mb-2 text-white/60">{String(team)} 近 5 场</div>
+                <div className="flex gap-2">
+                  {(form as RecentForm).map((result, index) => (
+                    <span
+                      key={`${result}-${index}`}
+                      className={`flex h-7 w-7 items-center justify-center rounded-full border text-[11px] ${
+                        result === "W"
+                          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300"
+                          : result === "D"
+                            ? "border-slate-400/40 bg-slate-500/15 text-slate-200"
+                            : "border-red-400/40 bg-red-500/15 text-red-300"
+                      }`}
+                    >
+                      {formLabel(result)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-[color:var(--accent)]/20 bg-[color:var(--card)]/90 p-4 shadow-[0_18px_75px_rgba(0,0,0,0.72)]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--accent)]">
+              Pro 高级版 · {PRO_MONTHLY_PRICE_CNY}/月
+            </div>
+            <h2 className="text-sm font-semibold">模型委员会深度预测</h2>
+            <p className="mt-1 text-[11px] text-white/50">
+              盘口、赔率、xG、比分分布和 Claude 深度解释会在这里汇总。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/60">
+              {membershipLoading
+                ? "会员状态同步中"
+                : isPro
+                  ? `Pro 有效${proUntilLabel ? `至 ${proUntilLabel}` : ""}`
+                  : "当前为免费版"}
+            </span>
             <button
               onClick={handleAnalyze}
-              disabled={aiLoading}
-              className="rounded-full bg-[color:var(--accent)] px-4 py-1.5 text-xs font-semibold text-black shadow-[0_0_20px_rgba(0,255,135,0.5)] transition hover:bg-emerald-300 disabled:opacity-50"
+              disabled={aiLoading || membershipLoading}
+              className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-xs font-semibold text-black shadow-[0_0_28px_rgba(0,255,135,0.65)] hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              开始分析
+              {aiLoading ? "分析中..." : isPro ? "生成 Pro 分析" : "解锁 Pro"}
             </button>
-          )}
+          </div>
         </div>
 
-        {!aiAnalysis && !aiLoading && !aiError && (
-          <p className="mt-2 text-[11px] text-white/50">
-            基于当前赛事数据与您的个人风险偏好，由 MiniMax 大模型生成专属投注建议。
-          </p>
-        )}
+        <div className={`mt-4 grid gap-3 md:grid-cols-3 ${isPro ? "" : "opacity-65"}`}>
+          <ProMetric
+            label="模型分歧指数"
+            value={`${modelDisagreement}%`}
+            detail="衡量基础概率、赔率信号和比分分布是否互相打架。"
+          />
+          <ProMetric
+            label="爆冷风险"
+            value={`${upsetRisk}%`}
+            detail="结合平局/客胜尾部概率和市场差值估算。"
+          />
+          <ProMetric
+            label="盘口监控"
+            value={isPro ? "已启用" : "待解锁"}
+            detail="充值实时数据 API 后会展示临场盘口变化。"
+          />
+        </div>
 
-        {aiLoading && (
-          <div className="mt-4 flex items-center gap-2 text-[11px] text-white/60">
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-[color:var(--accent)]" />
-            AI 正在分析中，请稍候...
+        {!isPro && (
+          <div className="mt-4 rounded-xl border border-dashed border-[color:var(--accent)]/25 bg-black/25 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-white">升级后解锁完整深度报告</div>
+                <p className="mt-1 text-xs leading-5 text-white/55">
+                  包含 Claude 分析、盘口异动、爆冷风险、模型分歧、临场变化和风控上限。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openUpgrade}
+                className="rounded-full border border-[color:var(--accent)]/45 bg-[color:var(--accent)]/10 px-4 py-2 text-xs font-semibold text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black"
+              >
+                开通 Pro
+              </button>
+            </div>
           </div>
         )}
 
         {aiError && (
-          <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+          <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
             {aiError}
           </div>
         )}
 
-        {aiAnalysis && (
-          <div className="mt-3 space-y-1">
-            <pre className="whitespace-pre-wrap font-sans text-[12px] leading-relaxed text-white/85">
-              {aiAnalysis}
-            </pre>
-            <button
-              onClick={handleAnalyze}
-              className="mt-3 text-[10px] text-white/40 underline hover:text-white/60"
-            >
-              重新分析
-            </button>
+        {aiAnalysis ? (
+          <pre className="mt-4 whitespace-pre-wrap rounded-xl bg-black/25 p-4 font-sans text-xs leading-6 text-white/85">
+            {aiAnalysis}
+          </pre>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/20 p-4 text-xs leading-6 text-white/55">
+            {isPro
+              ? "点击生成后，会结合你的偏好、模拟积分和模型配置输出 Pro 深度分析。"
+              : "免费版保留基础概率预测；Pro 会展示更完整的模型委员会报告。"}
           </div>
         )}
       </section>
 
-      {/* 6. 近期战绩 */}
-      <section className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
-        <h2 className="text-sm font-semibold tracking-tight">近期战绩（近 5 场）</h2>
-        {loadingForm && !recentForm ? (
-          <p className="mt-2 text-[11px] text-white/55">战绩数据加载中...</p>
-        ) : recentForm ? (
-          <>
-            <div className="mt-3 grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 rounded-xl bg-black/30 p-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-white/70">{match.homeTeam}</span>
-                  <span className="text-[10px] text-white/45">
-                    近期走势
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {recentForm?.home?.map((r, idx) => (
-                    <FormBadge key={idx} result={r} />
-                  )) ?? []}
-                </div>
-              </div>
-              <div className="space-y-2 rounded-xl bg-black/30 p-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-white/70">{match.awayTeam}</span>
-                  <span className="text-[10px] text-white/45">
-                    近期走势
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {recentForm?.away?.map((r, idx) => (
-                    <FormBadge key={idx} result={r} />
-                  )) ?? []}
-                </div>
-              </div>
-            </div>
-            <p className="mt-3 text-[11px] text-white/55">
-              以上战绩由 API-Football 提供，具体胜负结果仅供模型参考。
-            </p>
-          </>
-        ) : (
-          <p className="mt-2 text-[11px] text-white/55">战绩数据暂时不可用。</p>
-        )}
-      </section>
+      <UpgradeModal
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        email={user?.email ?? membership.email}
+        orderNo={paymentOrderNo}
+        application={paymentApplication}
+        submitting={paymentSubmitting}
+        error={paymentError}
+        onSubmit={handleSubmitPaymentApplication}
+      />
     </div>
   );
 }
-

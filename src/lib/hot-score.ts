@@ -58,7 +58,96 @@ const BIG_CLUBS = new Set([
   "Ajax", "AFC Ajax", "PSV Eindhoven",
   "Celtic", "Rangers",
   "Shakhtar Donetsk", "Galatasaray",
+  // 中文展示名
+  "曼城", "曼联", "利物浦", "切尔西", "阿森纳", "热刺",
+  "阿斯顿维拉", "纽卡斯尔联",
+  "皇家马德里", "皇马", "巴塞罗那", "巴萨", "马德里竞技", "马竞",
+  "尤文图斯", "国际米兰", "国米", "AC米兰", "那不勒斯", "罗马", "拉齐奥", "亚特兰大",
+  "拜仁慕尼黑", "拜仁", "多特蒙德", "勒沃库森", "RB莱比锡",
+  "巴黎圣日耳曼", "巴黎", "马赛", "里昂", "摩纳哥",
+  "本菲卡", "波尔图", "阿贾克斯", "埃因霍温", "凯尔特人", "流浪者",
 ]);
+
+const TEAM_WEIGHTS: Record<string, number> = {
+  "Manchester City": 24,
+  "曼城": 24,
+  "Real Madrid": 24,
+  "Real Madrid CF": 24,
+  "皇家马德里": 24,
+  "皇马": 24,
+  "Barcelona": 23,
+  "FC Barcelona": 23,
+  "巴塞罗那": 23,
+  "巴萨": 23,
+  "Liverpool": 22,
+  "利物浦": 22,
+  "Arsenal": 22,
+  "阿森纳": 22,
+  "Bayern Munich": 22,
+  "Bayern München": 22,
+  "FC Bayern München": 22,
+  "拜仁慕尼黑": 22,
+  "拜仁": 22,
+  "Manchester United": 21,
+  "曼联": 21,
+  "Chelsea": 20,
+  "切尔西": 20,
+  "Tottenham Hotspur": 19,
+  "Tottenham": 19,
+  "热刺": 19,
+  "Inter": 19,
+  "Inter Milan": 19,
+  "FC Internazionale": 19,
+  "国际米兰": 19,
+  "国米": 19,
+  "AC Milan": 18,
+  "Milan": 18,
+  "AC米兰": 18,
+  "Juventus": 18,
+  "尤文图斯": 18,
+  "Paris Saint-Germain": 18,
+  "Paris Saint Germain": 18,
+  "PSG": 18,
+  "巴黎圣日耳曼": 18,
+  "巴黎": 18,
+  "Atletico Madrid": 17,
+  "Atlético Madrid": 17,
+  "Atletico de Madrid": 17,
+  "马德里竞技": 17,
+  "马竞": 17,
+  "Borussia Dortmund": 17,
+  "多特蒙德": 17,
+  "Bayer Leverkusen": 17,
+  "勒沃库森": 17,
+  "Napoli": 16,
+  "那不勒斯": 16,
+  "Newcastle United": 16,
+  "纽卡斯尔联": 16,
+  "Aston Villa": 15,
+  "阿斯顿维拉": 15,
+  "AS Roma": 15,
+  "Roma": 15,
+  "罗马": 15,
+  "RB Leipzig": 15,
+  "RB莱比锡": 15,
+  "Lazio": 14,
+  "拉齐奥": 14,
+  "Atalanta": 14,
+  "亚特兰大": 14,
+  "Marseille": 14,
+  "Olympique de Marseille": 14,
+  "马赛": 14,
+  "Lyon": 13,
+  "Olympique Lyonnais": 13,
+  "里昂": 13,
+  "Monaco": 13,
+  "AS Monaco": 13,
+  "摩纳哥": 13,
+};
+
+function teamHeat(team: string) {
+  return TEAM_WEIGHTS[team] ?? (BIG_CLUBS.has(team) ? 15 : 0);
+}
 
 export interface HotScoreInput {
   leagueId: number;
@@ -78,12 +167,9 @@ export function calculateHotScore(m: HotScoreInput): number {
   // 1. 联赛权重（最高 40 分）
   score += LEAGUE_WEIGHTS[m.leagueId] ?? 10;
 
-  // 2. 豪门加成（最高 25 分）
-  const homeBig = BIG_CLUBS.has(m.homeTeam);
-  const awayBig = BIG_CLUBS.has(m.awayTeam);
-  if (homeBig && awayBig) score += 25;
-  else if (homeBig || awayBig) score += 15;
-  else score += 5;
+  // 2. 球队关注度加成（最高 30 分）
+  const teamBoost = Math.min(30, teamHeat(m.homeTeam) + teamHeat(m.awayTeam));
+  score += teamBoost || 5;
 
   // 3. 用户关注联赛加成（10 分）
   if (m.isUserFavoriteLeague) score += 10;
