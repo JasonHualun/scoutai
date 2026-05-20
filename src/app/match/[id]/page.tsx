@@ -76,7 +76,7 @@ type ApiFixture = {
     date: string;
     status: { short: string; elapsed?: number | null };
   };
-  league: { name: string; round?: string | null };
+  league: { id?: number; name: string; round?: string | null };
   teams: {
     home: { id?: number; name: string };
     away: { id?: number; name: string };
@@ -102,6 +102,10 @@ type ApiMatchCard = Match & { leagueId?: number };
 
 type ApiMatchListResponse = {
   matches?: ApiMatchCard[];
+};
+
+type ApiAllFixturesResponse = {
+  fixtures?: ApiFixture[];
 };
 
 type PreferencesRow = {
@@ -197,6 +201,23 @@ function formatKickoff(dateStr?: string) {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(dateStr));
+}
+
+function fixtureToMatchCard(fixture: ApiFixture): ApiMatchCard {
+  const status = statusFromShort(fixture.fixture.status.short);
+
+  return {
+    id: fixture.fixture.id,
+    league: translateLeague(`${fixture.league.name} · ${fixture.league.round ?? ""}`.trim()),
+    homeTeam: translateTeam(fixture.teams.home.name),
+    awayTeam: translateTeam(fixture.teams.away.name),
+    kickOff: formatKickoff(fixture.fixture.date),
+    minute: fixture.fixture.status.elapsed ?? undefined,
+    homeScore: fixture.goals.home ?? 0,
+    awayScore: fixture.goals.away ?? 0,
+    status,
+    leagueId: fixture.league.id,
+  };
 }
 
 function statValue(items: ApiStatItem[] | undefined, type: string) {
@@ -668,6 +689,19 @@ export default function MatchDetailPage() {
 
         if (!fixture) {
           try {
+            const allRes = await fetch("/api/football/all");
+            const allJson = (await allRes.json()) as ApiAllFixturesResponse;
+            const allFixture =
+              allJson.fixtures?.find((item) => Number(item.fixture.id) === fixtureId) ??
+              null;
+            fallbackMatch = allFixture ? fixtureToMatchCard(allFixture) : null;
+          } catch {
+            fallbackMatch = null;
+          }
+        }
+
+        if (!fixture && !fallbackMatch) {
+          try {
             const listRes = await fetch("/api/football/matches");
             const listJson = (await listRes.json()) as ApiMatchListResponse;
             fallbackMatch =
@@ -678,18 +712,9 @@ export default function MatchDetailPage() {
         }
 
         if (fixture) {
-          nextStatus = statusFromShort(fixture.fixture.status.short);
-          setMatch({
-            id: fixture.fixture.id,
-            league: translateLeague(`${fixture.league.name} · ${fixture.league.round ?? ""}`.trim()),
-            homeTeam: translateTeam(fixture.teams.home.name),
-            awayTeam: translateTeam(fixture.teams.away.name),
-            kickOff: formatKickoff(fixture.fixture.date),
-            minute: fixture.fixture.status.elapsed ?? undefined,
-            homeScore: fixture.goals.home ?? 0,
-            awayScore: fixture.goals.away ?? 0,
-            status: nextStatus,
-          });
+          const nextMatch = fixtureToMatchCard(fixture);
+          nextStatus = nextMatch.status;
+          setMatch(nextMatch);
         } else if (fallbackMatch) {
           nextStatus = fallbackMatch.status;
           setMatch({

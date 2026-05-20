@@ -158,6 +158,54 @@ test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await expect(page.locator("body")).not.toContainText("1.35");
 });
 
+test("match detail keeps team and time when schedule comes from fallback list", async ({ page }) => {
+  await page.route("**/api/match/92001", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fixture: { response: [] },
+        statistics: null,
+        odds: null,
+        recentForm: { home: null, away: null },
+        teamIds: { home: null, away: null },
+      }),
+    });
+  });
+
+  await page.route("**/api/football/all", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fixtures: [
+          {
+            fixture: {
+              id: 92001,
+              date: "2026-05-24T15:00:00Z",
+              status: { short: "NS", elapsed: null },
+            },
+            league: { id: 39, name: "Premier League", round: "Matchday 38" },
+            teams: {
+              home: { id: 33, name: "Manchester City" },
+              away: { id: 34, name: "Arsenal" },
+            },
+            goals: { home: null, away: null },
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/match/92001", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("曼城").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("阿森纳").first()).toBeVisible();
+  await expect(page.getByText("开球时间：05/24 23:00")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("未知联赛");
+  await expect(page.locator("body")).not.toContainText("主队");
+});
+
 test("alerts page uses real notification controls instead of demo alerts", async ({ page }) => {
   await page.goto("/alerts", { waitUntil: "networkidle" });
 
