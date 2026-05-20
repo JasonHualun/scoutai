@@ -1,23 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminRequest, unauthorized } from "@/lib/admin-auth";
 import { createServiceRoleClient } from "@/lib/supabase";
 
 type ConfirmEmailBody = {
   email?: string;
 };
 
-function unauthorized(message = "管理员密码无效") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-function adminEnabled(req: NextRequest) {
-  const expected = process.env.ADMIN_ACCESS_TOKEN;
-  if (!expected) return false;
-  const header = req.headers.get("x-admin-token");
-  return header === expected;
-}
-
 export async function POST(req: NextRequest) {
-  if (!adminEnabled(req)) return unauthorized();
+  if (!(await isAdminRequest(req))) return unauthorized();
 
   let body: ConfirmEmailBody;
   try {

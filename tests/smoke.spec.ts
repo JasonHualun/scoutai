@@ -141,6 +141,21 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
   await expect(page.getByText("付款完成后，通常 30 分钟内人工开通。")).toBeVisible();
 });
 
+test("login and register require captcha", async ({ page }) => {
+  await page.goto("/login", { waitUntil: "networkidle" });
+  await expect(page.getByText("验证码")).toBeVisible();
+  await expect(page.getByRole("button", { name: "换一张" })).toBeVisible();
+  await page.getByPlaceholder("you@example.com").fill("captcha-test@example.com");
+  await page.getByPlaceholder("至少 6 位密码").fill("123456");
+  await page.getByPlaceholder("输入验证码").fill("0000");
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page.getByText("验证码错误，请重新输入")).toBeVisible();
+
+  await page.goto("/register", { waitUntil: "networkidle" });
+  await expect(page.getByText("验证码")).toBeVisible();
+  await expect(page.getByRole("button", { name: "换一张" })).toBeVisible();
+});
+
 test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await mockUpcomingMatch(page, 12345);
 

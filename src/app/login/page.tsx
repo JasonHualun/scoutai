@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { CaptchaField } from "@/components/CaptchaField";
 import { translateAuthError } from "@/lib/authErrors";
 import { signInWithEmail } from "@/lib/supabase";
 
@@ -10,19 +11,29 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [captcha, setCaptcha] = useState("");
+  const [captchaRefreshKey, setCaptchaRefreshKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+
+    if (!captcha.trim()) {
+      setError("请输入验证码");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await signInWithEmail(email, password);
+      await signInWithEmail(email, password, captcha);
       router.push("/");
     } catch (err) {
       setError(translateAuthError(err));
+      setCaptcha("");
+      setCaptchaRefreshKey((current) => current + 1);
     } finally {
       setLoading(false);
     }
@@ -72,6 +83,13 @@ export default function LoginPage() {
               忘记密码？
             </Link>
           </div>
+
+          <CaptchaField
+            value={captcha}
+            onChange={setCaptcha}
+            disabled={loading}
+            refreshKey={captchaRefreshKey}
+          />
 
           {error && (
             <div className="space-y-2">

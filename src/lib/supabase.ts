@@ -35,11 +35,22 @@ export function createServiceRoleClient() {
   });
 }
 
-export async function signUpWithEmail(email: string, password: string) {
+async function verifyLoginCaptcha(captcha: string) {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ captcha }),
+  });
+
+  const json = (await res.json()) as { error?: string };
+  if (!res.ok) throw new Error(json.error ?? "验证码错误，请重新输入");
+}
+
+export async function signUpWithEmail(email: string, password: string, captcha: string) {
   const res = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, captcha }),
   });
 
   const json = (await res.json()) as { error?: string };
@@ -50,7 +61,9 @@ export async function signUpWithEmail(email: string, password: string) {
   return data;
 }
 
-export async function signInWithEmail(email: string, password: string) {
+export async function signInWithEmail(email: string, password: string, captcha: string) {
+  await verifyLoginCaptcha(captcha);
+
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,

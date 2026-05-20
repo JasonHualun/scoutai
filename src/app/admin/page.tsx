@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useAuthStore } from "@/lib/authStore";
 
 type AdminApplication = {
   id: string;
@@ -33,6 +34,8 @@ function amountLabel(application: AdminApplication) {
 }
 
 export default function AdminPage() {
+  const user = useAuthStore((state) => state.user);
+  const session = useAuthStore((state) => state.session);
   const [token, setToken] = useState("");
   const [email, setEmail] = useState("");
   const [confirmEmail, setConfirmEmail] = useState("");
@@ -45,6 +48,15 @@ export default function AdminPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rememberToken, setRememberToken] = useState(true);
+  const hasAdminCredential = Boolean(session?.access_token || token.trim());
+
+  function adminHeaders(includeJson = false) {
+    const headers: Record<string, string> = {};
+    if (includeJson) headers["Content-Type"] = "application/json";
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    if (token.trim()) headers["x-admin-token"] = token.trim();
+    return headers;
+  }
 
   useEffect(() => {
     const savedToken = window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
@@ -69,7 +81,7 @@ export default function AdminPage() {
 
     try {
       const res = await fetch("/api/admin/memberships", {
-        headers: { "x-admin-token": token },
+        headers: adminHeaders(),
       });
       const json = (await res.json()) as {
         applications?: AdminApplication[];
@@ -100,8 +112,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/memberships", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "x-admin-token": token,
+          ...adminHeaders(true),
         },
         body: JSON.stringify({ applicationId, action: "confirm" }),
       });
@@ -137,8 +148,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/memberships", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "x-admin-token": token,
+          ...adminHeaders(true),
         },
         body: JSON.stringify({ email, months }),
       });
@@ -175,8 +185,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/users/confirm-email", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "x-admin-token": token,
+          ...adminHeaders(true),
         },
         body: JSON.stringify({ email: confirmEmail }),
       });
@@ -207,26 +216,41 @@ export default function AdminPage() {
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">会员开通后台</h1>
         <p className="mt-2 text-sm leading-6 text-white/60">
-          这个页面只给站长操作。用户提交付款申请后会出现在这里；你核对到账时间、金额和邮箱后，点确认即可开通 Pro。
+          这个页面只给站长操作。你的管理员邮箱登录后可以直接操作；也可以继续使用后台口令。
         </p>
       </div>
 
       <section className="rounded-2xl border border-white/8 bg-[color:var(--card)]/90 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.6)]">
+        <div className="mb-4 grid gap-3 text-xs md:grid-cols-2">
+          <div className="rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/8 px-3 py-2">
+            <div className="text-[color:var(--accent)]/70">当前登录账号</div>
+            <div className="mt-1 break-all font-semibold text-white">
+              {user?.email ?? "未登录"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/8 bg-black/25 px-3 py-2">
+            <div className="text-white/45">管理员方式</div>
+            <div className="mt-1 text-white/75">
+              {session?.access_token ? "已使用登录账号验证" : "输入后台口令后可操作"}
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
           <label className="grid gap-2 text-xs text-white/60">
-            管理员密码
+            后台口令（可选）
             <input
               type="password"
               value={token}
               onChange={(event) => setToken(event.target.value)}
               className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-[color:var(--accent)]"
-              placeholder="输入管理员密码"
+              placeholder="已登录管理员邮箱时可以不填"
             />
           </label>
           <button
             type="button"
             onClick={loadApplications}
-            disabled={listLoading || !token}
+            disabled={listLoading || !hasAdminCredential}
             className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_28px_rgba(0,255,135,0.45)] hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {listLoading ? "刷新中..." : "刷新付款申请"}
@@ -274,7 +298,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => confirmApplication(application.id)}
-                  disabled={confirmingId === application.id || !token}
+                  disabled={confirmingId === application.id || !hasAdminCredential}
                   className="rounded-full border border-[color:var(--accent)]/45 bg-[color:var(--accent)]/10 px-4 py-2 text-xs font-semibold text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {confirmingId === application.id ? "开通中..." : "确认开通 Pro"}
@@ -308,7 +332,7 @@ export default function AdminPage() {
 
           <button
             type="submit"
-            disabled={confirmEmailLoading || !token}
+            disabled={confirmEmailLoading || !hasAdminCredential}
             className="rounded-full border border-[color:var(--accent)]/45 bg-[color:var(--accent)]/10 px-4 py-2 text-sm font-semibold text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
           >
             {confirmEmailLoading ? "验证中..." : "手动验证邮箱"}
@@ -352,7 +376,7 @@ export default function AdminPage() {
 
           <button
             type="submit"
-            disabled={loading || !token}
+            disabled={loading || !hasAdminCredential}
             className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_28px_rgba(0,255,135,0.5)] hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "开通中..." : "开通 Pro"}
@@ -372,7 +396,7 @@ export default function AdminPage() {
       </form>
 
       <div className="rounded-2xl border border-white/5 bg-black/25 p-4 text-xs leading-6 text-white/55">
-        这套流程不会自动扣款：用户付款后提交订单，你在后台核对到账，再点确认开通。管理员密码只建议保存在你自己的电脑上。
+        这套流程不会自动扣款：用户付款后提交订单，你在后台核对到账，再点确认开通。你的管理员邮箱是 491666856@qq.com。
       </div>
     </div>
   );

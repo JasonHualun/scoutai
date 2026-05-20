@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { CaptchaField } from "@/components/CaptchaField";
 import { translateAuthError } from "@/lib/authErrors";
 import { signUpWithEmail } from "@/lib/supabase";
 
@@ -13,6 +14,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [captcha, setCaptcha] = useState("");
+  const [captchaRefreshKey, setCaptchaRefreshKey] = useState(0);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -25,12 +28,19 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!captcha.trim()) {
+      setError("请输入验证码");
+      return;
+    }
+
     setStatus("pending");
     try {
-      await signUpWithEmail(email, password);
+      await signUpWithEmail(email, password, captcha);
       router.push("/onboarding");
     } catch (err) {
       setError(translateAuthError(err));
+      setCaptcha("");
+      setCaptchaRefreshKey((current) => current + 1);
       setStatus("idle");
     }
   }
@@ -89,6 +99,13 @@ export default function RegisterPage() {
               placeholder="再次输入密码"
             />
           </label>
+
+          <CaptchaField
+            value={captcha}
+            onChange={setCaptcha}
+            disabled={isLocked}
+            refreshKey={captchaRefreshKey}
+          />
 
           {error && (
             <div className="space-y-2">

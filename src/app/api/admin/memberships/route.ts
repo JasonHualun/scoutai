@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminRequest, unauthorized } from "@/lib/admin-auth";
 import { addMonths } from "@/lib/membership";
 import { createServiceRoleClient } from "@/lib/supabase";
 
@@ -8,17 +9,6 @@ type OpenMembershipBody = {
   applicationId?: string;
   action?: "confirm" | "reject";
 };
-
-function unauthorized(message = "后台口令无效") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-function adminEnabled(req: NextRequest) {
-  const expected = process.env.ADMIN_ACCESS_TOKEN;
-  if (!expected) return false;
-  const header = req.headers.get("x-admin-token");
-  return header === expected;
-}
 
 function safeMonths(value: unknown) {
   return Math.max(1, Math.min(24, Number(value) || 1));
@@ -90,7 +80,7 @@ async function openProForEmail(
 }
 
 export async function GET(req: NextRequest) {
-  if (!adminEnabled(req)) return unauthorized();
+  if (!(await isAdminRequest(req))) return unauthorized();
 
   try {
     const supabase = createServiceRoleClient();
@@ -118,7 +108,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!adminEnabled(req)) return unauthorized();
+  if (!(await isAdminRequest(req))) return unauthorized();
 
   let body: OpenMembershipBody;
   try {

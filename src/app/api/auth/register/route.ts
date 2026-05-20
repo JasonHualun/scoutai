@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { CAPTCHA_COOKIE, verifyCaptchaToken } from "@/lib/captcha";
 import { createServiceRoleClient } from "@/lib/supabase";
 
 type RegisterBody = {
   email?: string;
   password?: string;
+  captcha?: string;
 };
 
 function validEmail(email: string) {
@@ -42,6 +44,16 @@ export async function POST(req: NextRequest) {
 
   const email = body.email?.trim().toLowerCase() ?? "";
   const password = body.password ?? "";
+  const captchaToken = req.cookies.get(CAPTCHA_COOKIE)?.value;
+
+  if (!verifyCaptchaToken(captchaToken, body.captcha)) {
+    const response = NextResponse.json(
+      { error: "验证码错误，请重新输入" },
+      { status: 400 }
+    );
+    response.cookies.delete(CAPTCHA_COOKIE);
+    return response;
+  }
 
   if (!validEmail(email)) {
     return NextResponse.json({ error: "邮箱格式不正确" }, { status: 400 });
@@ -78,11 +90,13 @@ export async function POST(req: NextRequest) {
 
       if (updateError) throw updateError;
 
-      return NextResponse.json({
+      const response = NextResponse.json({
         ok: true,
         user: { id: existingUser.id, email },
         message: "账号密码已更新，可以直接登录",
       });
+      response.cookies.delete(CAPTCHA_COOKIE);
+      return response;
     }
 
     const { data, error } = await supabase.auth.admin.createUser({
@@ -93,11 +107,13 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       user: { id: data.user?.id, email },
       message: "账号已创建，可以直接登录",
     });
+    response.cookies.delete(CAPTCHA_COOKIE);
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "注册失败，请稍后重试";
     console.error("[auth register] failed:", message);
