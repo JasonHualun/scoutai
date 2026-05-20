@@ -54,12 +54,29 @@ type PreferencesRow = {
 type PortfolioPick = {
   match: MatchCard;
   score: number;
+  confidence: number;
   grade: "A" | "B" | "C";
+  role: "核心" | "分散" | "机会" | "观察";
+  market: string;
   direction: string;
   reason: string;
+  riskLabel: "低" | "中" | "高";
+  dataBasis: string[];
   exposurePercent: number;
   exposurePoints: number;
   worthWatching: boolean;
+};
+
+type PortfolioPlan = {
+  mode: PortfolioMode;
+  label: string;
+  headline: string;
+  summary: string;
+  picks: PortfolioPick[];
+  selectedIds: number[];
+  totalExposurePercent: number;
+  totalExposurePoints: number;
+  coreCount: number;
 };
 
 type UserPrefs = {
@@ -95,27 +112,35 @@ const portfolioModes: Array<{
   description: string;
   size: number;
   multiplier: number;
+  minScore: number;
+  maxSameLeague: number;
 }> = [
   {
     id: "stable",
-    label: "低波动组合",
-    description: "优先少选、分散，适合只看更稳的方向。",
+    label: "稳健组合",
+    description: "少选、分散、优先低波动方向。",
     size: 2,
-    multiplier: 0.68,
+    multiplier: 0.62,
+    minScore: 66,
+    maxSameLeague: 1,
   },
   {
     id: "balanced",
     label: "均衡组合",
-    description: "兼顾概率、热度和风险，是默认方案。",
+    description: "兼顾单场强度、市场方向和分散度。",
     size: 3,
     multiplier: 0.9,
+    minScore: 60,
+    maxSameLeague: 2,
   },
   {
     id: "opportunity",
     label: "机会组合",
-    description: "覆盖更多场次和高波动机会，模拟比例也更激进。",
+    description: "允许更高波动，只给小比例机会观察。",
     size: 4,
-    multiplier: 1.12,
+    multiplier: 1.08,
+    minScore: 56,
+    maxSameLeague: 2,
   },
 ];
 
@@ -321,34 +346,114 @@ function ProUpgradeDialog({
   );
 }
 
-function buildDirection(match: MatchCard, mode: PortfolioMode, prefs: UserPrefs) {
+function hoursUntilKickoff(match: MatchCard) {
+  if (!match.date) return 999;
+  return (new Date(match.date).getTime() - Date.now()) / 3_600_000;
+}
+
+function teamSignal(team: string) {
+  const highSignalTeams = [
+    "曼城",
+    "阿森纳",
+    "利物浦",
+    "皇马",
+    "巴塞罗那",
+    "拜仁",
+    "巴黎",
+    "国际米兰",
+    "AC 米兰",
+    "Manchester City",
+    "Arsenal",
+    "Liverpool",
+    "Real Madrid",
+    "Barcelona",
+    "Bayern Munich",
+    "Paris Saint-Germain",
+    "Inter",
+    "AC Milan",
+  ];
+
+  return highSignalTeams.some((name) => team.includes(name)) ? 1 : 0;
+}
+
+function favoredSide(match: MatchCard) {
+  if (match.status === "live" && match.homeScore !== match.awayScore) {
+    return match.homeScore > match.awayScore ? "主队" : "客队";
+  }
+
+  const homeSignal = teamSignal(match.homeTeam);
+  const awaySignal = teamSignal(match.awayTeam);
+  if (homeSignal !== awaySignal) return homeSignal > awaySignal ? "主队" : "客队";
+  return "主队";
+}
+
+function buildDataBasis(match: MatchCard, prefs: UserPrefs) {
+  const basis = ["收藏池", "赛程时间", "联赛权重", "球队关注度"];
+  if (match.status === "live") basis.push("实时比分");
+  if (prefs.preferred_models.includes("凯利风控")) basis.push("模拟风控");
+  if (prefs.preferred_models.includes("爆冷检测")) basis.push("冷门检查");
+  return basis;
+}
+
+function buildDirection(match: MatchCard, mode: PortfolioMode, prefs: UserPrefs, score: number) {
+  const side = favoredSide(match);
+
   if (match.status === "live" && Math.abs(match.homeScore - match.awayScore) <= 1) {
-    return mode === "opportunity" ? "实时进球数观察" : "低波动实时观察";
+    return mode === "opportunity" ? "实时进球数机会" : `${side}低波动观察`;
   }
 
   if (mode === "stable") {
-    return prefs.preferred_markets.includes("双重机会") ? "双重机会方向" : "低波动方向";
+    return prefs.preferred_markets.includes("双重机会")
+      ? `${side}不败方向`
+      : `${side}低波动方向`;
   }
 
   if (mode === "opportunity") {
+    if (prefs.preferred_markets.includes("让球") && score >= 72) return `${side}让球观察`;
+    if (prefs.preferred_markets.includes("双方进球")) return "双方进球机会";
     return prefs.preferred_markets.includes("大小球") ? "进球数机会" : "冷门机会观察";
   }
 
-  return prefs.preferred_markets.includes("胜平负") ? "胜平负主方向" : "主流市场方向";
+  if (prefs.preferred_markets.includes("胜平负") && score >= 70) return `${side}胜平负方向`;
+  if (prefs.preferred_markets.includes("大小球")) return "大小球方向";
+  return "主流市场方向";
 }
 
-function buildReason(match: MatchCard, score: number, mode: PortfolioMode) {
-  if (match.status === "finished") return "比赛已结束，只保留复盘价值。";
+function buildMarket(mode: PortfolioMode, prefs: UserPrefs, score: number) {
+  if (mode === "stable") {
+    if (prefs.preferred_markets.includes("双重机会")) return "双重机会";
+    if (prefs.preferred_markets.includes("平局退款")) return "平局退款";
+    return "低波动市场";
+  }
+
+  if (mode === "opportunity") {
+    if (prefs.preferred_markets.includes("让球") && score >= 72) return "让球 / 亚洲让球";
+    if (prefs.preferred_markets.includes("双方进球")) return "双方进球";
+    if (prefs.preferred_markets.includes("比分")) return "比分观察";
+    return "大小球";
+  }
+
+  if (prefs.preferred_markets.includes("胜平负")) return "胜平负";
+  if (prefs.preferred_markets.includes("大小球")) return "大小球";
+  return "双重机会";
+}
+
+function buildReason(match: MatchCard, score: number, mode: PortfolioMode, confidence: number) {
+  if (match.status === "finished") return "比赛已结束，只保留复盘价值，不进入组合。";
   if (match.status === "live") {
     return Math.abs(match.homeScore - match.awayScore) <= 1
-      ? "实时比分仍接近，组合里保留观察价值。"
-      : "比赛已拉开差距，只建议降低权重。";
+      ? "实时比分仍接近，保留组合观察价值；临场数据接入后会继续校准。"
+      : "比分差距已经拉开，模型会降低组合权重，避免追高。";
   }
-  if (score >= 74) return "联赛热度和球队关注度较高，适合作为组合核心。";
-  if (score >= 62) return "信息量足够，可以作为组合里的次选场次。";
+  if (score >= 74) {
+    return `收藏池里信号较强，当前置信度 ${confidence}%，适合作为组合核心候选。`;
+  }
+  if (score >= 62) {
+    return "信息量够用，适合作为分散场次；不建议把模拟积分集中在这一场。";
+  }
   return mode === "opportunity"
-    ? "信号不算强，只适合小比例机会观察。"
-    : "当前信号偏弱，优先放在观察区。";
+    ? "信号偏弱，只能作为小比例机会观察，等盘口和阵容数据确认。"
+    : "当前信号不够强，优先放在观察区，不强行纳入组合。";
 }
 
 function buildPortfolioPick(
@@ -368,27 +473,113 @@ function buildPortfolioPick(
     awayScore: match.awayScore,
     isUserFavoriteLeague: true,
   });
+  const hoursUntil = hoursUntilKickoff(match);
+  const timingBoost = hoursUntil <= 4 ? 4 : hoursUntil <= 24 ? 2 : 0;
   const statusPenalty = match.status === "finished" ? -35 : 0;
   const livePenalty =
     match.status === "live" && Math.abs(match.homeScore - match.awayScore) >= 2 ? -8 : 0;
-  const modelBoost = prefs.preferred_models.includes("爆冷检测") ? 3 : 0;
-  const marketBoost = prefs.preferred_markets.includes("大小球") ? 2 : 0;
-  const score = clamp(hotScore + statusPenalty + livePenalty + modelBoost + marketBoost, 0, 100);
+  const modelBoost =
+    (prefs.preferred_models.includes("近期状态评分") ? 2 : 0) +
+    (prefs.preferred_models.includes("爆冷检测") ? 2 : 0) +
+    (prefs.preferred_models.includes("凯利风控") ? 1 : 0);
+  const marketBoost =
+    (prefs.preferred_markets.includes("胜平负") ? 1 : 0) +
+    (prefs.preferred_markets.includes("大小球") ? 1 : 0) +
+    (prefs.preferred_markets.includes("双重机会") && mode === "stable" ? 2 : 0);
+  const modeAdjustment = mode === "stable" ? -1 : mode === "opportunity" ? 2 : 0;
+  const score = clamp(
+    hotScore + timingBoost + statusPenalty + livePenalty + modelBoost + marketBoost + modeAdjustment,
+    0,
+    100
+  );
   const grade = score >= 74 ? "A" : score >= 62 ? "B" : "C";
-  const worthWatching = score >= 58 && match.status !== "finished";
+  const volatility =
+    (mode === "opportunity" ? 18 : mode === "balanced" ? 10 : 5) +
+    (match.status === "live" ? 8 : 0) +
+    (hoursUntil > 72 ? 6 : 0);
+  const confidence = clamp(Math.round(score - volatility * 0.35), 35, 88);
+  const worthWatching = score >= modeConfig.minScore && match.status !== "finished";
   const cap = riskCapPercent[prefs.risk_level];
   const rawPercent = ((score - 48) / 52) * cap * modeConfig.multiplier;
-  const exposurePercent = worthWatching ? clamp(rawPercent, 0.8, cap) : 0;
+  const maxSinglePercent = mode === "stable" ? cap * 0.42 : mode === "balanced" ? cap * 0.5 : cap * 0.55;
+  const exposurePercent = worthWatching ? clamp(rawPercent, 0.6, maxSinglePercent) : 0;
+  const riskLabel = volatility >= 22 || score < 60 ? "高" : volatility >= 13 ? "中" : "低";
+  const role = !worthWatching
+    ? "观察"
+    : score >= 74
+      ? "核心"
+      : mode === "opportunity"
+        ? "机会"
+        : "分散";
 
   return {
     match,
     score: Math.round(score),
+    confidence,
     grade,
-    direction: buildDirection(match, mode, prefs),
-    reason: buildReason(match, score, mode),
+    role,
+    market: buildMarket(mode, prefs, score),
+    direction: buildDirection(match, mode, prefs, score),
+    reason: buildReason(match, score, mode, confidence),
+    riskLabel,
+    dataBasis: buildDataBasis(match, prefs),
     exposurePercent,
     exposurePoints: Math.round((prefs.capital * exposurePercent) / 100),
     worthWatching,
+  };
+}
+
+function buildPortfolioPlan(
+  matches: MatchCard[],
+  mode: PortfolioMode,
+  prefs: UserPrefs
+): PortfolioPlan {
+  const config = portfolioModes.find((item) => item.id === mode) ?? portfolioModes[1];
+  const picks = matches
+    .map((match) => buildPortfolioPick(match, mode, prefs))
+    .sort((a, b) => b.score - a.score || a.riskLabel.localeCompare(b.riskLabel));
+  const selected: PortfolioPick[] = [];
+
+  for (const pick of picks) {
+    if (!pick.worthWatching) continue;
+    const sameLeagueCount = selected.filter(
+      (item) => item.match.leagueId === pick.match.leagueId
+    ).length;
+    if (sameLeagueCount >= config.maxSameLeague && selected.length < config.size - 1) continue;
+    selected.push(pick);
+    if (selected.length >= config.size) break;
+  }
+
+  if (selected.length === 0 && picks[0]?.score >= 58 && picks[0].match.status !== "finished") {
+    selected.push({ ...picks[0], role: "观察", exposurePercent: 0, exposurePoints: 0 });
+  }
+
+  const totalExposurePercent = selected.reduce((sum, pick) => sum + pick.exposurePercent, 0);
+  const totalExposurePoints = selected.reduce((sum, pick) => sum + pick.exposurePoints, 0);
+  const label = config.label;
+  const headline =
+    selected.length <= 1
+      ? "本期单场优先"
+      : mode === "stable"
+        ? "低波动分散"
+        : mode === "opportunity"
+          ? "小比例机会"
+          : "均衡组合";
+  const summary =
+    selected.length <= 1
+      ? "收藏池暂时没有足够多的强信号，不建议为了组合而组合。"
+      : `${label} 选出 ${selected.length} 场，按不同比赛分散模拟积分，避免集中在单一场次。`;
+
+  return {
+    mode,
+    label,
+    headline,
+    summary,
+    picks,
+    selectedIds: selected.map((pick) => pick.match.id),
+    totalExposurePercent,
+    totalExposurePoints,
+    coreCount: selected.filter((pick) => pick.role === "核心").length,
   };
 }
 
@@ -512,22 +703,23 @@ export default function FavoritesPage() {
     };
   }, [session, user]);
 
-  const portfolioPicks = useMemo(
+  const portfolioPlans = useMemo(
     () =>
-      favoriteMatches
-        .map((match) => buildPortfolioPick(match, portfolioMode, activePrefs))
-        .sort((a, b) => b.score - a.score),
-    [activePrefs, favoriteMatches, portfolioMode]
+      portfolioModes.map((mode) =>
+        buildPortfolioPlan(favoriteMatches, mode.id, activePrefs)
+      ),
+    [activePrefs, favoriteMatches]
   );
+  const activePlan =
+    portfolioPlans.find((plan) => plan.mode === portfolioMode) ??
+    portfolioPlans[1] ??
+    buildPortfolioPlan([], "balanced", activePrefs);
+  const portfolioPicks = activePlan.picks;
   const modeConfig = portfolioModes.find((item) => item.id === portfolioMode) ?? portfolioModes[1];
-  const recommendedIds = useMemo(
-    () =>
-      portfolioPicks
-        .filter((pick) => pick.worthWatching)
-        .slice(0, modeConfig.size)
-        .map((pick) => pick.match.id),
-    [modeConfig.size, portfolioPicks]
-  );
+  const singleBestPick = portfolioPlans
+    .flatMap((plan) => plan.picks)
+    .sort((a, b) => b.score - a.score)[0];
+  const recommendedIds = activePlan.selectedIds;
   const activeSelectedIds = selectionTouched ? selectedIds : recommendedIds;
   const selectedSet = useMemo(() => new Set(activeSelectedIds), [activeSelectedIds]);
   const selectedPicks = useMemo(
@@ -544,7 +736,7 @@ export default function FavoritesPage() {
   );
   const remainingPortfolioPoints = Math.max(0, activePrefs.capital - totalExposurePoints);
   const selectedMatchIdsKey = activeSelectedIds.join(",");
-  const corePicks = portfolioPicks.filter((pick) => pick.grade === "A").length;
+  const corePicks = activePlan.coreCount;
   const firstFavoriteMatchId = favoriteMatches[0]?.id;
   const isEmpty = !loading && favoriteMatches.length === 0;
 
@@ -661,9 +853,9 @@ export default function FavoritesPage() {
                 <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
                   Pro 收藏组合
                 </div>
-                <h2 className="text-lg font-semibold">收藏组合参考</h2>
+                <h2 className="text-lg font-semibold">收藏组合推演</h2>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-white/55">
-                  系统只在你收藏的比赛里筛选：先排除弱信号，再按风险偏好给出可选组合和模拟投入比例。
+                  先给每场做单场评分，再按稳健、均衡、机会三种思路组合；赔率、历史和球员数据接入后会进入同一套评分入口。
                 </p>
               </div>
 
@@ -678,22 +870,70 @@ export default function FavoritesPage() {
               )}
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              {portfolioModes.map((mode) => (
+            {singleBestPick && (
+              <div className="mt-4 rounded-2xl border border-[color:var(--accent)]/25 bg-black/25 p-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--accent)]">
+                      Single First
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-white">
+                      单场优先：{translateTeam(singleBestPick.match.homeTeam)} vs{" "}
+                      {translateTeam(singleBestPick.match.awayTeam)}
+                    </div>
+                    <div className="mt-1 text-xs leading-5 text-white/52">
+                      {singleBestPick.direction} · 置信度 {singleBestPick.confidence}% ·{" "}
+                      {singleBestPick.reason}
+                    </div>
+                  </div>
+                  <div className="grid shrink-0 grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-xl bg-black/35 px-3 py-2">
+                      <div className="text-white/40">市场</div>
+                      <div className="mt-1 font-semibold text-white">{singleBestPick.market}</div>
+                    </div>
+                    <div className="rounded-xl bg-black/35 px-3 py-2">
+                      <div className="text-white/40">风险</div>
+                      <div className="mt-1 font-semibold text-white">{singleBestPick.riskLabel}</div>
+                    </div>
+                    <div className="rounded-xl bg-[color:var(--accent)]/10 px-3 py-2">
+                      <div className="text-[color:var(--accent)]/70">模拟</div>
+                      <div className="mt-1 font-semibold text-[color:var(--accent)]">
+                        {singleBestPick.worthWatching
+                          ? `${formatPercent(singleBestPick.exposurePercent)}%`
+                          : "观望"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {portfolioPlans.map((plan) => (
                 <button
-                  key={mode.id}
+                  key={plan.mode}
                   type="button"
                   onClick={() => {
-                    setPortfolioMode(mode.id);
+                    setPortfolioMode(plan.mode);
                     resetPortfolio();
                   }}
-                  className={`rounded-full border px-3 py-1.5 ${
-                    portfolioMode === mode.id
-                      ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-black"
-                      : "border-white/10 bg-black/35 text-white/60 hover:text-white"
+                  className={`rounded-2xl border p-3 text-left transition ${
+                    portfolioMode === plan.mode
+                      ? "border-[color:var(--accent)]/75 bg-[color:var(--accent)]/12 text-white"
+                      : "border-white/10 bg-black/25 text-white/65 hover:border-white/20 hover:text-white"
                   }`}
                 >
-                  {mode.label}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{plan.label}</span>
+                    <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-[color:var(--accent)]">
+                      {plan.selectedIds.length} 场
+                    </span>
+                  </div>
+                  <div className="mt-2 text-xl font-semibold">{plan.headline}</div>
+                  <div className="mt-1 text-[11px] leading-5 text-white/48">{plan.summary}</div>
+                  <div className="mt-2 text-[11px] text-white/45">
+                    约 {formatPercent(plan.totalExposurePercent)}% · {plan.totalExposurePoints} 模拟积分
+                  </div>
                 </button>
               ))}
             </div>
@@ -741,13 +981,13 @@ export default function FavoritesPage() {
               <span className="font-semibold text-[color:var(--accent)]">组合建议：</span>
               {selectedPicks.length === 0
                 ? "收藏里暂时没有足够强的信号，建议先观察，不强行组合。"
-                : `${modeConfig.label} 已选 ${selectedPicks.length} 场，总模拟比例 ${formatPercent(
+                : `${activePlan.headline}：${modeConfig.description} 已选 ${selectedPicks.length} 场，总模拟比例 ${formatPercent(
                     totalExposurePercent
                   )}%。优先分散到不同比赛，不把模拟积分集中在单一场次。`}
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
-              <span className="font-semibold text-white/75">盘口口径：</span>
-              当前组合先按收藏池、热度、赛程和风险偏好筛选；详情页有真实赔率时，先用欧赔胜平负做去水校准。后续实时盘口会按亚盘、大小球、欧赔三类一起接入。
+              <span className="font-semibold text-white/75">分析口径：</span>
+              当前先用收藏池、赛程、联赛权重、球队热度和风险偏好生成单场评分；详情页有真实赔率时会用欧赔胜平负做去水校准。后续实时盘口、历史战绩和球员数据接入后，会重新计算置信度和组合比例。
             </div>
 
             <div className={`mt-4 grid gap-3 ${isPro ? "" : "opacity-70"}`}>
@@ -768,6 +1008,12 @@ export default function FavoritesPage() {
                           <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-[color:var(--accent)]">
                             {pick.grade} 级 · {pick.score} 分
                           </span>
+                          <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-white/60">
+                            {pick.role} · 置信度 {pick.confidence}%
+                          </span>
+                          <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-white/60">
+                            风险 {pick.riskLabel}
+                          </span>
                           <span className="text-[11px] text-white/45">
                             {statusLabel[pick.match.status]} · {pick.match.kickOff}
                           </span>
@@ -783,6 +1029,10 @@ export default function FavoritesPage() {
                       </div>
 
                       <div className="grid gap-2 text-xs md:min-w-[360px] md:grid-cols-3">
+                        <div className="rounded-xl bg-black/25 p-2">
+                          <div className="text-white/42">参考市场</div>
+                          <div className="mt-1 font-semibold text-white">{pick.market}</div>
+                        </div>
                         <div className="rounded-xl bg-black/25 p-2">
                           <div className="text-white/42">参考方向</div>
                           <div className="mt-1 font-semibold text-white">{pick.direction}</div>
@@ -808,6 +1058,16 @@ export default function FavoritesPage() {
                       </div>
                     </div>
                     <p className="mt-3 text-xs leading-5 text-white/50">{pick.reason}</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {pick.dataBasis.map((item) => (
+                        <span
+                          key={item}
+                          className="rounded-full border border-white/8 bg-black/20 px-2 py-0.5 text-[10px] text-white/42"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 );
               })}

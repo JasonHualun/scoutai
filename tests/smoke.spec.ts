@@ -226,11 +226,14 @@ test("favorites page shows portfolio recommendations for saved matches", async (
 
   await page.goto("/favorites", { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { name: "收藏组合参考" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "收藏组合推演" })).toBeVisible();
+  await expect(page.getByText("单场优先")).toBeVisible();
+  await expect(page.getByRole("button", { name: /稳健组合/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /机会组合/ })).toBeVisible();
   await expect(page.getByText("组合总模拟")).toBeVisible();
   await expect(page.getByText("剩余模拟积分")).toBeVisible();
-  await expect(page.getByText("盘口口径")).toBeVisible();
-  await expect(page.getByText("低波动组合")).toBeVisible();
+  await expect(page.getByText("分析口径")).toBeVisible();
+  await expect(page.getByText("置信度").first()).toBeVisible();
   await page.getByRole("button", { name: "开通 Pro" }).click();
   await expect(page.getByRole("heading", { name: "开通 Pro 收藏组合" })).toBeVisible();
   await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
