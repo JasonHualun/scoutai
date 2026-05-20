@@ -297,7 +297,7 @@ export async function getHeadToHead(team1Id: number, team2Id: number) {
 export async function getTeamRecentForm(teamId: number) {
   return fetchWithCache<FootballApiResponse>(`form:${teamId}`, "/fixtures", {
     team: teamId,
-    last: 5,
+    last: 10,
   });
 }
 

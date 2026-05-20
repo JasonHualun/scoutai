@@ -127,6 +127,8 @@ type ApiRecentFixture = {
 
 type ApiRecentForm = { response?: ApiRecentFixture[] };
 
+const RECENT_FORM_LIMIT = 10;
+
 const neutralPredictionStats: RealtimeStats = {
   possessionHome: 50,
   possessionAway: 50,
@@ -295,7 +297,7 @@ function mapOdds(bets?: ApiBet[]): OddsData | null {
 function mapForm(raw: ApiRecentForm | null | undefined, teamId?: number | null): RecentForm {
   if (!raw?.response?.length || !teamId) return [];
 
-  return raw.response.slice(0, 5).map((fixture) => {
+  return raw.response.slice(0, RECENT_FORM_LIMIT).map((fixture) => {
     const isHome = fixture.teams.home.id === teamId;
     const gf = isHome ? fixture.goals.home ?? 0 : fixture.goals.away ?? 0;
     const ga = isHome ? fixture.goals.away ?? 0 : fixture.goals.home ?? 0;
@@ -1210,7 +1212,7 @@ export default function MatchDetailPage() {
               [match.awayTeam, recentForm.away],
             ].map(([team, form]) => (
               <div key={String(team)} className="rounded-xl bg-black/25 p-3">
-                <div className="mb-2 text-white/60">{String(team)} 近 5 场</div>
+                <div className="mb-2 text-white/60">{String(team)} 近 {RECENT_FORM_LIMIT} 场</div>
                 {(form as RecentForm).length > 0 ? (
                   <div className="flex gap-2">
                     {(form as RecentForm).map((result, index) => (
