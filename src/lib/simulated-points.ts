@@ -6,6 +6,7 @@ export type PortfolioAllocation = {
 };
 
 const PORTFOLIO_ALLOCATION_KEY = "scoutai:portfolio-allocation";
+const PORTFOLIO_ALLOCATION_EVENT = "scoutai:portfolio-allocation-updated";
 
 function isBrowser() {
   return typeof window !== "undefined";
@@ -44,13 +45,22 @@ export function readPortfolioAllocation(): PortfolioAllocation {
 export function savePortfolioAllocation(allocation: Omit<PortfolioAllocation, "updatedAt">) {
   if (!isBrowser()) return;
 
+  const nextAllocation = {
+    ...allocation,
+    usedPoints: Math.max(0, Math.round(allocation.usedPoints)),
+    totalPercent: Math.max(0, allocation.totalPercent),
+    updatedAt: new Date().toISOString(),
+  };
+
   window.localStorage.setItem(
     PORTFOLIO_ALLOCATION_KEY,
-    JSON.stringify({
-      ...allocation,
-      usedPoints: Math.max(0, Math.round(allocation.usedPoints)),
-      totalPercent: Math.max(0, allocation.totalPercent),
-      updatedAt: new Date().toISOString(),
-    })
+    JSON.stringify(nextAllocation)
   );
+  window.dispatchEvent(
+    new CustomEvent(PORTFOLIO_ALLOCATION_EVENT, { detail: nextAllocation })
+  );
+}
+
+export function portfolioAllocationEventName() {
+  return PORTFOLIO_ALLOCATION_EVENT;
 }

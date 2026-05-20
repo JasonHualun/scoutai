@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAuthStore } from "@/lib/authStore";
 import { Membership, freeMembership } from "@/lib/membership";
 import {
   Currency,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/preference-options";
 import {
   PortfolioAllocation,
+  portfolioAllocationEventName,
   readPortfolioAllocation,
 } from "@/lib/simulated-points";
 import { signOut, supabase } from "@/lib/supabase";
@@ -37,6 +39,8 @@ type Preferences = {
 const defaultPreferences: Preferences = {
   ...defaultPreferenceValues,
 };
+
+const LOCAL_PREFERENCES_KEY = "scoutai_preferences";
 
 const allowedLeagueIds = new Set(
   leagueGroups.flatMap((group) => group.items.map((item) => item.id))
@@ -59,6 +63,40 @@ function sanitizeLeagueIds(ids: unknown[]) {
   return ids.filter((id): id is number => typeof id === "number" && allowedLeagueIds.has(id));
 }
 
+function readLocalPreferences(): Preferences | null {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_PREFERENCES_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<Preferences>;
+    const riskLevel =
+      parsed.risk_level === "conservative" ||
+      parsed.risk_level === "balanced" ||
+      parsed.risk_level === "aggressive"
+        ? parsed.risk_level
+        : defaultPreferences.risk_level;
+    const profile = riskProfiles[riskLevel] ?? riskProfiles.balanced;
+    const currency: Currency =
+      parsed.currency === "USD" || parsed.currency === "HKD" ? parsed.currency : "CNY";
+
+    return {
+      risk_level: profile.id,
+      capital:
+        typeof parsed.capital === "number" && Number.isFinite(parsed.capital)
+          ? parsed.capital
+          : defaultPreferences.capital,
+      currency,
+      preferred_models: normalizeOptionIds(parsed.preferred_models, modelOptions, profile.models),
+      bet_type: normalizeOptionIds(parsed.bet_type, betTypeOptions, profile.betTypes),
+      preferred_markets: normalizeOptionIds(parsed.preferred_markets, marketOptions, profile.markets),
+      favorite_leagues: Array.isArray(parsed.favorite_leagues)
+        ? parsed.favorite_leagues.filter((item): item is string => typeof item === "string")
+        : defaultPreferences.favorite_leagues,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function sameList<T>(left: T[], right: T[]) {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
@@ -77,6 +115,9 @@ function samePreferences(left: Preferences, right: Preferences) {
 
 export default function SettingsPage() {
   const router = useRouter();
+  const authUser = useAuthStore((state) => state.user);
+  const authSession = useAuthStore((state) => state.session);
+  const authLoading = useAuthStore((state) => state.loading);
   const [email, setEmail] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
   const [savedPreferences, setSavedPreferences] = useState<Preferences>(defaultPreferences);
@@ -94,25 +135,20 @@ export default function SettingsPage() {
 
   useEffect(() => {
     async function load() {
+      if (authLoading) return;
+
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        setEmail(authUser?.email ?? null);
 
-        setEmail(user?.email ?? null);
-
-        if (user) {
-          if (session) {
+        if (authUser) {
+          if (authSession) {
             const membershipRes = await fetch("/api/membership", {
-              headers: { Authorization: `Bearer ${session.access_token}` },
+              headers: { Authorization: `Bearer ${authSession.access_token}` },
             });
             const membershipJson = (await membershipRes.json()) as {
               membership?: Membership;
             };
-            setMembership(membershipJson.membership ?? freeMembership(user.email));
+            setMembership(membershipJson.membership ?? freeMembership(authUser.email));
           }
 
           const { data } = await supabase
@@ -120,7 +156,7 @@ export default function SettingsPage() {
             .select(
               "risk_level, capital, currency, preferred_models, bet_type, preferred_markets, favorite_leagues"
             )
-            .eq("user_id", user.id)
+            .eq("user_id", authUser.id)
             .maybeSingle();
 
           if (data) {
@@ -150,6 +186,21 @@ export default function SettingsPage() {
             setPreferences(nextPreferences);
             setSavedPreferences(nextPreferences);
             setSavedCapital(nextCapital);
+          } else {
+            const localPreferences = readLocalPreferences();
+            if (localPreferences) {
+              setPreferences(localPreferences);
+              setSavedPreferences(localPreferences);
+              setSavedCapital(localPreferences.capital);
+            }
+          }
+        } else {
+          setMembership(freeMembership());
+          const localPreferences = readLocalPreferences();
+          if (localPreferences) {
+            setPreferences(localPreferences);
+            setSavedPreferences(localPreferences);
+            setSavedCapital(localPreferences.capital);
           }
         }
 
@@ -169,18 +220,20 @@ export default function SettingsPage() {
     }
 
     load();
-  }, []);
+  }, [authLoading, authSession, authUser]);
 
   useEffect(() => {
     const refreshAllocation = () => setPortfolioAllocation(readPortfolioAllocation());
     const timer = window.setTimeout(refreshAllocation, 0);
     window.addEventListener("storage", refreshAllocation);
     window.addEventListener("focus", refreshAllocation);
+    window.addEventListener(portfolioAllocationEventName(), refreshAllocation);
 
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener("storage", refreshAllocation);
       window.removeEventListener("focus", refreshAllocation);
+      window.removeEventListener(portfolioAllocationEventName(), refreshAllocation);
     };
   }, []);
 
@@ -204,14 +257,10 @@ export default function SettingsPage() {
       const favoriteLeagues = leagueNamesFromIds(selectedLeagueIds);
       const nextPreferences = { ...preferences, favorite_leagues: favoriteLeagues };
       setPreferences(nextPreferences);
+      window.localStorage.setItem(LOCAL_PREFERENCES_KEY, JSON.stringify(nextPreferences));
       window.localStorage.setItem("scoutai_selected_leagues", JSON.stringify(selectedLeagueIds));
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
+      if (!authUser) {
         setMessage("已保存到本机。登录后可同步到云端。");
         setSavedPreferences(nextPreferences);
         setSavedLeagueIds(selectedLeagueIds);
@@ -222,7 +271,7 @@ export default function SettingsPage() {
 
       const { error: upsertError } = await supabase
         .from("user_preferences")
-        .upsert({ user_id: user.id, ...nextPreferences }, { onConflict: "user_id" });
+        .upsert({ user_id: authUser.id, ...nextPreferences }, { onConflict: "user_id" });
 
       if (upsertError) throw upsertError;
       setMessage("设置已保存并同步。");
