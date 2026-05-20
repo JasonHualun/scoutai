@@ -18,6 +18,10 @@ import {
   riskProfiles,
   toggleString,
 } from "@/lib/preference-options";
+import {
+  PortfolioAllocation,
+  readPortfolioAllocation,
+} from "@/lib/simulated-points";
 import { signOut, supabase } from "@/lib/supabase";
 
 type Preferences = {
@@ -64,6 +68,10 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
+  const [capitalEditing, setCapitalEditing] = useState(false);
+  const [portfolioAllocation, setPortfolioAllocation] = useState<PortfolioAllocation>(() =>
+    readPortfolioAllocation()
+  );
 
   useEffect(() => {
     async function load() {
@@ -136,6 +144,19 @@ export default function SettingsPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    const refreshAllocation = () => setPortfolioAllocation(readPortfolioAllocation());
+    const timer = window.setTimeout(refreshAllocation, 0);
+    window.addEventListener("storage", refreshAllocation);
+    window.addEventListener("focus", refreshAllocation);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("storage", refreshAllocation);
+      window.removeEventListener("focus", refreshAllocation);
+    };
+  }, []);
+
   function applyRiskLevel(nextRisk: RiskLevel) {
     const profile = riskProfiles[nextRisk];
     setPreferences((prev) => ({
@@ -165,6 +186,7 @@ export default function SettingsPage() {
 
       if (userError || !user) {
         setMessage("已保存到本机。登录后可同步到云端。");
+        setCapitalEditing(false);
         return;
       }
 
@@ -174,6 +196,7 @@ export default function SettingsPage() {
 
       if (upsertError) throw upsertError;
       setMessage("设置已保存并同步。");
+      setCapitalEditing(false);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败，请稍后重试。");
@@ -183,6 +206,11 @@ export default function SettingsPage() {
   }
 
   const activeProfile = riskProfiles[preferences.risk_level];
+  const usedSimulatedPoints = Math.min(
+    preferences.capital,
+    portfolioAllocation.usedPoints
+  );
+  const remainingSimulatedPoints = Math.max(0, preferences.capital - usedSimulatedPoints);
 
   return (
     <div className="space-y-5">
@@ -224,12 +252,22 @@ export default function SettingsPage() {
               风险偏好会自动调整下面的模型、市场和策略模式；模拟积分只用于计算风控上限。
             </p>
           </div>
-          <label className="w-full md:w-56">
-            <span className="mb-2 block text-[11px] text-white/45">模拟积分</span>
+          <div className="w-full md:w-72">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-white/45">模拟积分</span>
+              <button
+                type="button"
+                onClick={() => setCapitalEditing((current) => !current)}
+                className="rounded-full border border-white/10 bg-black/30 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:text-white"
+              >
+                {capitalEditing ? "锁定" : "修改"}
+              </button>
+            </div>
             <input
               type="number"
               min={0}
               value={preferences.capital}
+              disabled={!capitalEditing}
               onChange={(event) =>
                 setPreferences((prev) => ({
                   ...prev,
@@ -237,9 +275,22 @@ export default function SettingsPage() {
                   currency: "CNY",
                 }))
               }
-              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[color:var(--accent)]"
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
             />
-          </label>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-lg bg-black/25 px-2 py-1.5 text-white/50">
+                收藏占用{" "}
+                <span className="font-semibold text-white">{usedSimulatedPoints}</span>
+              </div>
+              <div className="rounded-lg bg-[color:var(--accent)]/10 px-2 py-1.5 text-[color:var(--accent)]">
+                剩余{" "}
+                <span className="font-semibold">{remainingSimulatedPoints}</span>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] leading-5 text-white/40">
+              输入保存后会锁定；收藏组合占用后，这里的剩余积分会同步减少。
+            </p>
+          </div>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-3">

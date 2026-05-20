@@ -1,11 +1,17 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { calculateHotScore } from "@/lib/hot-score";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
-import { Membership, freeMembership } from "@/lib/membership";
+import {
+  Membership,
+  PRO_MONTHLY_PRICE_CNY,
+  freeMembership,
+} from "@/lib/membership";
 import { defaultPreferenceValues, RiskLevel } from "@/lib/preference-options";
+import { savePortfolioAllocation } from "@/lib/simulated-points";
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime } from "@/lib/time-format";
 import { useAuthStore } from "@/lib/authStore";
@@ -63,7 +69,19 @@ type UserPrefs = {
   preferred_models: string[];
 };
 
+type PaymentApplication = {
+  id: string;
+  order_no: string;
+  email: string;
+  amount: number;
+  currency: "CNY" | "USD";
+  months: number;
+  status: "pending" | "confirmed" | "rejected";
+  created_at: string;
+};
+
 const FAVORITES_KEY = "scoutai_favorites";
+const PRO_ORIGINAL_PRICE_CNY = "¥199";
 
 const statusLabel: Record<MatchStatus, string> = {
   live: "进行中",
@@ -163,6 +181,146 @@ function riskLabel(level: RiskLevel) {
   }[level];
 }
 
+function createDraftOrderNo() {
+  const date = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(new Date())
+    .replaceAll("-", "");
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `PRO-${date}-${random}`;
+}
+
+function ProUpgradeDialog({
+  open,
+  onClose,
+  email,
+  orderNo,
+  application,
+  submitting,
+  error,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  email?: string | null;
+  orderNo: string;
+  application: PaymentApplication | null;
+  submitting: boolean;
+  error: string | null;
+  onSubmit: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-5 shadow-[0_25px_90px_rgba(0,0,0,0.85)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">
+              Pro
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+              开通 Pro 收藏组合
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              解锁收藏组合、模拟积分联动和更完整的盘口风控参考。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60 hover:text-white"
+          >
+            关闭
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+            <div className="text-xs font-semibold text-[color:var(--accent)]">
+              新用户首月优惠
+            </div>
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <span className="pb-1 text-sm text-white/42 line-through">
+                原价 {PRO_ORIGINAL_PRICE_CNY}/月
+              </span>
+              <span className="text-4xl font-semibold tracking-tight text-white">
+                {PRO_MONTHLY_PRICE_CNY}
+              </span>
+              <span className="pb-1 text-sm text-white/65">首月体验</span>
+            </div>
+
+            <div className="mt-4 text-[11px] text-white/45">注册邮箱</div>
+            <div className="mt-1 break-all text-sm font-semibold text-white">
+              {email ?? "请先登录后再提交申请"}
+            </div>
+            <div className="mt-3 text-[11px] text-white/45">订单编号</div>
+            <div className="mt-1 break-all rounded-lg bg-black/35 px-3 py-2 text-xs font-semibold text-[color:var(--accent)]">
+              {application?.order_no ?? orderNo}
+            </div>
+            <div className="mt-3 rounded-lg border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-[11px] leading-5 text-[color:var(--accent)]">
+              付款时如能填写备注，请填订单编号；付款后点下方按钮提交申请。
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+              <div className="mb-2 text-xs font-semibold text-white">微信支付</div>
+              <Image
+                src="/payments/wechat.jpg"
+                alt="微信支付收款码"
+                width={414}
+                height={586}
+                className="mx-auto h-64 w-full rounded-lg bg-white object-contain"
+              />
+            </div>
+            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
+              <div className="mb-2 text-xs font-semibold text-white">支付宝</div>
+              <Image
+                src="/payments/alipay.jpg"
+                alt="支付宝收款码"
+                width={640}
+                height={960}
+                className="mx-auto h-64 w-full rounded-lg bg-white object-contain"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3 text-xs leading-6 text-white/58">
+          <div>付款完成后，通常 30 分钟内人工开通。</div>
+          <div>客服开通时间：每日 09:00 - 18:00。非工作时间付款会顺延处理。</div>
+        </div>
+
+        {application ? (
+          <div className="mt-4 rounded-xl border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-2 text-xs leading-6 text-[color:var(--accent)]">
+            付款申请已提交：{application.order_no}。管理员核对到账后会为 {application.email} 开通 Pro。
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={submitting || !email}
+            className="mt-4 w-full rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_28px_rgba(0,255,135,0.55)] hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? "提交中..." : email ? "我已付款，提交开通申请" : "请先登录"}
+          </button>
+        )}
+
+        {error && (
+          <div className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function buildDirection(match: MatchCard, mode: PortfolioMode, prefs: UserPrefs) {
   if (match.status === "live" && Math.abs(match.homeScore - match.awayScore) <= 1) {
     return mode === "opportunity" ? "实时进球数观察" : "低波动实时观察";
@@ -246,6 +404,11 @@ export default function FavoritesPage() {
   const [portfolioMode, setPortfolioMode] = useState<PortfolioMode>("balanced");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectionTouched, setSelectionTouched] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [paymentOrderNo, setPaymentOrderNo] = useState("");
+  const [paymentApplication, setPaymentApplication] = useState<PaymentApplication | null>(null);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const isPro = membership.plan === "pro" && membership.status === "active";
   const activePrefs = isPro && userPrefs ? userPrefs : defaultPrefs;
@@ -367,7 +530,10 @@ export default function FavoritesPage() {
   );
   const activeSelectedIds = selectionTouched ? selectedIds : recommendedIds;
   const selectedSet = useMemo(() => new Set(activeSelectedIds), [activeSelectedIds]);
-  const selectedPicks = portfolioPicks.filter((pick) => selectedSet.has(pick.match.id));
+  const selectedPicks = useMemo(
+    () => portfolioPicks.filter((pick) => selectedSet.has(pick.match.id)),
+    [portfolioPicks, selectedSet]
+  );
   const totalExposurePercent = selectedPicks.reduce(
     (sum, pick) => sum + pick.exposurePercent,
     0
@@ -376,9 +542,21 @@ export default function FavoritesPage() {
     (sum, pick) => sum + pick.exposurePoints,
     0
   );
+  const remainingPortfolioPoints = Math.max(0, activePrefs.capital - totalExposurePoints);
+  const selectedMatchIdsKey = activeSelectedIds.join(",");
   const corePicks = portfolioPicks.filter((pick) => pick.grade === "A").length;
   const firstFavoriteMatchId = favoriteMatches[0]?.id;
   const isEmpty = !loading && favoriteMatches.length === 0;
+
+  useEffect(() => {
+    if (!isPro) return;
+
+    savePortfolioAllocation({
+      usedPoints: totalExposurePoints,
+      totalPercent: totalExposurePercent,
+      selectedMatchIds: selectedPicks.map((pick) => pick.match.id),
+    });
+  }, [isPro, selectedMatchIdsKey, selectedPicks, totalExposurePercent, totalExposurePoints]);
 
   function handleUnfavorite(id: number) {
     const updated = favoriteIds.filter((favoriteId) => favoriteId !== id);
@@ -400,6 +578,46 @@ export default function FavoritesPage() {
   function resetPortfolio() {
     setSelectionTouched(false);
     setSelectedIds([]);
+  }
+
+  function openUpgrade() {
+    setPaymentError(null);
+    setPaymentApplication(null);
+    setPaymentOrderNo(createDraftOrderNo());
+    setUpgradeOpen(true);
+  }
+
+  async function handleSubmitPaymentApplication() {
+    if (!session) {
+      setPaymentError("请先登录后再提交付款申请");
+      return;
+    }
+
+    setPaymentSubmitting(true);
+    setPaymentError(null);
+
+    try {
+      const res = await fetch("/api/payment-applications", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ orderNo: paymentOrderNo || createDraftOrderNo(), months: 1 }),
+      });
+
+      const json = (await res.json()) as {
+        application?: PaymentApplication;
+        error?: string;
+      };
+
+      if (!res.ok) throw new Error(json.error ?? "提交付款申请失败");
+      setPaymentApplication(json.application ?? null);
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "提交付款申请失败");
+    } finally {
+      setPaymentSubmitting(false);
+    }
   }
 
   return (
@@ -450,12 +668,13 @@ export default function FavoritesPage() {
               </div>
 
               {!isPro && firstFavoriteMatchId && (
-                <Link
-                  href={`/match/${firstFavoriteMatchId}`}
+                <button
+                  type="button"
+                  onClick={openUpgrade}
                   className="rounded-full bg-[color:var(--accent)] px-4 py-2 text-xs font-semibold text-black shadow-[0_0_28px_rgba(0,255,135,0.45)] hover:bg-emerald-300"
                 >
-                  去详情页开通 Pro
-                </Link>
+                  开通 Pro
+                </button>
               )}
             </div>
 
@@ -479,7 +698,7 @@ export default function FavoritesPage() {
               ))}
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <div className="mt-4 grid gap-3 md:grid-cols-5">
               <div className="rounded-xl bg-black/25 p-3">
                 <div className="text-[11px] text-white/45">可组合场次</div>
                 <div className="mt-1 text-2xl font-semibold text-white">
@@ -507,6 +726,15 @@ export default function FavoritesPage() {
                   约 {totalExposurePoints} 模拟积分
                 </div>
               </div>
+              <div className="rounded-xl bg-[color:var(--accent)]/10 p-3">
+                <div className="text-[11px] text-[color:var(--accent)]/70">剩余模拟积分</div>
+                <div className="mt-1 text-2xl font-semibold text-[color:var(--accent)]">
+                  {remainingPortfolioPoints}
+                </div>
+                <div className="mt-1 text-[11px] text-white/45">
+                  与设置页联动
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3 text-xs leading-6 text-white/55">
@@ -516,6 +744,10 @@ export default function FavoritesPage() {
                 : `${modeConfig.label} 已选 ${selectedPicks.length} 场，总模拟比例 ${formatPercent(
                     totalExposurePercent
                   )}%。优先分散到不同比赛，不把模拟积分集中在单一场次。`}
+            </div>
+            <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
+              <span className="font-semibold text-white/75">盘口口径：</span>
+              当前组合先按收藏池、热度、赛程和风险偏好筛选；详情页有真实赔率时，先用欧赔胜平负做去水校准。后续实时盘口会按亚盘、大小球、欧赔三类一起接入。
             </div>
 
             <div className={`mt-4 grid gap-3 ${isPro ? "" : "opacity-70"}`}>
@@ -626,6 +858,16 @@ export default function FavoritesPage() {
           </div>
         </>
       )}
+      <ProUpgradeDialog
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        email={user?.email ?? membership.email}
+        orderNo={paymentOrderNo}
+        application={paymentApplication}
+        submitting={paymentSubmitting}
+        error={paymentError}
+        onSubmit={handleSubmitPaymentApplication}
+      />
     </div>
   );
 }

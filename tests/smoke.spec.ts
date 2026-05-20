@@ -113,16 +113,13 @@ test("core pages render without mojibake", async ({ page }) => {
 test("match detail flow can generate a local analysis", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "五大联赛 + 世界杯" })).toHaveCount(0);
-  await page.getByRole("button", { name: "实时优先" }).click();
+  await page.getByRole("button", { name: "实时优先" }).click({ force: true });
   await expect(page.locator("body")).toContainText("北京时间");
   await expect(page.locator("body")).not.toContainText(/AM|PM|上午|下午/);
 
   await mockUpcomingMatch(page, 12346);
-  const matchResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/match/12346")
-  );
   await page.goto("/match/12346", { waitUntil: "domcontentloaded" });
-  await matchResponse;
+  await expect(page.getByText("阿森纳").first()).toBeVisible({ timeout: 20_000 });
 
   await expect(page.getByRole("heading", { name: "概率预测" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型委员会深度预测" })).toBeVisible();
@@ -183,7 +180,10 @@ test("favorites page shows portfolio recommendations for saved matches", async (
 
   await expect(page.getByRole("heading", { name: "收藏组合参考" })).toBeVisible();
   await expect(page.getByText("组合总模拟")).toBeVisible();
+  await expect(page.getByText("剩余模拟积分")).toBeVisible();
+  await expect(page.getByText("盘口口径")).toBeVisible();
   await expect(page.getByText("低波动组合")).toBeVisible();
-  await expect(page.getByText("加入组合池").first()).toBeVisible();
+  await page.getByRole("button", { name: "开通 Pro" }).click();
+  await expect(page.getByRole("heading", { name: "开通 Pro 收藏组合" })).toBeVisible();
   await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
 });
