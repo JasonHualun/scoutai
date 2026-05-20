@@ -60,7 +60,7 @@ type PortfolioPick = {
   market: string;
   direction: string;
   reason: string;
-  riskLabel: "低" | "中" | "高";
+  riskLabel: "低波动" | "中等波动" | "波动偏高";
   dataBasis: string[];
   exposurePercent: number;
   exposurePoints: number;
@@ -206,10 +206,44 @@ function riskLabel(level: RiskLevel) {
   }[level];
 }
 
+function portfolioRoleLabel(role: PortfolioPick["role"]) {
+  return {
+    核心: "组合主选",
+    分散: "分散备选",
+    机会: "小比例机会",
+    观察: "暂不纳入",
+  }[role];
+}
+
+function portfolioRiskClass(label: PortfolioPick["riskLabel"]) {
+  return {
+    低波动: "border-emerald-300/18 bg-emerald-300/8 text-emerald-100",
+    中等波动: "border-sky-300/18 bg-sky-300/8 text-sky-100",
+    波动偏高: "border-amber-300/22 bg-amber-300/10 text-amber-100",
+  }[label];
+}
+
 function portfolioModeFromPrefs(prefs: UserPrefs): PortfolioMode {
   if (prefs.risk_level === "conservative") return "stable";
   if (prefs.risk_level === "aggressive") return "opportunity";
   return "balanced";
+}
+
+function buildPortfolioRiskLabel(
+  mode: PortfolioMode,
+  score: number,
+  hoursUntil: number,
+  status: MatchStatus
+): PortfolioPick["riskLabel"] {
+  const modeRisk = mode === "opportunity" ? 15 : mode === "balanced" ? 9 : 4;
+  const timingRisk = hoursUntil > 72 ? 5 : hoursUntil > 24 ? 3 : hoursUntil <= 4 ? 2 : 1;
+  const statusRisk = status === "live" ? 7 : status === "finished" ? 6 : 0;
+  const signalRisk = score >= 78 ? -5 : score >= 70 ? -3 : score >= 62 ? 3 : 9;
+  const riskScore = modeRisk + timingRisk + statusRisk + signalRisk;
+
+  if (riskScore >= 20) return "波动偏高";
+  if (riskScore >= 10) return "中等波动";
+  return "低波动";
 }
 
 function createDraftOrderNo() {
@@ -452,7 +486,7 @@ function buildReason(match: MatchCard, score: number, mode: PortfolioMode, confi
       : "比分差距已经拉开，模型会降低组合权重，避免追高。";
   }
   if (score >= 74) {
-    return `收藏池里信号较强，当前置信度 ${confidence}%，适合作为组合核心候选。`;
+    return `收藏池里信号较强，当前信号强度 ${confidence}%，适合作为组合主选候选。`;
   }
   if (score >= 62) {
     return "信息量够用，适合作为分散场次；不建议把模拟积分集中在这一场。";
@@ -509,7 +543,7 @@ function buildPortfolioPick(
   const rawPercent = ((score - 48) / 52) * cap * modeConfig.multiplier;
   const maxSinglePercent = mode === "stable" ? cap * 0.42 : mode === "balanced" ? cap * 0.5 : cap * 0.55;
   const exposurePercent = worthWatching ? clamp(rawPercent, 0.6, maxSinglePercent) : 0;
-  const riskLabel = volatility >= 22 || score < 60 ? "高" : volatility >= 13 ? "中" : "低";
+  const riskLabel = buildPortfolioRiskLabel(mode, score, hoursUntil, match.status);
   const role = !worthWatching
     ? "观察"
     : score >= 74
@@ -883,7 +917,7 @@ export default function FavoritesPage() {
                       {translateTeam(singleBestPick.match.awayTeam)}
                     </div>
                     <div className="mt-1 text-xs leading-5 text-white/52">
-                      {singleBestPick.direction} · 置信度 {singleBestPick.confidence}% ·{" "}
+                      {singleBestPick.direction} · 信号强度 {singleBestPick.confidence}% ·{" "}
                       {singleBestPick.reason}
                     </div>
                   </div>
@@ -893,7 +927,7 @@ export default function FavoritesPage() {
                       <div className="mt-1 font-semibold text-white">{singleBestPick.market}</div>
                     </div>
                     <div className="rounded-xl bg-black/35 px-3 py-2">
-                      <div className="text-white/40">风险</div>
+                      <div className="text-white/40">波动</div>
                       <div className="mt-1 font-semibold text-white">{singleBestPick.riskLabel}</div>
                     </div>
                     <div className="rounded-xl bg-[color:var(--accent)]/10 px-3 py-2">
@@ -1020,7 +1054,7 @@ export default function FavoritesPage() {
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
               <span className="font-semibold text-white/75">分析口径：</span>
-              当前先用收藏池、赛程、联赛权重、球队热度和风险偏好生成单场评分；详情页有真实赔率时会用欧赔胜平负做去水校准。后续实时盘口、历史战绩和球员数据接入后，会重新计算置信度和组合比例。
+              当前先用收藏池、赛程、联赛权重、球队热度和风险偏好生成单场评分；详情页有真实赔率时会用欧赔胜平负做去水校准。后续实时盘口、历史战绩和球员数据接入后，会重新计算信号强度和组合比例。
             </div>
 
             <div className={`mt-4 grid gap-3 ${isPro ? "" : "opacity-70"}`}>
@@ -1042,10 +1076,10 @@ export default function FavoritesPage() {
                             {pick.grade} 级 · {pick.score} 分
                           </span>
                           <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-white/60">
-                            {pick.role} · 置信度 {pick.confidence}%
+                            {portfolioRoleLabel(pick.role)} · 信号强度 {pick.confidence}%
                           </span>
-                          <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-white/60">
-                            风险 {pick.riskLabel}
+                          <span className={`rounded-full border px-2 py-0.5 text-[11px] ${portfolioRiskClass(pick.riskLabel)}`}>
+                            波动 {pick.riskLabel}
                           </span>
                           <span className="text-[11px] text-white/45">
                             {statusLabel[pick.match.status]} · {pick.match.kickOff}
