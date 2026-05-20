@@ -59,11 +59,29 @@ function sanitizeLeagueIds(ids: unknown[]) {
   return ids.filter((id): id is number => typeof id === "number" && allowedLeagueIds.has(id));
 }
 
+function sameList<T>(left: T[], right: T[]) {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function samePreferences(left: Preferences, right: Preferences) {
+  return (
+    left.risk_level === right.risk_level &&
+    left.capital === right.capital &&
+    left.currency === right.currency &&
+    sameList(left.preferred_models, right.preferred_models) &&
+    sameList(left.bet_type, right.bet_type) &&
+    sameList(left.preferred_markets, right.preferred_markets) &&
+    sameList(left.favorite_leagues, right.favorite_leagues)
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
+  const [savedPreferences, setSavedPreferences] = useState<Preferences>(defaultPreferences);
   const [selectedLeagueIds, setSelectedLeagueIds] = useState<number[]>(defaultLeagueIds);
+  const [savedLeagueIds, setSavedLeagueIds] = useState<number[]>(defaultLeagueIds);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +129,7 @@ export default function SettingsPage() {
 
             const nextCapital = data.capital ?? defaultPreferences.capital;
 
-            setPreferences({
+            const nextPreferences = {
               risk_level: profile.id,
               capital: nextCapital,
               currency: (data.currency as Currency) ?? defaultPreferences.currency,
@@ -127,7 +145,10 @@ export default function SettingsPage() {
                 profile.markets
               ),
               favorite_leagues: data.favorite_leagues ?? defaultPreferences.favorite_leagues,
-            });
+            };
+
+            setPreferences(nextPreferences);
+            setSavedPreferences(nextPreferences);
             setSavedCapital(nextCapital);
           }
         }
@@ -137,7 +158,9 @@ export default function SettingsPage() {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
             const supported = sanitizeLeagueIds(parsed);
-            setSelectedLeagueIds(supported.length > 0 ? supported : defaultLeagueIds);
+            const nextLeagueIds = supported.length > 0 ? supported : defaultLeagueIds;
+            setSelectedLeagueIds(nextLeagueIds);
+            setSavedLeagueIds(nextLeagueIds);
           }
         }
       } catch {
@@ -190,6 +213,8 @@ export default function SettingsPage() {
 
       if (userError || !user) {
         setMessage("已保存到本机。登录后可同步到云端。");
+        setSavedPreferences(nextPreferences);
+        setSavedLeagueIds(selectedLeagueIds);
         setSavedCapital(nextPreferences.capital);
         setCapitalEditing(false);
         return;
@@ -201,6 +226,8 @@ export default function SettingsPage() {
 
       if (upsertError) throw upsertError;
       setMessage("设置已保存并同步。");
+      setSavedPreferences(nextPreferences);
+      setSavedLeagueIds(selectedLeagueIds);
       setSavedCapital(nextPreferences.capital);
       setCapitalEditing(false);
       router.refresh();
@@ -218,6 +245,8 @@ export default function SettingsPage() {
   );
   const remainingSimulatedPoints = Math.max(0, preferences.capital - usedSimulatedPoints);
   const capitalDirty = preferences.capital !== savedCapital;
+  const settingsDirty =
+    !samePreferences(preferences, savedPreferences) || !sameList(selectedLeagueIds, savedLeagueIds);
 
   return (
     <div className="space-y-5">
@@ -569,25 +598,36 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <div className="flex flex-col gap-3 border-t border-white/10 pt-4 md:flex-row md:items-center md:justify-between">
+      <div className="sticky bottom-4 z-30 mt-6 rounded-2xl border border-amber-300/35 bg-[#151309]/95 p-3 shadow-[0_16px_70px_rgba(245,158,11,0.2),0_20px_80px_rgba(0,0,0,0.65)] backdrop-blur md:flex md:items-center md:justify-between md:gap-4">
         <button
           type="button"
           onClick={async () => {
             await signOut();
             router.push("/login");
           }}
-          className="rounded-full border border-white/15 bg-black/30 px-4 py-2 text-xs text-white/75 hover:border-red-400/60 hover:text-red-300"
+          className="rounded-full border border-white/15 bg-black/30 px-4 py-2 text-xs text-white/65 hover:border-red-400/60 hover:text-red-300"
         >
           退出当前账号
         </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={saveSettings}
-          className="rounded-full bg-[color:var(--accent)] px-5 py-2 text-xs font-semibold text-black shadow-[0_0_30px_rgba(0,255,135,0.7)] hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {saving ? "保存中..." : "保存设置"}
-        </button>
+        <div className="mt-3 flex flex-col gap-2 md:mt-0 md:flex-row md:items-center md:gap-3">
+          <div
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+              settingsDirty
+                ? "bg-amber-300/12 text-amber-200"
+                : "bg-white/8 text-white/55"
+            }`}
+          >
+            {settingsDirty ? "有修改未保存" : "当前设置已保存"}
+          </div>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={saveSettings}
+            className="min-h-12 rounded-2xl bg-amber-300 px-8 text-base font-black text-black shadow-[0_0_34px_rgba(252,211,77,0.65)] transition hover:bg-amber-200 hover:shadow-[0_0_46px_rgba(252,211,77,0.82)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "正在保存..." : "保存全部设置"}
+          </button>
+        </div>
       </div>
     </div>
   );

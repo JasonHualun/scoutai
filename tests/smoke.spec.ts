@@ -156,6 +156,12 @@ test("login and register require captcha", async ({ page }) => {
   await expect(page.getByRole("button", { name: "换一张" })).toBeVisible();
 });
 
+test("settings page keeps save action prominent", async ({ page }) => {
+  await page.goto("/settings", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "保存全部设置" })).toBeVisible();
+  await expect(page.getByText(/当前设置已保存|有修改未保存/)).toBeVisible();
+});
+
 test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await mockUpcomingMatch(page, 12345);
 
