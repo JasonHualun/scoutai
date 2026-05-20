@@ -129,6 +129,7 @@ export default function SettingsPage() {
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
   const [capitalEditing, setCapitalEditing] = useState(false);
   const [savedCapital, setSavedCapital] = useState(defaultPreferences.capital);
+  const [saveFlash, setSaveFlash] = useState(false);
   const [portfolioAllocation, setPortfolioAllocation] = useState<PortfolioAllocation>(() =>
     readPortfolioAllocation()
   );
@@ -266,6 +267,7 @@ export default function SettingsPage() {
         setSavedLeagueIds(selectedLeagueIds);
         setSavedCapital(nextPreferences.capital);
         setCapitalEditing(false);
+        setSaveFlash(true);
         return;
       }
 
@@ -279,6 +281,7 @@ export default function SettingsPage() {
       setSavedLeagueIds(selectedLeagueIds);
       setSavedCapital(nextPreferences.capital);
       setCapitalEditing(false);
+      setSaveFlash(true);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败，请稍后重试。");
@@ -296,6 +299,17 @@ export default function SettingsPage() {
   const capitalDirty = preferences.capital !== savedCapital;
   const settingsDirty =
     !samePreferences(preferences, savedPreferences) || !sameList(selectedLeagueIds, savedLeagueIds);
+  const saveDockVisible = settingsDirty || saving || saveFlash;
+
+  useEffect(() => {
+    if (settingsDirty) setSaveFlash(false);
+  }, [settingsDirty]);
+
+  useEffect(() => {
+    if (!saveFlash) return;
+    const timer = window.setTimeout(() => setSaveFlash(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [saveFlash]);
 
   return (
     <div className="space-y-5">
@@ -647,7 +661,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <div className="sticky bottom-4 z-30 mt-6 rounded-2xl border border-amber-300/35 bg-[#151309]/95 p-3 shadow-[0_16px_70px_rgba(245,158,11,0.2),0_20px_80px_rgba(0,0,0,0.65)] backdrop-blur md:flex md:items-center md:justify-between md:gap-4">
+      <div className="mt-6 border-t border-white/8 pt-4">
         <button
           type="button"
           onClick={async () => {
@@ -658,25 +672,48 @@ export default function SettingsPage() {
         >
           退出当前账号
         </button>
-        <div className="mt-3 flex flex-col gap-2 md:mt-0 md:flex-row md:items-center md:gap-3">
+      </div>
+
+      <div
+        className={`sticky bottom-4 z-30 mt-4 rounded-2xl border p-3 backdrop-blur transition-all duration-300 md:flex md:items-center md:justify-between md:gap-4 ${
+          saveDockVisible
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-6 opacity-0"
+        } ${
+          settingsDirty || saving
+            ? "border-amber-300/35 bg-[#151309]/95 shadow-[0_16px_70px_rgba(245,158,11,0.18),0_20px_80px_rgba(0,0,0,0.65)]"
+            : "border-[color:var(--accent)]/28 bg-[#07130d]/92 shadow-[0_16px_60px_rgba(0,255,136,0.12),0_20px_80px_rgba(0,0,0,0.55)]"
+        }`}
+        aria-hidden={!saveDockVisible}
+      >
+        <div>
           <div
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-              settingsDirty
+            className={`inline-flex rounded-full px-3 py-1.5 text-xs font-semibold ${
+              settingsDirty || saving
                 ? "bg-amber-300/12 text-amber-200"
-                : "bg-white/8 text-white/55"
+                : "bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
             }`}
           >
-            {settingsDirty ? "有修改未保存" : "当前设置已保存"}
+            {saving ? "正在保存" : settingsDirty ? "有修改未保存" : "已保存"}
           </div>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={saveSettings}
-            className="min-h-12 rounded-2xl bg-amber-300 px-8 text-base font-black text-black shadow-[0_0_34px_rgba(252,211,77,0.65)] transition hover:bg-amber-200 hover:shadow-[0_0_46px_rgba(252,211,77,0.82)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving ? "正在保存..." : "保存全部设置"}
-          </button>
+          <p className="mt-2 text-xs text-white/52">
+            {settingsDirty
+              ? "保存后会同步到账号，并更新收藏组合的剩余模拟积分。"
+              : "设置已同步，提示会自动收起。"}
+          </p>
         </div>
+        <button
+          type="button"
+          disabled={saving || !settingsDirty}
+          onClick={saveSettings}
+          className={`mt-3 min-h-12 rounded-2xl px-8 text-base font-black transition disabled:cursor-not-allowed disabled:opacity-75 md:mt-0 ${
+            settingsDirty || saving
+              ? "bg-amber-300 text-black shadow-[0_0_28px_rgba(252,211,77,0.48)] hover:bg-amber-200 hover:shadow-[0_0_38px_rgba(252,211,77,0.62)]"
+              : "border border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 text-[color:var(--accent)]"
+          }`}
+        >
+          {saving ? "正在保存..." : settingsDirty ? "保存全部设置" : "已保存"}
+        </button>
       </div>
     </div>
   );

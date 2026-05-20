@@ -156,10 +156,20 @@ test("login and register require captcha", async ({ page }) => {
   await expect(page.getByRole("button", { name: "换一张" })).toBeVisible();
 });
 
-test("settings page keeps save action prominent", async ({ page }) => {
+test("settings save action appears only while needed", async ({ page }) => {
   await page.goto("/settings", { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("button", { name: "保存全部设置" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /进取型/ }).click();
   await expect(page.getByRole("button", { name: "保存全部设置" })).toBeVisible();
-  await expect(page.getByText(/当前设置已保存|有修改未保存/)).toBeVisible();
+  await expect(page.getByText("有修改未保存")).toBeVisible();
+
+  await page.getByRole("button", { name: "保存全部设置" }).click();
+  await expect(page.getByRole("button", { name: "已保存" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "已保存" })).toBeHidden({ timeout: 3_000 });
 });
 
 test("upcoming match does not show fake realtime stats", async ({ page }) => {
