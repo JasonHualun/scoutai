@@ -121,12 +121,14 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
   await page.goto("/match/12346", { waitUntil: "domcontentloaded" });
   await expect(page.getByText("阿森纳").first()).toBeVisible({ timeout: 20_000 });
 
-  await expect(page.getByRole("heading", { name: "概率预测" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "模型基准估算" })).toBeVisible();
+  await expect(page.getByText("不是真实盘口数据")).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型委员会深度预测" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "本场购买参考" })).toBeVisible();
   await expect(page.getByText("调整本场模拟比例")).toBeVisible();
 
-  await expect(page.getByText("免费版 · 基础预测")).toBeVisible();
+  await expect(page.getByText("免费版 · 模型基准估算")).toBeVisible();
+  await expect(page.getByText("未接真实盘口").first()).toBeVisible();
   await expect(page.getByText("Pro 高级版 · ¥69.9/月")).toBeVisible();
   await page.getByRole("button", { name: /解锁 Pro|生成 Pro 分析/ }).click();
   await expect(page.getByRole("heading", { name: "首月 Pro 体验：把难懂的比赛先筛掉" })).toBeVisible({

@@ -890,9 +890,10 @@ export default function MatchDetailPage() {
       ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
       : "当前接口暂未返回有效实时统计，已隐藏占位数据。";
   const oddsEmptyText = "当前接口暂未返回真实赔率，价值差暂不计算。";
+  const isBaselineEstimate = !stats && !odds;
   const predictionDataNote =
-    !stats && !odds
-      ? "当前为赛前基础估算，等待真实赔率和实时数据接入后会自动校准。"
+    isBaselineEstimate
+      ? "当前没有真实赔率、历史近况和实时统计，以下是模型基准估算，不是真实盘口数据。"
       : !stats
         ? "当前缺少实时统计，概率主要来自赛前信息。"
         : !odds
@@ -1055,21 +1056,32 @@ export default function MatchDetailPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="mb-2 inline-flex rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white/55">
-                免费版 · 基础预测
+                {isBaselineEstimate ? "免费版 · 模型基准估算" : "免费版 · 基础预测"}
               </div>
-              <h2 className="text-sm font-semibold">基础概率预测</h2>
+              <h2 className="text-sm font-semibold">
+                {isBaselineEstimate ? "模型基准估算" : "基础概率预测"}
+              </h2>
               <p className="mt-1 text-[11px] text-white/50">
                 {prediction.modelVersion} · 置信度 {prediction.confidence}%
               </p>
               <p className="mt-1 text-[11px] text-white/40">{predictionDataNote}</p>
             </div>
             <div className="text-right">
-              <div className="text-[11px] text-white/45">最可能比分</div>
+              <div className="text-[11px] text-white/45">
+                {isBaselineEstimate ? "模型推演比分" : "最可能比分"}
+              </div>
               <div className="text-2xl font-semibold text-[color:var(--accent)]">
                 {prediction.predictedScore.label}
               </div>
             </div>
           </div>
+
+          {isBaselineEstimate && (
+            <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs leading-5 text-amber-100/75">
+              说明：这部分只是用中性进球分布和基础风控参数做的框架推演，方便先看产品流程；真实 API
+              接入赔率、历史战绩、伤停和球员数据后，概率会重新计算。
+            </div>
+          )}
 
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <ProbabilityBar label="主胜" value={prediction.probabilities.homeWin} tone="bg-[color:var(--accent)]" />
@@ -1101,7 +1113,14 @@ export default function MatchDetailPage() {
           <div className="mb-2 inline-flex rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-white/55">
             免费版
           </div>
-          <h2 className="text-sm font-semibold">基础价值信号</h2>
+          <h2 className="text-sm font-semibold">
+            {odds ? "基础价值信号" : "模型公平赔率"}
+          </h2>
+          {!odds && (
+            <p className="mt-1 text-[11px] leading-5 text-white/42">
+              这里不是庄家赔率，是由模型概率反推的公平赔率；真实盘口接入后才会计算价值差。
+            </p>
+          )}
           <div className="mt-3 space-y-2">
             {prediction.valueSignals.map((signal) => (
               <div
@@ -1111,7 +1130,7 @@ export default function MatchDetailPage() {
                 <div>
                   <div className="font-medium text-white">{signal.label}</div>
                   <div className="mt-0.5 text-[11px] text-white/45">
-                    公平赔率 {signal.fairOdds.toFixed(2)}
+                    模型公平赔率 {signal.fairOdds.toFixed(2)}
                   </div>
                 </div>
                 <div className="text-right">
@@ -1123,7 +1142,7 @@ export default function MatchDetailPage() {
                         : "text-white/40"
                     }`}
                   >
-                    {signal.edge == null ? "缺少市场赔率" : `差值 ${signal.edge}%`}
+                    {signal.edge == null ? "未接真实盘口" : `差值 ${signal.edge}%`}
                   </div>
                 </div>
               </div>
@@ -1363,7 +1382,7 @@ export default function MatchDetailPage() {
                 {topSignal.label} · {selectedExposureAmount} 模拟积分
               </div>
               <div className="mt-1 text-[11px] leading-5 text-white/45">
-                模型概率 {topSignal.modelProbability}% · 公平赔率 {topSignal.fairOdds.toFixed(2)}
+                模型概率 {topSignal.modelProbability}% · 模型公平赔率 {topSignal.fairOdds.toFixed(2)}
                 {topSignal.edge == null ? " · 暂无市场差" : ` · 价值差 ${topSignal.edge}%`}
               </div>
             </div>
