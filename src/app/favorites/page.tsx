@@ -6,6 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 import { calculateHotScore } from "@/lib/hot-score";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
 import {
+  calculateFootballPrediction,
+  MatchAnalysisData,
+  PredictionResult,
+} from "@/lib/football-prediction";
+import {
   Membership,
   PRO_MONTHLY_PRICE_CNY,
   freeMembership,
@@ -44,6 +49,60 @@ type FixtureLike = {
   goals: { home?: number | null; away?: number | null };
 };
 
+type ApiStatItem = { type: string; value: number | string | null };
+type ApiTeamStats = { statistics?: ApiStatItem[] };
+type ApiBet = {
+  name: string;
+  values?: Array<{ value: string; odd?: string }>;
+};
+type ApiRecentForm = {
+  response?: Array<{
+    teams: { home: { id: number }; away: { id: number } };
+    goals: { home?: number | null; away?: number | null };
+  }>;
+};
+type MatchDetailResponse = {
+  statistics?: { response?: ApiTeamStats[] } | null;
+  odds?: { response?: Array<{ bookmakers?: Array<{ bets?: ApiBet[] }> }> } | null;
+  recentForm?: { home?: ApiRecentForm | null; away?: ApiRecentForm | null };
+  teamIds?: { home?: number | null; away?: number | null };
+};
+
+type RealtimeStats = {
+  possessionHome: number;
+  possessionAway: number;
+  shotsHome: number;
+  shotsAway: number;
+  shotsOnTargetHome: number;
+  shotsOnTargetAway: number;
+  cornersHome: number;
+  cornersAway: number;
+  xGHome: number;
+  xGAway: number;
+};
+
+type OddsData = MatchAnalysisData["odds"];
+type RecentForm = Array<"W" | "D" | "L">;
+
+type ModelSnapshot = {
+  prediction: PredictionResult;
+  hasRealOdds: boolean;
+  hasStats: boolean;
+  hasRecentForm: boolean;
+};
+
+type PortfolioOpportunity = {
+  market: string;
+  direction: string;
+  probability: number;
+  fairOdds: number;
+  offeredOdds: number | null;
+  edge: number | null;
+  bucket: PortfolioPick["portfolioBucket"];
+  valueLabel: string;
+  oddsLabel: string;
+};
+
 type PreferencesRow = {
   risk_level?: RiskLevel | null;
   capital?: number | null;
@@ -61,6 +120,13 @@ type PortfolioPick = {
   direction: string;
   reason: string;
   riskLabel: "低波动" | "中等波动" | "波动偏高";
+  oddsLabel: string;
+  valueLabel: string;
+  valueEdge: number | null;
+  offeredOdds: number | null;
+  fairOdds: number;
+  hasRealOdds: boolean;
+  portfolioBucket: "稳定主选" | "价值候选" | "爆冷小注" | "观察";
   dataBasis: string[];
   exposurePercent: number;
   exposurePoints: number;
@@ -157,6 +223,27 @@ const defaultPrefs: UserPrefs = {
   preferred_models: defaultPreferenceValues.preferred_models,
 };
 
+const neutralStats: RealtimeStats = {
+  possessionHome: 50,
+  possessionAway: 50,
+  shotsHome: 0,
+  shotsAway: 0,
+  shotsOnTargetHome: 0,
+  shotsOnTargetAway: 0,
+  cornersHome: 0,
+  cornersAway: 0,
+  xGHome: 0,
+  xGAway: 0,
+};
+
+const emptyOdds: OddsData = {
+  homeWin: 0,
+  draw: 0,
+  awayWin: 0,
+  handicap: "暂无",
+  overUnder: "暂无",
+};
+
 function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
   const statusShort = fixture.fixture.status.short;
   let status: MatchStatus = "upcoming";
@@ -184,6 +271,125 @@ function clamp(value: number, min: number, max: number) {
 
 function formatPercent(value: number) {
   return value.toFixed(1).replace(".0", "");
+}
+
+function safeStatValue(items: ApiStatItem[] | undefined, type: string) {
+  const item = items?.find((stat) => stat.type === type);
+  if (!item) return 0;
+  const raw =
+    typeof item.value === "string" ? Number(item.value.replace("%", "")) : item.value;
+  return Number.isFinite(raw) ? Number(raw) : 0;
+}
+
+function mapDetailStats(teams?: ApiTeamStats[]): RealtimeStats | null {
+  if (!teams || teams.length < 2) return null;
+
+  const home = teams[0].statistics;
+  const away = teams[1].statistics;
+  const stats = {
+    possessionHome: safeStatValue(home, "Ball Possession"),
+    possessionAway: safeStatValue(away, "Ball Possession"),
+    shotsHome: safeStatValue(home, "Total Shots"),
+    shotsAway: safeStatValue(away, "Total Shots"),
+    shotsOnTargetHome: safeStatValue(home, "Shots on Target"),
+    shotsOnTargetAway: safeStatValue(away, "Shots on Target"),
+    cornersHome: safeStatValue(home, "Corner Kicks"),
+    cornersAway: safeStatValue(away, "Corner Kicks"),
+    xGHome: safeStatValue(home, "Expected Goals"),
+    xGAway: safeStatValue(away, "Expected Goals"),
+  };
+
+  const hasAnyRealStat =
+    stats.shotsHome > 0 ||
+    stats.shotsAway > 0 ||
+    stats.shotsOnTargetHome > 0 ||
+    stats.shotsOnTargetAway > 0 ||
+    stats.cornersHome > 0 ||
+    stats.cornersAway > 0 ||
+    stats.xGHome > 0 ||
+    stats.xGAway > 0;
+
+  return hasAnyRealStat ? stats : null;
+}
+
+function mapDetailOdds(bets?: ApiBet[]): OddsData | null {
+  if (!bets) return null;
+
+  const winner = bets.find((bet) => bet.name === "Match Winner");
+  const overUnder = bets.find((bet) => bet.name === "Goals Over/Under");
+  const handicap = bets.find((bet) => bet.name === "Asian Handicap");
+  const value = (name: string) =>
+    Number(winner?.values?.find((item) => item.value === name)?.odd);
+  const homeWin = value("Home");
+  const draw = value("Draw");
+  const awayWin = value("Away");
+
+  if (![homeWin, draw, awayWin].every((odd) => Number.isFinite(odd) && odd > 1)) {
+    return null;
+  }
+
+  return {
+    homeWin,
+    draw,
+    awayWin,
+    handicap: handicap?.values?.[0]?.value ?? "暂无",
+    overUnder: overUnder?.values?.[0]?.value ?? "暂无",
+  };
+}
+
+function mapDetailForm(raw: ApiRecentForm | null | undefined, teamId?: number | null): RecentForm {
+  if (!raw?.response?.length || !teamId) return [];
+
+  return raw.response.slice(0, 10).map((fixture) => {
+    const isHome = fixture.teams.home.id === teamId;
+    const gf = isHome ? fixture.goals.home ?? 0 : fixture.goals.away ?? 0;
+    const ga = isHome ? fixture.goals.away ?? 0 : fixture.goals.home ?? 0;
+    if (gf > ga) return "W";
+    if (gf < ga) return "L";
+    return "D";
+  });
+}
+
+function buildModelSnapshot(
+  match: MatchCard,
+  detail: MatchDetailResponse | undefined,
+  prefs: UserPrefs
+): ModelSnapshot {
+  const bets = detail?.odds?.response?.[0]?.bookmakers?.[0]?.bets;
+  const odds = mapDetailOdds(bets);
+  const stats = mapDetailStats(detail?.statistics?.response) ?? neutralStats;
+  const homeForm = mapDetailForm(detail?.recentForm?.home, detail?.teamIds?.home);
+  const awayForm = mapDetailForm(detail?.recentForm?.away, detail?.teamIds?.away);
+
+  const analysisData: MatchAnalysisData = {
+    homeTeam: translateTeam(match.homeTeam),
+    awayTeam: translateTeam(match.awayTeam),
+    league: translateLeague(match.league),
+    homeForm: homeForm.join("-"),
+    awayForm: awayForm.join("-"),
+    homeStats: {
+      possession: stats.possessionHome,
+      shots: stats.shotsHome,
+      shotsOnTarget: stats.shotsOnTargetHome,
+      xG: stats.xGHome,
+      corners: stats.cornersHome,
+    },
+    awayStats: {
+      possession: stats.possessionAway,
+      shots: stats.shotsAway,
+      shotsOnTarget: stats.shotsOnTargetAway,
+      xG: stats.xGAway,
+      corners: stats.cornersAway,
+    },
+    odds: odds ?? emptyOdds,
+  };
+
+  return {
+    prediction: calculateFootballPrediction(analysisData, prefs),
+    hasRealOdds: !!odds,
+    hasStats: stats !== neutralStats,
+    hasRecentForm: homeForm.length > 0 || awayForm.length > 0,
+  };
 }
 
 function normalizeRiskLevel(value: unknown): RiskLevel {
@@ -391,105 +597,270 @@ function hoursUntilKickoff(match: MatchCard) {
   return (new Date(match.date).getTime() - Date.now()) / 3_600_000;
 }
 
-function teamSignal(team: string) {
-  const highSignalTeams = [
-    "曼城",
-    "阿森纳",
-    "利物浦",
-    "皇马",
-    "巴塞罗那",
-    "拜仁",
-    "巴黎",
-    "国际米兰",
-    "AC 米兰",
-    "Manchester City",
-    "Arsenal",
-    "Liverpool",
-    "Real Madrid",
-    "Barcelona",
-    "Bayern Munich",
-    "Paris Saint-Germain",
-    "Inter",
-    "AC Milan",
-  ];
-
-  return highSignalTeams.some((name) => team.includes(name)) ? 1 : 0;
+function fairOddsFromProbability(probability: number) {
+  return Math.round((100 / Math.max(probability, 1)) * 100) / 100;
 }
 
-function favoredSide(match: MatchCard) {
-  if (match.status === "live" && match.homeScore !== match.awayScore) {
-    return match.homeScore > match.awayScore ? "主队" : "客队";
+function outcomeDirection(market: "homeWin" | "draw" | "awayWin") {
+  return {
+    homeWin: "主胜方向",
+    draw: "平局方向",
+    awayWin: "客胜方向",
+  }[market];
+}
+
+function buildOutcomeBucket(
+  probability: number,
+  fairOdds: number,
+  offeredOdds: number | null,
+  edge: number | null
+): PortfolioPick["portfolioBucket"] {
+  if ((offeredOdds ?? fairOdds) >= 3.2 && (edge ?? 0) >= 2) return "爆冷小注";
+  if (probability >= 58 && fairOdds <= 1.85) return "稳定主选";
+  if (edge != null && edge >= 3) return "价值候选";
+  if (probability >= 52 && fairOdds <= 2.1) return "价值候选";
+  return "观察";
+}
+
+function valueLabel(edge: number | null, hasRealOdds: boolean) {
+  if (edge == null) {
+    return hasRealOdds ? "盘口数据不足" : "待盘口确认";
+  }
+  if (edge >= 3) return `模型高于市场 ${edge.toFixed(1)}%`;
+  if (edge <= -3) return `市场偏热 ${Math.abs(edge).toFixed(1)}%`;
+  return "模型与市场接近";
+}
+
+function buildPreferredOpportunities(
+  match: MatchCard,
+  snapshot: ModelSnapshot,
+  prefs: UserPrefs
+): PortfolioOpportunity[] {
+  const markets = new Set(prefs.preferred_markets);
+  const hasMarket = (name: string) => markets.size === 0 || markets.has(name);
+  const { prediction } = snapshot;
+  const opportunities: PortfolioOpportunity[] = [];
+
+  if (hasMarket("胜平负")) {
+    prediction.valueSignals.forEach((signal) => {
+      opportunities.push({
+        market: "胜平负",
+        direction: outcomeDirection(signal.market),
+        probability: signal.modelProbability,
+        fairOdds: signal.fairOdds,
+        offeredOdds: signal.offeredOdds,
+        edge: signal.edge,
+        bucket: buildOutcomeBucket(
+          signal.modelProbability,
+          signal.fairOdds,
+          signal.offeredOdds,
+          signal.edge
+        ),
+        valueLabel: valueLabel(signal.edge, snapshot.hasRealOdds),
+        oddsLabel: signal.offeredOdds
+          ? `市场 ${signal.offeredOdds.toFixed(2)} / 公平 ${signal.fairOdds.toFixed(2)}`
+          : `公平 ${signal.fairOdds.toFixed(2)} / 待盘口`,
+      });
+    });
   }
 
-  const homeSignal = teamSignal(match.homeTeam);
-  const awaySignal = teamSignal(match.awayTeam);
-  if (homeSignal !== awaySignal) return homeSignal > awaySignal ? "主队" : "客队";
-  return "主队";
+  if (hasMarket("大小球")) {
+    const over = prediction.probabilities.over25;
+    const under = prediction.probabilities.under25;
+    const overIsBetter = over >= under;
+    const probability = overIsBetter ? over : under;
+    const direction = overIsBetter ? "大 2.5 球方向" : "小 2.5 球方向";
+    opportunities.push({
+      market: "大小球",
+      direction,
+      probability,
+      fairOdds: fairOddsFromProbability(probability),
+      offeredOdds: null,
+      edge: null,
+      bucket: probability >= 58 ? "价值候选" : "观察",
+      valueLabel: snapshot.hasRealOdds ? "缺少大小球赔率" : "待盘口确认",
+      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待盘口`,
+    });
+  }
+
+  if (hasMarket("双方进球")) {
+    const probability = prediction.probabilities.bothTeamsToScore;
+    opportunities.push({
+      market: "双方进球",
+      direction: probability >= 52 ? "双方进球方向" : "双方不进球观察",
+      probability,
+      fairOdds: fairOddsFromProbability(probability),
+      offeredOdds: null,
+      edge: null,
+      bucket: probability >= 57 ? "价值候选" : "观察",
+      valueLabel: snapshot.hasRealOdds ? "缺少双方进球赔率" : "待盘口确认",
+      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待盘口`,
+    });
+  }
+
+  if (hasMarket("双重机会")) {
+    const homeNoLose = prediction.probabilities.homeWin + prediction.probabilities.draw;
+    const awayNoLose = prediction.probabilities.awayWin + prediction.probabilities.draw;
+    const noDraw = prediction.probabilities.homeWin + prediction.probabilities.awayWin;
+    const best = [
+      { direction: "主队不败", probability: homeNoLose },
+      { direction: "客队不败", probability: awayNoLose },
+      { direction: "分胜负", probability: noDraw },
+    ].sort((a, b) => b.probability - a.probability)[0];
+
+    opportunities.push({
+      market: "双重机会",
+      direction: best.direction,
+      probability: best.probability,
+      fairOdds: fairOddsFromProbability(best.probability),
+      offeredOdds: null,
+      edge: null,
+      bucket: "稳定主选",
+      valueLabel: "低波动保护",
+      oddsLabel: `公平 ${fairOddsFromProbability(best.probability).toFixed(2)} / 待盘口`,
+    });
+  }
+
+  if (hasMarket("平局退款")) {
+    const home = prediction.probabilities.homeWin;
+    const away = prediction.probabilities.awayWin;
+    const side = home >= away ? "主队" : "客队";
+    const probability = Math.max(home, away) + prediction.probabilities.draw * 0.35;
+
+    opportunities.push({
+      market: "平局退款",
+      direction: `${side}平局退款`,
+      probability,
+      fairOdds: fairOddsFromProbability(probability),
+      offeredOdds: null,
+      edge: null,
+      bucket: probability >= 55 ? "稳定主选" : "价值候选",
+      valueLabel: "平局保护",
+      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待盘口`,
+    });
+  }
+
+  if (hasMarket("让球")) {
+    const top = prediction.valueSignals.find((signal) => signal.market !== "draw");
+    if (top) {
+      opportunities.push({
+        market: "让球 / 亚洲让球",
+        direction: `${top.market === "homeWin" ? "主队" : "客队"}让球观察`,
+        probability: top.modelProbability,
+        fairOdds: top.fairOdds,
+        offeredOdds: top.offeredOdds,
+        edge: top.edge,
+        bucket: (top.edge ?? 0) >= 3 ? "价值候选" : "观察",
+        valueLabel: valueLabel(top.edge, snapshot.hasRealOdds),
+        oddsLabel: top.offeredOdds
+          ? `市场 ${top.offeredOdds.toFixed(2)} / 公平 ${top.fairOdds.toFixed(2)}`
+          : `公平 ${top.fairOdds.toFixed(2)} / 待盘口`,
+      });
+    }
+  }
+
+  if (hasMarket("比分")) {
+    opportunities.push({
+      market: "比分",
+      direction: `${prediction.predictedScore.label} 小注观察`,
+      probability: Math.max(8, prediction.confidence * 0.18),
+      fairOdds: 100 / Math.max(8, prediction.confidence * 0.18),
+      offeredOdds: null,
+      edge: null,
+      bucket: "爆冷小注",
+      valueLabel: "高赔率小注",
+      oddsLabel: "需真实比分赔率",
+    });
+  }
+
+  if (opportunities.length > 0) return opportunities;
+
+  const fallback = prediction.valueSignals[0];
+  return [
+    {
+      market: "胜平负",
+      direction: outcomeDirection(fallback.market),
+      probability: fallback.modelProbability,
+      fairOdds: fallback.fairOdds,
+      offeredOdds: fallback.offeredOdds,
+      edge: fallback.edge,
+      bucket: buildOutcomeBucket(
+        fallback.modelProbability,
+        fallback.fairOdds,
+        fallback.offeredOdds,
+        fallback.edge
+      ),
+      valueLabel: valueLabel(fallback.edge, snapshot.hasRealOdds),
+      oddsLabel: fallback.offeredOdds
+        ? `市场 ${fallback.offeredOdds.toFixed(2)} / 公平 ${fallback.fairOdds.toFixed(2)}`
+        : `公平 ${fallback.fairOdds.toFixed(2)} / 待盘口`,
+    },
+  ];
 }
 
-function buildDataBasis(match: MatchCard, prefs: UserPrefs) {
+function chooseOpportunity(
+  opportunities: PortfolioOpportunity[],
+  mode: PortfolioMode
+): PortfolioOpportunity {
+  const scored = opportunities.map((item) => {
+    const edgeScore = item.edge ?? (item.bucket === "稳定主选" ? 1 : 0);
+    const oddsScore = item.offeredOdds ?? item.fairOdds;
+    const bucketScore =
+      item.bucket === "稳定主选" ? 8 : item.bucket === "价值候选" ? 5 : item.bucket === "爆冷小注" ? 3 : 0;
+
+    const score =
+      mode === "stable"
+        ? item.probability * 1.2 - item.fairOdds * 7 + bucketScore * 3 + edgeScore
+        : mode === "opportunity"
+          ? oddsScore * 8 + Math.max(edgeScore, 0) * 3 + item.probability * 0.2
+          : item.probability * 0.65 + Math.max(edgeScore, 0) * 4 + bucketScore * 2;
+
+    return { item, score };
+  });
+
+  return scored.sort((a, b) => b.score - a.score)[0]?.item ?? opportunities[0];
+}
+
+function buildDataBasis(match: MatchCard, prefs: UserPrefs, snapshot: ModelSnapshot) {
   const basis = ["收藏池", "赛程时间", "联赛权重", "球队关注度"];
   if (match.status === "live") basis.push("实时比分");
+  if (snapshot.hasRealOdds) basis.push("真实赔率");
+  else basis.push("待盘口");
+  if (snapshot.hasStats) basis.push("实时统计");
+  if (snapshot.hasRecentForm) basis.push("近况");
   if (prefs.preferred_models.includes("凯利风控")) basis.push("模拟风控");
   if (prefs.preferred_models.includes("爆冷检测")) basis.push("冷门检查");
   return basis;
 }
 
-function buildDirection(match: MatchCard, mode: PortfolioMode, prefs: UserPrefs, score: number) {
-  const side = favoredSide(match);
-
-  if (match.status === "live" && Math.abs(match.homeScore - match.awayScore) <= 1) {
-    return mode === "opportunity" ? "实时进球数机会" : `${side}低波动观察`;
-  }
-
-  if (mode === "stable") {
-    return prefs.preferred_markets.includes("双重机会")
-      ? `${side}不败方向`
-      : `${side}低波动方向`;
-  }
-
-  if (mode === "opportunity") {
-    if (prefs.preferred_markets.includes("让球") && score >= 72) return `${side}让球观察`;
-    if (prefs.preferred_markets.includes("双方进球")) return "双方进球机会";
-    return prefs.preferred_markets.includes("大小球") ? "进球数机会" : "冷门机会观察";
-  }
-
-  if (prefs.preferred_markets.includes("胜平负") && score >= 70) return `${side}胜平负方向`;
-  if (prefs.preferred_markets.includes("大小球")) return "大小球方向";
-  return "主流市场方向";
-}
-
-function buildMarket(mode: PortfolioMode, prefs: UserPrefs, score: number) {
-  if (mode === "stable") {
-    if (prefs.preferred_markets.includes("双重机会")) return "双重机会";
-    if (prefs.preferred_markets.includes("平局退款")) return "平局退款";
-    return "低波动市场";
-  }
-
-  if (mode === "opportunity") {
-    if (prefs.preferred_markets.includes("让球") && score >= 72) return "让球 / 亚洲让球";
-    if (prefs.preferred_markets.includes("双方进球")) return "双方进球";
-    if (prefs.preferred_markets.includes("比分")) return "比分观察";
-    return "大小球";
-  }
-
-  if (prefs.preferred_markets.includes("胜平负")) return "胜平负";
-  if (prefs.preferred_markets.includes("大小球")) return "大小球";
-  return "双重机会";
-}
-
-function buildReason(match: MatchCard, score: number, mode: PortfolioMode, confidence: number) {
+function buildReason(
+  match: MatchCard,
+  score: number,
+  mode: PortfolioMode,
+  confidence: number,
+  opportunity: PortfolioOpportunity,
+  snapshot: ModelSnapshot
+) {
   if (match.status === "finished") return "比赛已结束，只保留复盘价值，不进入组合。";
   if (match.status === "live") {
     return Math.abs(match.homeScore - match.awayScore) <= 1
       ? "实时比分仍接近，保留组合观察价值；临场数据接入后会继续校准。"
       : "比分差距已经拉开，模型会降低组合权重，避免追高。";
   }
+  if (!snapshot.hasRealOdds) {
+    return `当前先按模型公平赔率筛选：${opportunity.direction}，${opportunity.valueLabel}。等真实盘口接入后，会用市场赔率重新计算价值差和模拟比例。`;
+  }
+  if (opportunity.bucket === "爆冷小注") {
+    return `${opportunity.direction} 属于高赔率机会，${opportunity.valueLabel}；只适合小比例放进机会组合，不适合重仓。`;
+  }
+  if (opportunity.bucket === "稳定主选") {
+    return `${opportunity.direction} 的模型概率更稳，${opportunity.valueLabel}；适合作为稳定组合的主选之一。`;
+  }
   if (score >= 74) {
-    return `收藏池里信号较强，当前信号强度 ${confidence}%，适合作为组合主选候选。`;
+    return `收藏池里信号较强，当前信号强度 ${confidence}%，${opportunity.valueLabel}，适合作为组合主选候选。`;
   }
   if (score >= 62) {
-    return "信息量够用，适合作为分散场次；不建议把模拟积分集中在这一场。";
+    return `${opportunity.direction} 信息量够用，适合作为分散场次；不建议把模拟积分集中在这一场。`;
   }
   return mode === "opportunity"
     ? "信号偏弱，只能作为小比例机会观察，等盘口和阵容数据确认。"
@@ -499,9 +870,13 @@ function buildReason(match: MatchCard, score: number, mode: PortfolioMode, confi
 function buildPortfolioPick(
   match: MatchCard,
   mode: PortfolioMode,
-  prefs: UserPrefs
+  prefs: UserPrefs,
+  detail?: MatchDetailResponse
 ): PortfolioPick {
   const modeConfig = portfolioModes.find((item) => item.id === mode) ?? portfolioModes[1];
+  const snapshot = buildModelSnapshot(match, detail, prefs);
+  const opportunities = buildPreferredOpportunities(match, snapshot, prefs);
+  const opportunity = chooseOpportunity(opportunities, mode);
   const hotScore = calculateHotScore({
     leagueId: match.leagueId ?? 0,
     homeTeam: match.homeTeam,
@@ -527,8 +902,22 @@ function buildPortfolioPick(
     (prefs.preferred_markets.includes("大小球") ? 1 : 0) +
     (prefs.preferred_markets.includes("双重机会") && mode === "stable" ? 2 : 0);
   const modeAdjustment = mode === "stable" ? -1 : mode === "opportunity" ? 2 : 0;
+  const edgeBoost = opportunity.edge == null ? 0 : clamp(opportunity.edge * 1.2, -8, 12);
+  const dataBoost =
+    (snapshot.hasRealOdds ? 6 : -4) + (snapshot.hasStats ? 3 : 0) + (snapshot.hasRecentForm ? 2 : 0);
+  const probabilityBoost = (opportunity.probability - 50) * 0.35;
   const score = clamp(
-    hotScore + timingBoost + statusPenalty + livePenalty + modelBoost + marketBoost + modeAdjustment,
+    hotScore * 0.35 +
+      snapshot.prediction.confidence * 0.38 +
+      probabilityBoost +
+      edgeBoost +
+      dataBoost +
+      timingBoost +
+      statusPenalty +
+      livePenalty +
+      modelBoost +
+      marketBoost +
+      modeAdjustment,
     0,
     100
   );
@@ -537,16 +926,42 @@ function buildPortfolioPick(
     (mode === "opportunity" ? 18 : mode === "balanced" ? 10 : 5) +
     (match.status === "live" ? 8 : 0) +
     (hoursUntil > 72 ? 6 : 0);
-  const confidence = clamp(Math.round(score - volatility * 0.35), 35, 88);
+  const confidence = clamp(
+    Math.round(snapshot.prediction.confidence + (opportunity.edge ?? 0) * 0.5 - volatility * 0.2),
+    35,
+    88
+  );
   const worthWatching = score >= modeConfig.minScore && match.status !== "finished";
   const cap = riskCapPercent[prefs.risk_level];
-  const rawPercent = ((score - 48) / 52) * cap * modeConfig.multiplier;
-  const maxSinglePercent = mode === "stable" ? cap * 0.42 : mode === "balanced" ? cap * 0.5 : cap * 0.55;
+  const bucketMultiplier =
+    opportunity.bucket === "稳定主选"
+      ? 1.15
+      : opportunity.bucket === "爆冷小注"
+        ? 0.42
+        : opportunity.bucket === "价值候选"
+          ? 0.82
+          : 0.25;
+  const oddsConfidenceMultiplier = snapshot.hasRealOdds ? 1 : 0.58;
+  const rawPercent =
+    ((score - 48) / 52) * cap * modeConfig.multiplier * bucketMultiplier * oddsConfidenceMultiplier;
+  const maxSinglePercent =
+    opportunity.bucket === "爆冷小注"
+      ? cap * 0.22
+      : opportunity.bucket === "稳定主选"
+        ? cap * 0.58
+        : mode === "balanced"
+          ? cap * 0.46
+          : cap * 0.38;
   const exposurePercent = worthWatching ? clamp(rawPercent, 0.6, maxSinglePercent) : 0;
-  const riskLabel = buildPortfolioRiskLabel(mode, score, hoursUntil, match.status);
+  const riskLabel =
+    opportunity.bucket === "爆冷小注"
+      ? "波动偏高"
+      : buildPortfolioRiskLabel(mode, score, hoursUntil, match.status);
   const role = !worthWatching
     ? "观察"
-    : score >= 74
+    : opportunity.bucket === "爆冷小注"
+      ? "机会"
+      : opportunity.bucket === "稳定主选" || score >= 74
       ? "核心"
       : mode === "opportunity"
         ? "机会"
@@ -558,11 +973,18 @@ function buildPortfolioPick(
     confidence,
     grade,
     role,
-    market: buildMarket(mode, prefs, score),
-    direction: buildDirection(match, mode, prefs, score),
-    reason: buildReason(match, score, mode, confidence),
+    market: opportunity.market,
+    direction: opportunity.direction,
+    reason: buildReason(match, score, mode, confidence, opportunity, snapshot),
     riskLabel,
-    dataBasis: buildDataBasis(match, prefs),
+    oddsLabel: opportunity.oddsLabel,
+    valueLabel: opportunity.valueLabel,
+    valueEdge: opportunity.edge,
+    offeredOdds: opportunity.offeredOdds,
+    fairOdds: opportunity.fairOdds,
+    hasRealOdds: snapshot.hasRealOdds,
+    portfolioBucket: worthWatching ? opportunity.bucket : "观察",
+    dataBasis: buildDataBasis(match, prefs, snapshot),
     exposurePercent,
     exposurePoints: Math.round((prefs.capital * exposurePercent) / 100),
     worthWatching,
@@ -572,11 +994,12 @@ function buildPortfolioPick(
 function buildPortfolioPlan(
   matches: MatchCard[],
   mode: PortfolioMode,
-  prefs: UserPrefs
+  prefs: UserPrefs,
+  detailByMatch: Record<number, MatchDetailResponse>
 ): PortfolioPlan {
   const config = portfolioModes.find((item) => item.id === mode) ?? portfolioModes[1];
   const picks = matches
-    .map((match) => buildPortfolioPick(match, mode, prefs))
+    .map((match) => buildPortfolioPick(match, mode, prefs, detailByMatch[match.id]))
     .sort((a, b) => b.score - a.score || a.riskLabel.localeCompare(b.riskLabel));
   const selected: PortfolioPick[] = [];
 
@@ -630,6 +1053,8 @@ export default function FavoritesPage() {
   const [favoriteMatches, setFavoriteMatches] = useState<MatchCard[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailByMatch, setDetailByMatch] = useState<Record<number, MatchDetailResponse>>({});
+  const [detailLoading, setDetailLoading] = useState(false);
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
   const [userPrefs, setUserPrefs] = useState<UserPrefs | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -672,6 +1097,49 @@ export default function FavoritesPage() {
 
     load();
   }, []);
+
+  useEffect(() => {
+    if (favoriteMatches.length === 0) {
+      setDetailByMatch({});
+      return;
+    }
+
+    let cancelled = false;
+    async function loadMatchDetails() {
+      setDetailLoading(true);
+      try {
+        const results = await Promise.allSettled(
+          favoriteMatches.slice(0, 12).map(async (match) => {
+            const res = await fetch(`/api/match/${match.id}`);
+            if (!res.ok) throw new Error("match detail failed");
+            const detail = (await res.json()) as MatchDetailResponse;
+            return [match.id, detail] as const;
+          })
+        );
+
+        if (cancelled) return;
+        const next: Record<number, MatchDetailResponse> = {};
+        results.forEach((result) => {
+          if (result.status === "fulfilled") {
+            next[result.value[0]] = result.value[1];
+          }
+        });
+        setDetailByMatch(next);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("[favorites] failed to load match details:", error);
+          setDetailByMatch({});
+        }
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    }
+
+    void loadMatchDetails();
+    return () => {
+      cancelled = true;
+    };
+  }, [favoriteMatches]);
 
   useEffect(() => {
     let cancelled = false;
@@ -743,9 +1211,18 @@ export default function FavoritesPage() {
   }, [session, user]);
 
   const activePortfolioMode = portfolioModeFromPrefs(activePrefs);
+  const plansByMode = useMemo(
+    () =>
+      portfolioModes.map((mode) =>
+        buildPortfolioPlan(favoriteMatches, mode.id, activePrefs, detailByMatch)
+      ),
+    [activePrefs, detailByMatch, favoriteMatches]
+  );
   const activePlan = useMemo(
-    () => buildPortfolioPlan(favoriteMatches, activePortfolioMode, activePrefs),
-    [activePortfolioMode, activePrefs, favoriteMatches]
+    () =>
+      plansByMode.find((plan) => plan.mode === activePortfolioMode) ??
+      buildPortfolioPlan(favoriteMatches, activePortfolioMode, activePrefs, detailByMatch),
+    [activePortfolioMode, activePrefs, detailByMatch, favoriteMatches, plansByMode]
   );
   const portfolioPicks = activePlan.picks;
   const modeConfig =
@@ -790,6 +1267,11 @@ export default function FavoritesPage() {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
     setFavoriteIds(updated);
     setFavoriteMatches((prev) => prev.filter((match) => match.id !== id));
+    setDetailByMatch((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setSelectedIds((prev) => prev.filter((matchId) => matchId !== id));
   }
 
@@ -890,8 +1372,13 @@ export default function FavoritesPage() {
                 </div>
                 <h2 className="text-lg font-semibold">收藏组合推演</h2>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-white/55">
-                  不在收藏页重复选模型。系统直接读取设置页的风险偏好、模型和关注市场，再从收藏比赛里给出推荐。
+                  不在收藏页重复选模型。系统会读取设置页偏好，再逐场拉取赔率、统计和近况；有真实盘口时按价值差分组，没有盘口时只做赛前观察。
                 </p>
+                {detailLoading && (
+                  <p className="mt-2 text-[11px] text-amber-200/80">
+                    正在读取收藏比赛的盘口和模型数据...
+                  </p>
+                )}
               </div>
 
               {!isPro && firstFavoriteMatchId && (
@@ -923,15 +1410,15 @@ export default function FavoritesPage() {
                   </div>
                   <div className="grid shrink-0 grid-cols-3 gap-2 text-xs">
                     <div className="rounded-xl bg-black/35 px-3 py-2">
-                      <div className="text-white/40">市场</div>
+                      <div className="text-white/40">关注玩法</div>
                       <div className="mt-1 font-semibold text-white">{singleBestPick.market}</div>
                     </div>
                     <div className="rounded-xl bg-black/35 px-3 py-2">
-                      <div className="text-white/40">波动</div>
-                      <div className="mt-1 font-semibold text-white">{singleBestPick.riskLabel}</div>
+                      <div className="text-white/40">价值差</div>
+                      <div className="mt-1 font-semibold text-white">{singleBestPick.valueLabel}</div>
                     </div>
                     <div className="rounded-xl bg-[color:var(--accent)]/10 px-3 py-2">
-                      <div className="text-[color:var(--accent)]/70">模拟</div>
+                      <div className="text-[color:var(--accent)]/70">建议占比</div>
                       <div className="mt-1 font-semibold text-[color:var(--accent)]">
                         {singleBestPick.worthWatching
                           ? `${formatPercent(singleBestPick.exposurePercent)}%`
@@ -1005,6 +1492,38 @@ export default function FavoritesPage() {
               </div>
             </div>
 
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {plansByMode.map((plan) => {
+                const planSelected = plan.picks.filter((pick) =>
+                  plan.selectedIds.includes(pick.match.id)
+                );
+                const topBucket = planSelected[0]?.portfolioBucket ?? "观察";
+                return (
+                  <div
+                    key={plan.mode}
+                    className={`rounded-2xl border p-3 ${
+                      plan.mode === activePortfolioMode
+                        ? "border-[color:var(--accent)]/45 bg-[color:var(--accent)]/10"
+                        : "border-white/8 bg-black/22"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold text-white">{plan.label}</div>
+                        <div className="mt-1 text-[11px] text-white/45">
+                          {topBucket} · {plan.selectedIds.length} 场
+                        </div>
+                      </div>
+                      <div className="rounded-full bg-black/35 px-2 py-1 text-[11px] text-[color:var(--accent)]">
+                        {formatPercent(plan.totalExposurePercent)}%
+                      </div>
+                    </div>
+                    <p className="mt-3 text-[11px] leading-5 text-white/50">{plan.summary}</p>
+                  </div>
+                );
+              })}
+            </div>
+
             <div className="mt-4 grid gap-3 md:grid-cols-5">
               <div className="rounded-xl bg-black/25 p-3">
                 <div className="text-[11px] text-white/45">可组合场次</div>
@@ -1048,13 +1567,13 @@ export default function FavoritesPage() {
               <span className="font-semibold text-[color:var(--accent)]">组合建议：</span>
               {selectedPicks.length === 0
                 ? "收藏里暂时没有足够强的信号，建议先观察，不强行组合。"
-                : `${activePlan.headline}：${modeConfig.description} 已选 ${selectedPicks.length} 场，总模拟比例 ${formatPercent(
+                : `${activePlan.headline}：稳定主选会给更高模拟比例，爆冷或高赔率方向只保留小注观察。已选 ${selectedPicks.length} 场，总模拟比例 ${formatPercent(
                     totalExposurePercent
                   )}%。优先分散到不同比赛，不把模拟积分集中在单一场次。`}
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
               <span className="font-semibold text-white/75">分析口径：</span>
-              当前先用收藏池、赛程、联赛权重、球队热度和风险偏好生成单场评分；详情页有真实赔率时会用欧赔胜平负做去水校准。后续实时盘口、历史战绩和球员数据接入后，会重新计算信号强度和组合比例。
+              组合先读取用户设置的风险偏好、模型和关注市场，再逐场计算模型公平赔率、市场赔率去水概率和价值差。有真实盘口时才按“模型高于市场”给价值分；没有盘口时只显示待盘口确认，不当作真实投注信号。
             </div>
 
             <div className={`mt-4 grid gap-3 ${isPro ? "" : "opacity-70"}`}>
@@ -1073,7 +1592,10 @@ export default function FavoritesPage() {
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-[color:var(--accent)]">
-                            {pick.grade} 级 · {pick.score} 分
+                            优先级 {pick.grade} · 推荐分 {pick.score}
+                          </span>
+                          <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-white/60">
+                            {pick.portfolioBucket}
                           </span>
                           <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-white/60">
                             {portfolioRoleLabel(pick.role)} · 信号强度 {pick.confidence}%
@@ -1095,17 +1617,21 @@ export default function FavoritesPage() {
                         </div>
                       </div>
 
-                      <div className="grid gap-2 text-xs md:min-w-[360px] md:grid-cols-3">
+                      <div className="grid gap-2 text-xs md:min-w-[640px] md:grid-cols-5">
                         <div className="rounded-xl bg-black/25 p-2">
-                          <div className="text-white/42">参考市场</div>
+                          <div className="text-white/42">关注玩法</div>
                           <div className="mt-1 font-semibold text-white">{pick.market}</div>
                         </div>
                         <div className="rounded-xl bg-black/25 p-2">
-                          <div className="text-white/42">参考方向</div>
+                          <div className="text-white/42">模型方向</div>
                           <div className="mt-1 font-semibold text-white">{pick.direction}</div>
                         </div>
                         <div className="rounded-xl bg-black/25 p-2">
-                          <div className="text-white/42">模拟比例</div>
+                          <div className="text-white/42">赔率参考</div>
+                          <div className="mt-1 font-semibold text-white">{pick.oddsLabel}</div>
+                        </div>
+                        <div className="rounded-xl bg-black/25 p-2">
+                          <div className="text-white/42">建议占比</div>
                           <div className="mt-1 font-semibold text-[color:var(--accent)]">
                             {pick.worthWatching ? `${formatPercent(pick.exposurePercent)}%` : "观望"}
                           </div>

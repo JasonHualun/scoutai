@@ -100,6 +100,70 @@ async function mockFavoriteMatches(page: Page) {
       }),
     });
   });
+
+  await page.route("**/api/match/910**", async (route) => {
+    const url = new URL(route.request().url());
+    const id = Number(url.pathname.split("/").pop());
+    const oddsById: Record<number, [number, number, number]> = {
+      91001: [1.82, 3.65, 4.4],
+      91002: [2.15, 3.75, 3.05],
+      91003: [2.55, 3.1, 2.85],
+    };
+    const [homeWin, draw, awayWin] = oddsById[id] ?? [2, 3.3, 3.6];
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        statistics: {
+          response: [
+            {
+              statistics: [
+                { type: "Ball Possession", value: "56%" },
+                { type: "Total Shots", value: 12 },
+                { type: "Shots on Target", value: 5 },
+                { type: "Corner Kicks", value: 6 },
+                { type: "Expected Goals", value: 1.6 },
+              ],
+            },
+            {
+              statistics: [
+                { type: "Ball Possession", value: "44%" },
+                { type: "Total Shots", value: 9 },
+                { type: "Shots on Target", value: 3 },
+                { type: "Corner Kicks", value: 4 },
+                { type: "Expected Goals", value: 1.1 },
+              ],
+            },
+          ],
+        },
+        odds: {
+          response: [
+            {
+              bookmakers: [
+                {
+                  bets: [
+                    {
+                      name: "Match Winner",
+                      values: [
+                        { value: "Home", odd: String(homeWin) },
+                        { value: "Draw", odd: String(draw) },
+                        { value: "Away", odd: String(awayWin) },
+                      ],
+                    },
+                    { name: "Goals Over/Under", values: [{ value: "Over 2.5", odd: "1.9" }] },
+                    { name: "Asian Handicap", values: [{ value: "Home -0.25", odd: "1.95" }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        recentForm: { home: null, away: null },
+        teamIds: { home: 1, away: 2 },
+      }),
+    });
+  });
 }
 
 test("core pages render without mojibake", async ({ page }) => {
