@@ -1,7 +1,11 @@
 import { createClient as _createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+function cleanEnv(value: string | undefined) {
+  return (value ?? "").replace(/\\r\\n/g, "").replace(/\\n/g, "").trim();
+}
+
+const supabaseUrl = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 // 客户端单例（向后兼容现有代码）
 export const supabase = _createClient(supabaseUrl, supabaseAnonKey);
@@ -22,7 +26,7 @@ export function createServerClient() {
 }
 
 export function createServiceRoleClient() {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!serviceRoleKey) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY 未配置");
   }

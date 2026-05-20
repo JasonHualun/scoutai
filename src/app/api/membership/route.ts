@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase";
+import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
 import { freeMembership, normalizeMembership } from "@/lib/membership";
 
 export async function GET(req: NextRequest) {
@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ membership: freeMembership() });
   }
 
-  const { data, error } = await supabase
+  const serviceSupabase = createServiceRoleClient();
+  const { data, error } = await serviceSupabase
     .from("memberships")
     .select("plan, pro_until")
     .eq("user_id", user.id)

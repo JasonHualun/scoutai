@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase";
+import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
 import {
   analyzeWithMinimax,
   calculateAnalysisPrediction,
@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Token 无效" }, { status: 401 });
     }
 
-    const { data: membership, error: membershipError } = await supabase
+    const serviceSupabase = createServiceRoleClient();
+    const { data: membership, error: membershipError } = await serviceSupabase
       .from("memberships")
       .select("plan, pro_until")
       .eq("user_id", user.id)
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: prefs, error: prefsError } = await supabase
+    const { data: prefs, error: prefsError } = await serviceSupabase
       .from("user_preferences")
       .select("risk_level, capital, preferred_markets, preferred_models")
       .eq("user_id", user.id)
