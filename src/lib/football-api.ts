@@ -34,6 +34,7 @@ type FallbackMatch = {
   id: number;
   utcDate: string;
   status: string;
+  matchday?: number;
   minute?: number | null;
   competition?: { id?: number; name?: string };
   season?: { currentMatchday?: number };
@@ -125,8 +126,8 @@ function mapFdMatch(match: FallbackMatch) {
     league: {
       id: match.competition?.id ?? 0,
       name: match.competition?.name ?? "",
-      round: match.season?.currentMatchday
-        ? `Matchday ${match.season.currentMatchday}`
+      round: match.matchday
+        ? `Matchday ${match.matchday}`
         : "",
     },
     teams: {
