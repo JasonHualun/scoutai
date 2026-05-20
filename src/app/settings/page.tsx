@@ -69,6 +69,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
   const [capitalEditing, setCapitalEditing] = useState(false);
+  const [savedCapital, setSavedCapital] = useState(defaultPreferences.capital);
   const [portfolioAllocation, setPortfolioAllocation] = useState<PortfolioAllocation>(() =>
     readPortfolioAllocation()
   );
@@ -108,9 +109,11 @@ export default function SettingsPage() {
             const riskLevel = (data.risk_level as RiskLevel) ?? defaultPreferences.risk_level;
             const profile = riskProfiles[riskLevel] ?? riskProfiles.balanced;
 
+            const nextCapital = data.capital ?? defaultPreferences.capital;
+
             setPreferences({
               risk_level: profile.id,
-              capital: data.capital ?? defaultPreferences.capital,
+              capital: nextCapital,
               currency: (data.currency as Currency) ?? defaultPreferences.currency,
               preferred_models: normalizeOptionIds(
                 data.preferred_models,
@@ -125,6 +128,7 @@ export default function SettingsPage() {
               ),
               favorite_leagues: data.favorite_leagues ?? defaultPreferences.favorite_leagues,
             });
+            setSavedCapital(nextCapital);
           }
         }
 
@@ -186,6 +190,7 @@ export default function SettingsPage() {
 
       if (userError || !user) {
         setMessage("已保存到本机。登录后可同步到云端。");
+        setSavedCapital(nextPreferences.capital);
         setCapitalEditing(false);
         return;
       }
@@ -196,6 +201,7 @@ export default function SettingsPage() {
 
       if (upsertError) throw upsertError;
       setMessage("设置已保存并同步。");
+      setSavedCapital(nextPreferences.capital);
       setCapitalEditing(false);
       router.refresh();
     } catch (err) {
@@ -211,6 +217,7 @@ export default function SettingsPage() {
     portfolioAllocation.usedPoints
   );
   const remainingSimulatedPoints = Math.max(0, preferences.capital - usedSimulatedPoints);
+  const capitalDirty = preferences.capital !== savedCapital;
 
   return (
     <div className="space-y-5">
@@ -257,10 +264,23 @@ export default function SettingsPage() {
               <span className="text-[11px] text-white/45">模拟积分</span>
               <button
                 type="button"
-                onClick={() => setCapitalEditing((current) => !current)}
-                className="rounded-full border border-white/10 bg-black/30 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:text-white"
+                disabled={saving}
+                onClick={() => {
+                  if (capitalDirty) {
+                    void saveSettings();
+                    return;
+                  }
+                  setCapitalEditing((current) => !current);
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  capitalDirty
+                    ? "border-red-400/60 bg-red-500/12 text-red-200 shadow-[0_0_18px_rgba(248,113,113,0.18)]"
+                    : capitalEditing
+                      ? "border-[color:var(--accent)]/55 bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
+                      : "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/8 text-[color:var(--accent)] hover:bg-[color:var(--accent)]/14"
+                }`}
               >
-                {capitalEditing ? "锁定" : "修改"}
+                {saving && capitalDirty ? "保存中" : capitalDirty ? "保存积分" : capitalEditing ? "锁定" : "修改"}
               </button>
             </div>
             <input
@@ -275,7 +295,11 @@ export default function SettingsPage() {
                   currency: "CNY",
                 }))
               }
-              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+              className={`w-full rounded-lg border bg-black/40 px-3 py-2 text-sm text-white outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                capitalDirty
+                  ? "border-red-400/70 focus:border-red-300"
+                  : "border-white/10 focus:border-[color:var(--accent)]"
+              }`}
             />
             <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
               <div className="rounded-lg bg-black/25 px-2 py-1.5 text-white/50">
@@ -287,9 +311,15 @@ export default function SettingsPage() {
                 <span className="font-semibold">{remainingSimulatedPoints}</span>
               </div>
             </div>
-            <p className="mt-2 text-[11px] leading-5 text-white/40">
-              输入保存后会锁定；收藏组合占用后，这里的剩余积分会同步减少。
-            </p>
+            {capitalDirty ? (
+              <p className="mt-2 rounded-lg border border-red-400/25 bg-red-500/10 px-2 py-1.5 text-xs leading-5 text-red-200">
+                模拟积分已修改，还没有保存。请点“保存积分”或底部“保存设置”。
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] leading-5 text-white/40">
+                输入保存后会锁定；收藏组合占用后，这里的剩余积分会同步减少。
+              </p>
+            )}
           </div>
         </div>
 

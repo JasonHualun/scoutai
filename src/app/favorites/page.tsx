@@ -10,7 +10,7 @@ import {
   PRO_MONTHLY_PRICE_CNY,
   freeMembership,
 } from "@/lib/membership";
-import { defaultPreferenceValues, RiskLevel } from "@/lib/preference-options";
+import { defaultPreferenceValues, RiskLevel, riskProfiles } from "@/lib/preference-options";
 import { savePortfolioAllocation } from "@/lib/simulated-points";
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime } from "@/lib/time-format";
@@ -204,6 +204,12 @@ function riskLabel(level: RiskLevel) {
     balanced: "稳健型",
     aggressive: "进取型",
   }[level];
+}
+
+function portfolioModeFromPrefs(prefs: UserPrefs): PortfolioMode {
+  if (prefs.risk_level === "conservative") return "stable";
+  if (prefs.risk_level === "aggressive") return "opportunity";
+  return "balanced";
 }
 
 function createDraftOrderNo() {
@@ -592,7 +598,6 @@ export default function FavoritesPage() {
   const [loading, setLoading] = useState(true);
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
   const [userPrefs, setUserPrefs] = useState<UserPrefs | null>(null);
-  const [portfolioMode, setPortfolioMode] = useState<PortfolioMode>("balanced");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectionTouched, setSelectionTouched] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -703,22 +708,15 @@ export default function FavoritesPage() {
     };
   }, [session, user]);
 
-  const portfolioPlans = useMemo(
-    () =>
-      portfolioModes.map((mode) =>
-        buildPortfolioPlan(favoriteMatches, mode.id, activePrefs)
-      ),
-    [activePrefs, favoriteMatches]
+  const activePortfolioMode = portfolioModeFromPrefs(activePrefs);
+  const activePlan = useMemo(
+    () => buildPortfolioPlan(favoriteMatches, activePortfolioMode, activePrefs),
+    [activePortfolioMode, activePrefs, favoriteMatches]
   );
-  const activePlan =
-    portfolioPlans.find((plan) => plan.mode === portfolioMode) ??
-    portfolioPlans[1] ??
-    buildPortfolioPlan([], "balanced", activePrefs);
   const portfolioPicks = activePlan.picks;
-  const modeConfig = portfolioModes.find((item) => item.id === portfolioMode) ?? portfolioModes[1];
-  const singleBestPick = portfolioPlans
-    .flatMap((plan) => plan.picks)
-    .sort((a, b) => b.score - a.score)[0];
+  const modeConfig =
+    portfolioModes.find((item) => item.id === activePortfolioMode) ?? portfolioModes[1];
+  const singleBestPick = portfolioPicks[0];
   const recommendedIds = activePlan.selectedIds;
   const activeSelectedIds = selectionTouched ? selectedIds : recommendedIds;
   const selectedSet = useMemo(() => new Set(activeSelectedIds), [activeSelectedIds]);
@@ -739,6 +737,9 @@ export default function FavoritesPage() {
   const corePicks = activePlan.coreCount;
   const firstFavoriteMatchId = favoriteMatches[0]?.id;
   const isEmpty = !loading && favoriteMatches.length === 0;
+  const activeProfile = riskProfiles[activePrefs.risk_level];
+  const visibleModels = activePrefs.preferred_models.slice(0, 3);
+  const visibleMarkets = activePrefs.preferred_markets.slice(0, 4);
 
   useEffect(() => {
     if (!isPro) return;
@@ -818,7 +819,7 @@ export default function FavoritesPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">收藏</h1>
           <p className="mt-2 text-sm text-white/60">
-            先在热门赛事里点“加入组合池”，Pro 会在这里筛选收藏比赛并生成模拟组合参考。
+            先在热门赛事里点“加入组合池”，这里会按设置页偏好自动筛选比赛并生成模拟组合参考。
           </p>
         </div>
         <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/60">
@@ -855,7 +856,7 @@ export default function FavoritesPage() {
                 </div>
                 <h2 className="text-lg font-semibold">收藏组合推演</h2>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-white/55">
-                  先给每场做单场评分，再按稳健、均衡、机会三种思路组合；赔率、历史和球员数据接入后会进入同一套评分入口。
+                  不在收藏页重复选模型。系统直接读取设置页的风险偏好、模型和关注市场，再从收藏比赛里给出推荐。
                 </p>
               </div>
 
@@ -908,34 +909,66 @@ export default function FavoritesPage() {
               </div>
             )}
 
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              {portfolioPlans.map((plan) => (
-                <button
-                  key={plan.mode}
-                  type="button"
-                  onClick={() => {
-                    setPortfolioMode(plan.mode);
-                    resetPortfolio();
-                  }}
-                  className={`rounded-2xl border p-3 text-left transition ${
-                    portfolioMode === plan.mode
-                      ? "border-[color:var(--accent)]/75 bg-[color:var(--accent)]/12 text-white"
-                      : "border-white/10 bg-black/25 text-white/65 hover:border-white/20 hover:text-white"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">{plan.label}</span>
-                    <span className="rounded-full bg-black/35 px-2 py-0.5 text-[11px] text-[color:var(--accent)]">
-                      {plan.selectedIds.length} 场
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-2xl border border-[color:var(--accent)]/40 bg-black/25 p-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--accent)]">
+                      按设置页自动匹配
+                    </div>
+                    <div className="mt-2 text-xl font-semibold text-white">
+                      {activePlan.headline}
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-white/52">
+                      当前偏好是「{activeProfile.label}」，系统自动使用「{modeConfig.label}」口径。{modeConfig.description}
+                    </p>
+                  </div>
+                  <div className="shrink-0 rounded-full bg-[color:var(--accent)]/10 px-3 py-1 text-xs font-semibold text-[color:var(--accent)]">
+                    自动推荐 {activePlan.selectedIds.length} 场
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {visibleModels.map((model) => (
+                    <span
+                      key={model}
+                      className="rounded-full border border-white/8 bg-black/25 px-2.5 py-1 text-[11px] text-white/55"
+                    >
+                      {model}
                     </span>
-                  </div>
-                  <div className="mt-2 text-xl font-semibold">{plan.headline}</div>
-                  <div className="mt-1 text-[11px] leading-5 text-white/48">{plan.summary}</div>
-                  <div className="mt-2 text-[11px] text-white/45">
-                    约 {formatPercent(plan.totalExposurePercent)}% · {plan.totalExposurePoints} 模拟积分
-                  </div>
-                </button>
-              ))}
+                  ))}
+                  {visibleMarkets.map((market) => (
+                    <span
+                      key={market}
+                      className="rounded-full border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/8 px-2.5 py-1 text-[11px] text-[color:var(--accent)]/80"
+                    >
+                      {market}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/8 bg-black/22 p-3">
+                <div className="text-xs font-semibold text-white">想改变推荐风格？</div>
+                <p className="mt-2 text-[11px] leading-5 text-white/48">
+                  去设置页切换风险偏好即可。保守型会偏低波动，稳健型会平衡单场和组合，进取型会多看机会方向。
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href="/settings"
+                    className="rounded-full border border-[color:var(--accent)]/45 bg-[color:var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black"
+                  >
+                    去设置修改
+                  </Link>
+                  {selectionTouched && (
+                    <button
+                      type="button"
+                      onClick={resetPortfolio}
+                      className="rounded-full border border-white/12 bg-black/30 px-3 py-1.5 text-xs font-semibold text-white/65 hover:text-white"
+                    >
+                      恢复系统推荐
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-5">

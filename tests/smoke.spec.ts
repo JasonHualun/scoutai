@@ -230,8 +230,10 @@ test("favorites page shows portfolio recommendations for saved matches", async (
 
   await expect(page.getByRole("heading", { name: "收藏组合推演" })).toBeVisible();
   await expect(page.getByText("单场优先")).toBeVisible();
-  await expect(page.getByRole("button", { name: /稳健组合/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /机会组合/ })).toBeVisible();
+  await expect(page.getByText("按设置页自动匹配")).toBeVisible();
+  await expect(page.getByRole("link", { name: "去设置修改" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /稳健组合/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /机会组合/ })).toHaveCount(0);
   await expect(page.getByText("组合总模拟")).toBeVisible();
   await expect(page.getByText("剩余模拟积分")).toBeVisible();
   await expect(page.getByText("分析口径")).toBeVisible();
