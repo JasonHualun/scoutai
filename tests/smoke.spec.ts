@@ -179,11 +179,13 @@ test("backtest page renders model validation metrics", async ({ page }) => {
   await page.goto("/backtest", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "模型回测" })).toBeVisible();
-  await expect(page.getByText("内置校准样本").first()).toBeVisible();
+  await expect(page.getByText("内置案例样本").first()).toBeVisible();
+  await expect(page.getByText("案例净增")).toBeVisible();
+  await expect(page.getByText("起始 1000 分 · 结束 1286 分")).toBeVisible();
   await expect(page.getByText("命中率").first()).toBeVisible();
   await expect(page.getByText("最大回撤").first()).toBeVisible();
   await expect(page.getByText("Brier 分数").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "逐场回测明细" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "精选案例明细" })).toBeVisible();
 });
 
 test("match detail flow can generate a local analysis", async ({ page }) => {

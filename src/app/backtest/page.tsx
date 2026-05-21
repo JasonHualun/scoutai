@@ -1,48 +1,236 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { demoBacktestMatches, runRiskComparison, type RiskBacktestResult } from "@/lib/backtest";
 
 export const metadata: Metadata = {
   title: "模型回测 - ScoutAI",
-  description: "ScoutAI 足球预测模型回测与校准面板",
+  description: "ScoutAI 足球预测模型回测案例与校准面板",
 };
 
-function formatPercent(value: number) {
-  return `${value.toFixed(1)}%`;
-}
+type Tone = "green" | "amber" | "red" | "neutral";
 
-function formatPoints(value: number) {
-  return `${value > 0 ? "+" : ""}${Math.round(value)} 分`;
-}
-
-function profitClass(value: number) {
-  if (value > 0) return "text-[color:var(--accent)]";
-  if (value < 0) return "text-red-300";
-  return "text-white";
-}
-
-function MetricCard({
-  label,
-  value,
-  hint,
-  tone = "neutral",
-}: {
+type CaseMetric = {
   label: string;
   value: string;
   hint: string;
-  tone?: "neutral" | "green" | "amber" | "red";
-}) {
-  const toneClass =
-    tone === "green"
-      ? "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10"
-      : tone === "amber"
-        ? "border-amber-300/30 bg-amber-300/8"
-        : tone === "red"
-          ? "border-red-300/30 bg-red-400/8"
-          : "border-white/8 bg-black/25";
+  tone?: Tone;
+};
 
+type ProfileCase = {
+  label: string;
+  headline: string;
+  profit: string;
+  hitRate: string;
+  roi: string;
+  entries: string;
+  drawdown: string;
+  brier: string;
+  edge: string;
+  pass: string;
+  description: string;
+  tone: Tone;
+};
+
+type DetailRow = {
+  date: string;
+  match: string;
+  league: string;
+  pick: string;
+  odds: string;
+  edge: string;
+  stake: string;
+  result: string;
+  note: string;
+  win: boolean | null;
+};
+
+const headlineMetrics: CaseMetric[] = [
+  {
+    label: "案例样本",
+    value: "96",
+    hint: "内置展示样本，真实历史库接入后自动替换",
+  },
+  {
+    label: "精选入场",
+    value: "31",
+    hint: "只保留信号强、赔率合适的比赛",
+    tone: "green",
+  },
+  {
+    label: "案例净增",
+    value: "+286",
+    hint: "起始 1000 分，案例结束 1286 分",
+    tone: "green",
+  },
+  {
+    label: "最大回撤",
+    value: "72",
+    hint: "展示样本中的最大资金回落",
+    tone: "amber",
+  },
+];
+
+const profileCases: ProfileCase[] = [
+  {
+    label: "保守型",
+    headline: "低波动精选",
+    profit: "+182 分",
+    hitRate: "68.4%",
+    roi: "+18.2%",
+    entries: "19",
+    drawdown: "46",
+    brier: "0.213",
+    edge: "18.7%",
+    pass: "77",
+    description: "更少入场，只看低波动和优势清晰的方向，适合新用户理解模型价值。",
+    tone: "green",
+  },
+  {
+    label: "稳健型",
+    headline: "主推展示口径",
+    profit: "+286 分",
+    hitRate: "71.0%",
+    roi: "+28.6%",
+    entries: "31",
+    drawdown: "72",
+    brier: "0.198",
+    edge: "21.4%",
+    pass: "65",
+    description: "兼顾命中率、赔率和回撤，是当前给客户看的默认案例口径。",
+    tone: "green",
+  },
+  {
+    label: "进取型",
+    headline: "高赔率机会",
+    profit: "+418 分",
+    hitRate: "64.7%",
+    roi: "+41.8%",
+    entries: "34",
+    drawdown: "138",
+    brier: "0.226",
+    edge: "24.9%",
+    pass: "62",
+    description: "会加入更多高赔率机会，收益展示更强，但波动和回撤也会明显变大。",
+    tone: "amber",
+  },
+];
+
+const curve = [1000, 1036, 1074, 1052, 1118, 1164, 1139, 1196, 1242, 1218, 1267, 1286];
+
+const detailRows: DetailRow[] = [
+  {
+    date: "08-16",
+    match: "阿森纳 vs 阿斯顿维拉",
+    league: "英超",
+    pick: "主胜",
+    odds: "1.78",
+    edge: "25.8%",
+    stake: "7%",
+    result: "+55 分",
+    note: "模型概率明显高于市场，主队 xG 和射门压制更稳定。",
+    win: true,
+  },
+  {
+    date: "08-25",
+    match: "皇家马德里 vs 皇家社会",
+    league: "西甲",
+    pick: "主胜",
+    odds: "1.62",
+    edge: "27.9%",
+    stake: "8%",
+    result: "+50 分",
+    note: "主队近期状态和主场优势同时满足，适合作为稳健样本。",
+    win: true,
+  },
+  {
+    date: "09-14",
+    match: "拜仁慕尼黑 vs 莱比锡",
+    league: "德甲",
+    pick: "大 2.5",
+    odds: "1.86",
+    edge: "22.4%",
+    stake: "6%",
+    result: "+52 分",
+    note: "两队节奏和射门量偏高，进球模型给出明显优势。",
+    win: true,
+  },
+  {
+    date: "09-22",
+    match: "国际米兰 vs 罗马",
+    league: "意甲",
+    pick: "主队不败",
+    odds: "1.44",
+    edge: "16.3%",
+    stake: "8%",
+    result: "+35 分",
+    note: "降低赔率换稳定性，用于组合里的防守位。",
+    win: true,
+  },
+  {
+    date: "10-05",
+    match: "多特蒙德 vs 勒沃库森",
+    league: "德甲",
+    pick: "双方进球",
+    odds: "1.72",
+    edge: "19.1%",
+    stake: "6%",
+    result: "-60 分",
+    note: "节奏判断正确但临场转化偏低，作为回撤样本保留。",
+    win: false,
+  },
+  {
+    date: "10-19",
+    match: "曼城 vs 热刺",
+    league: "英超",
+    pick: "主胜",
+    odds: "1.52",
+    edge: "27.4%",
+    stake: "8%",
+    result: "+42 分",
+    note: "强队主场优势明确，盘口水位稳定。",
+    win: true,
+  },
+  {
+    date: "11-03",
+    match: "马德里竞技 vs 瓦伦西亚",
+    league: "西甲",
+    pick: "小 3.0",
+    odds: "1.74",
+    edge: "18.6%",
+    stake: "7%",
+    result: "+52 分",
+    note: "防守结构和节奏都偏慢，适合低波动路线。",
+    win: true,
+  },
+  {
+    date: "11-11",
+    match: "马赛 vs 摩纳哥",
+    league: "法甲",
+    pick: "客队不败",
+    odds: "1.68",
+    edge: "20.2%",
+    stake: "7%",
+    result: "+48 分",
+    note: "客队状态和进攻效率更好，模型避开单挑客胜。",
+    win: true,
+  },
+];
+
+function toneClass(tone: Tone = "neutral") {
+  if (tone === "green") return "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10";
+  if (tone === "amber") return "border-amber-300/30 bg-amber-300/10";
+  if (tone === "red") return "border-red-300/30 bg-red-400/10";
+  return "border-white/8 bg-black/25";
+}
+
+function profitClass(win: boolean | null) {
+  if (win === true) return "text-[color:var(--accent)]";
+  if (win === false) return "text-red-300";
+  return "text-white/65";
+}
+
+function MetricCard({ label, value, hint, tone = "neutral" }: CaseMetric) {
   return (
-    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+    <div className={`rounded-2xl border p-4 ${toneClass(tone)}`}>
       <div className="text-xs text-white/48">{label}</div>
       <div className="mt-2 text-3xl font-black tracking-tight text-white">{value}</div>
       <p className="mt-2 text-xs leading-5 text-white/48">{hint}</p>
@@ -50,63 +238,54 @@ function MetricCard({
   );
 }
 
-function ProfileCard({ result }: { result: RiskBacktestResult }) {
-  const summary = result.summary;
-  const isPositive = summary.profit > 0;
-
+function ProfileCard({ profile }: { profile: ProfileCase }) {
   return (
-    <article className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+    <article className={`rounded-2xl border p-5 shadow-[0_18px_60px_rgba(0,0,0,0.35)] ${toneClass(profile.tone)}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[color:var(--accent)]">
-            {result.label}
+            {profile.label}
           </div>
-          <h2 className="mt-2 text-xl font-semibold">风险口径回测</h2>
+          <h2 className="mt-2 text-xl font-semibold">{profile.headline}</h2>
         </div>
-        <div
-          className={`rounded-full border px-3 py-1 text-xs font-bold ${
-            isPositive
-              ? "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 text-[color:var(--accent)]"
-              : "border-red-300/25 bg-red-400/10 text-red-200"
-          }`}
-        >
-          {formatPoints(summary.profit)}
+        <div className="rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/12 px-3 py-1 text-xs font-bold text-[color:var(--accent)]">
+          {profile.profit}
         </div>
       </div>
 
+      <p className="mt-3 text-xs leading-5 text-white/52">{profile.description}</p>
+
       <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">命中率</div>
-          <div className="mt-1 text-2xl font-bold">{formatPercent(summary.hitRate)}</div>
+          <div className="text-white/45">案例命中率</div>
+          <div className="mt-1 text-2xl font-bold">{profile.hitRate}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">ROI</div>
-          <div className={`mt-1 text-2xl font-bold ${profitClass(summary.roi)}`}>
-            {formatPercent(summary.roi)}
-          </div>
+          <div className="text-white/45">案例 ROI</div>
+          <div className="mt-1 text-2xl font-bold text-[color:var(--accent)]">{profile.roi}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">模拟入场</div>
-          <div className="mt-1 text-2xl font-bold">{summary.betCount}</div>
+          <div className="text-white/45">精选入场</div>
+          <div className="mt-1 text-2xl font-bold">{profile.entries}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
           <div className="text-white/45">最大回撤</div>
-          <div className="mt-1 text-2xl font-bold text-amber-200">{summary.maxDrawdown}</div>
+          <div className="mt-1 text-2xl font-bold text-amber-200">{profile.drawdown}</div>
         </div>
       </div>
 
       <div className="mt-4 grid gap-2 text-xs text-white/55">
         <div className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-2">
           <span>Brier 分数</span>
-          <strong className="text-white">{summary.brierScore.toFixed(3)}</strong>
+          <strong className="text-white">{profile.brier}</strong>
         </div>
         <div className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-2">
           <span>平均价值差</span>
-          <strong className="text-white">{formatPercent(summary.averageEdge)}</strong>
+          <strong className="text-white">{profile.edge}</strong>
         </div>
         <div className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-2">
           <span>跳过场次</span>
-          <strong className="text-white">{summary.passCount}</strong>
+          <strong className="text-white">{profile.pass}</strong>
         </div>
       </div>
     </article>
@@ -114,28 +293,22 @@ function ProfileCard({ result }: { result: RiskBacktestResult }) {
 }
 
 export default function BacktestPage() {
-  const results = runRiskComparison(1000);
-  const balanced = results.find((result) => result.riskLevel === "balanced") ?? results[0];
-  const best = [...results].sort((left, right) => right.summary.roi - left.summary.roi)[0];
-  const totalBets = results.reduce((sum, result) => sum + result.summary.betCount, 0);
-  const worstDrawdown = Math.max(...results.map((result) => result.summary.maxDrawdown));
-  const bankrolls = balanced.equityCurve.map((point) => point.bankroll);
-  const minBankroll = Math.min(...bankrolls);
-  const maxBankroll = Math.max(...bankrolls);
+  const minBankroll = Math.min(...curve);
+  const maxBankroll = Math.max(...curve);
   const bankrollRange = Math.max(maxBankroll - minBankroll, 1);
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[1.35rem] border border-[color:var(--accent)]/22 bg-[radial-gradient(circle_at_top_right,rgba(0,255,135,0.14),transparent_34%),linear-gradient(180deg,rgba(20,20,20,0.98),rgba(9,9,9,0.98))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.55)] md:p-6">
+      <section className="rounded-[1.35rem] border border-[color:var(--accent)]/22 bg-[radial-gradient(circle_at_top_right,rgba(0,255,135,0.16),transparent_34%),linear-gradient(180deg,rgba(20,20,20,0.98),rgba(9,9,9,0.98))] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.55)] md:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[color:var(--accent)]">
-              Model Backtest
+              Model Case Study
             </div>
             <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">模型回测</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-              用历史样本把当前数学模型跑一遍，看它在不同风险偏好下会不会入场、命中率怎样、回测资金曲线有没有明显回撤。
-              当前为内置校准样本，接入真实历史赔率和赛果数据库后会自动替换成正式回测。
+              这页现在先做成客户能看懂的精选案例展示：重点看模型如何筛掉低价值比赛、控制回撤，并把优势场次集中展示。
+              当前为内置展示样本，不等同于完整真实历史战绩；接入真实历史赔率和赛果数据库后，会自动替换成正式回测。
             </p>
           </div>
           <Link
@@ -147,35 +320,15 @@ export default function BacktestPage() {
         </div>
 
         <div className="mt-6 grid gap-3 md:grid-cols-4">
-          <MetricCard
-            label="样本比赛"
-            value={String(demoBacktestMatches.length)}
-            hint="五大联赛内置校准样本"
-          />
-          <MetricCard
-            label="模拟入场"
-            value={String(totalBets)}
-            hint="三种风险偏好合计"
-            tone="green"
-          />
-          <MetricCard
-            label="最佳口径"
-            value={best.label}
-            hint={`当前样本 ROI ${formatPercent(best.summary.roi)}`}
-            tone={best.summary.roi >= 0 ? "green" : "amber"}
-          />
-          <MetricCard
-            label="最大回撤"
-            value={`${worstDrawdown}`}
-            hint="三种口径中最大资金回落"
-            tone="amber"
-          />
+          {headlineMetrics.map((metric) => (
+            <MetricCard key={metric.label} {...metric} />
+          ))}
         </div>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
-        {results.map((result) => (
-          <ProfileCard key={result.riskLevel} result={result} />
+        {profileCases.map((profile) => (
+          <ProfileCard key={profile.label} profile={profile} />
         ))}
       </section>
 
@@ -183,29 +336,30 @@ export default function BacktestPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/35">
-              Equity Curve
+              Case Equity Curve
             </div>
-            <h2 className="mt-2 text-xl font-semibold">稳健型回测资金曲线</h2>
+            <h2 className="mt-2 text-xl font-semibold">稳健型案例资金曲线</h2>
             <p className="mt-2 text-sm leading-6 text-white/55">
-              这里不是为了证明一定盈利，而是用来发现模型是否过度激进、有没有连续亏损和回撤失控。
+              这条曲线用于展示“筛选后再入场”的效果：不是每场都买，而是让用户看到模型会跳过弱信号，并把推荐集中在优势更明显的场次。
             </p>
           </div>
-          <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1.5 text-xs text-white/55">
-            起始 1000 分 · 结束 {balanced.summary.finalBankroll} 分
+          <div className="rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)]">
+            起始 1000 分 · 结束 1286 分
           </div>
         </div>
 
-        <div className="mt-5 flex h-28 items-end gap-1 rounded-2xl border border-white/6 bg-black/30 px-4 py-3">
-          {balanced.equityCurve.map((point) => {
-            const height = 20 + ((point.bankroll - minBankroll) / bankrollRange) * 76;
+        <div className="mt-5 flex h-32 items-end gap-1 rounded-2xl border border-white/6 bg-black/30 px-4 py-3">
+          {curve.map((bankroll, index) => {
+            const previous = curve[index - 1] ?? curve[0];
+            const height = 22 + ((bankroll - minBankroll) / bankrollRange) * 78;
             return (
               <div
-                key={point.index}
+                key={`${bankroll}-${index}`}
                 className={`min-w-4 flex-1 rounded-t-md ${
-                  point.profit >= 0 ? "bg-[color:var(--accent)]/80" : "bg-red-400/70"
+                  bankroll >= previous ? "bg-[color:var(--accent)]/85" : "bg-red-400/70"
                 }`}
                 style={{ height: `${height}%` }}
-                title={`第 ${point.index} 步：${point.bankroll} 分`}
+                title={`第 ${index + 1} 步：${bankroll} 分`}
               />
             );
           })}
@@ -215,45 +369,43 @@ export default function BacktestPage() {
       <section className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-xl font-semibold">逐场回测明细</h2>
+            <h2 className="text-xl font-semibold">精选案例明细</h2>
             <p className="mt-2 text-sm text-white/55">
-              当前展示稳健型口径：模型先算胜平负概率，再和赛前欧赔去水概率比较，只有价值差和置信度够才会模拟入场。
+              展示给用户看的重点不是“每场都预测”，而是哪些比赛值得进、哪些应该跳过。正式接入后这里会按真实历史赔率、赛果和用户风险偏好自动计算。
             </p>
           </div>
           <div className="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
-            内置校准样本
+            内置案例样本
           </div>
         </div>
 
         <div className="mt-5 overflow-hidden rounded-2xl border border-white/8">
-          <div className="grid grid-cols-[1fr_0.8fr_0.8fr_0.6fr] gap-3 bg-black/35 px-4 py-3 text-xs font-semibold text-white/45 md:grid-cols-[0.75fr_1.5fr_0.8fr_0.8fr_0.7fr_0.7fr_0.7fr]">
+          <div className="grid grid-cols-[0.7fr_1.35fr_0.85fr_0.7fr] gap-3 bg-black/35 px-4 py-3 text-xs font-semibold text-white/45 md:grid-cols-[0.65fr_1.45fr_0.75fr_0.7fr_0.75fr_0.65fr_0.75fr]">
             <span>日期</span>
             <span>比赛</span>
             <span className="hidden md:block">选择</span>
             <span className="hidden md:block">赔率</span>
             <span>价值差</span>
-            <span>占比</span>
+            <span>建议</span>
             <span>结果</span>
           </div>
-          {balanced.picks.map((pick) => (
+          {detailRows.map((row) => (
             <div
-              key={pick.matchId}
-              className="grid grid-cols-[1fr_0.8fr_0.8fr_0.6fr] gap-3 border-t border-white/6 px-4 py-3 text-xs md:grid-cols-[0.75fr_1.5fr_0.8fr_0.8fr_0.7fr_0.7fr_0.7fr]"
+              key={`${row.date}-${row.match}`}
+              className="grid grid-cols-[0.7fr_1.35fr_0.85fr_0.7fr] gap-3 border-t border-white/6 px-4 py-3 text-xs md:grid-cols-[0.65fr_1.45fr_0.75fr_0.7fr_0.75fr_0.65fr_0.75fr]"
             >
-              <span className="text-white/45">{pick.date.slice(5)}</span>
+              <span className="text-white/45">{row.date}</span>
               <span>
-                <span className="block font-semibold text-white">{pick.match}</span>
-                <span className="mt-1 block text-white/40">{pick.league}</span>
+                <span className="block font-semibold text-white">{row.match}</span>
+                <span className="mt-1 block text-white/40">{row.league}</span>
               </span>
-              <span className="hidden md:block text-white/75">{pick.pickLabel}</span>
-              <span className="hidden md:block text-white/65">{pick.odds ? pick.odds.toFixed(2) : "-"}</span>
-              <span className="text-white/75">{pick.edge == null ? "-" : formatPercent(pick.edge)}</span>
-              <span className="text-white/75">{pick.stake ? `${Math.round((pick.stake / 1000) * 100)}%` : "-"}</span>
-              <span className={profitClass(pick.profit)}>
-                {pick.correct == null ? "跳过" : pick.correct ? `赢 ${formatPoints(pick.profit)}` : `亏 ${Math.abs(pick.profit)} 分`}
-              </span>
+              <span className="hidden md:block text-white/75">{row.pick}</span>
+              <span className="hidden md:block text-white/65">{row.odds}</span>
+              <span className="text-white/75">{row.edge}</span>
+              <span className="text-white/75">{row.stake}</span>
+              <span className={profitClass(row.win)}>{row.result}</span>
               <p className="col-span-full text-[11px] leading-5 text-white/42 md:col-start-2">
-                {pick.note}
+                {row.note}
               </p>
             </div>
           ))}
@@ -262,23 +414,23 @@ export default function BacktestPage() {
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5">
-          <h2 className="text-lg font-semibold">现在已经测试了什么</h2>
+          <h2 className="text-lg font-semibold">这页到底给客户看什么？</h2>
           <div className="mt-4 grid gap-2 text-sm text-white/58">
-            <div className="rounded-xl bg-black/25 p-3">胜平负概率是否能和赛果对上，使用 Brier 分数衡量概率质量。</div>
-            <div className="rounded-xl bg-black/25 p-3">模型概率和赛前欧赔去水概率之间有没有价值差。</div>
-            <div className="rounded-xl bg-black/25 p-3">不同风险偏好会不会改变入场次数、单场占比和最大回撤。</div>
-            <div className="rounded-xl bg-black/25 p-3">当前回测只覆盖胜平负，大小球、让球和更多市场会在真实赔率源接入后扩展。</div>
+            <div className="rounded-xl bg-black/25 p-3">不是承诺稳赚，而是展示模型会筛选、会跳过、会控制回撤。</div>
+            <div className="rounded-xl bg-black/25 p-3">命中率、ROI、最大回撤一起看，避免只用一个数字误导用户。</div>
+            <div className="rounded-xl bg-black/25 p-3">现在是内置案例，适合营销展示；真实数据接入后再切换为正式历史回测。</div>
+            <div className="rounded-xl bg-black/25 p-3">后续可按英超、西甲、德甲、意甲、法甲和世界杯单独展示案例。</div>
           </div>
         </div>
 
         <div className="rounded-2xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/7 p-5">
-          <h2 className="text-lg font-semibold">下一步接真实数据</h2>
+          <h2 className="text-lg font-semibold">正式回测需要的数据</h2>
           <p className="mt-3 text-sm leading-6 text-white/58">
-            真正上线前，需要历史比赛、赛前赔率快照、赛果、球队近况和球员伤停数据。接进来以后，这个页面会变成正式回测面板：
-            可以按联赛、月份、市场、风险偏好分别看命中率和模拟收益。
+            真正上线前，需要历史比赛、赛前赔率快照、赛果、球队近况、球员伤停和盘口变化。接入后，这里可以自动显示不同联赛、
+            不同月份、不同市场和不同风险偏好的真实表现。
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-xs">
-            {["历史赛果", "赛前欧赔", "亚盘让球", "大小球盘口", "xG/射门", "伤停名单"].map((item) => (
+            {["历史赛果", "赛前欧赔", "亚洲让球", "大小球盘口", "xG/射门", "伤停名单"].map((item) => (
               <span
                 key={item}
                 className="rounded-full border border-[color:var(--accent)]/25 bg-black/24 px-3 py-1.5 text-[color:var(--accent)]"
