@@ -22,6 +22,7 @@ import {
 import { translateLeague, translateTeam } from "@/lib/league-translations";
 import { useAuthStore } from "@/lib/authStore";
 import { supabase } from "@/lib/supabase";
+import { PaymentCountdown } from "@/components/PaymentCountdown";
 
 type MatchStatus = "live" | "upcoming" | "finished";
 type RecentForm = ("W" | "D" | "L")[];
@@ -449,29 +450,6 @@ function createDraftOrderNo() {
   return `PRO-${date}-${random}`;
 }
 
-function msUntilBeijingMidnight() {
-  const now = new Date();
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
-  const beijingNow = new Date(utcMs + 8 * 60 * 60_000);
-  const nextBeijingMidnightUtc =
-    Date.UTC(
-      beijingNow.getUTCFullYear(),
-      beijingNow.getUTCMonth(),
-      beijingNow.getUTCDate() + 1
-    ) -
-    8 * 60 * 60_000;
-
-  return Math.max(0, nextBeijingMidnightUtc - now.getTime());
-}
-
-function formatCountdown(ms: number) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
-}
-
 function UpgradeModal({
   open,
   onClose,
@@ -491,19 +469,6 @@ function UpgradeModal({
   error: string | null;
   onSubmit: () => void;
 }) {
-  const [promoCountdown, setPromoCountdown] = useState(() =>
-    formatCountdown(msUntilBeijingMidnight())
-  );
-
-  useEffect(() => {
-    if (!open) return;
-
-    const tick = () => setPromoCountdown(formatCountdown(msUntilBeijingMidnight()));
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [open]);
-
   if (!open) return null;
 
   return (
@@ -550,13 +515,7 @@ function UpgradeModal({
               </p>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-center">
-              <div className="text-[11px] text-white/45">今日优惠倒计时</div>
-              <div className="mt-1 font-mono text-2xl font-semibold text-[color:var(--accent)]">
-                {promoCountdown}
-              </div>
-              <div className="mt-1 text-[11px] text-white/45">按北京时间刷新</div>
-            </div>
+            <PaymentCountdown open={open} userKey={email} />
           </div>
         </div>
 

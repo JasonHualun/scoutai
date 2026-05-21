@@ -212,7 +212,7 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
   });
   await expect(page.getByText("原价 ¥99.9/月")).toBeVisible();
   await expect(page.getByText("预计预测 10 场比赛结果")).toBeVisible();
-  await expect(page.getByText("今日优惠倒计时")).toBeVisible();
+  await expect(page.getByText("用户专属优惠倒计时")).toBeVisible();
   await expect(page.getByText("微信支付")).toBeVisible();
   await expect(page.getByText("支付宝")).toBeVisible();
   await expect(page.getByText("付款完成后，通常 30 分钟内人工开通。")).toBeVisible();
@@ -357,5 +357,6 @@ test("favorites page shows portfolio recommendations for saved matches", async (
   await expect(page.getByText("信号强度").first()).toBeVisible();
   await page.getByRole("button", { name: "开通 Pro", exact: true }).click();
   await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
+  await expect(page.getByText("用户专属优惠倒计时")).toBeVisible();
   await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
 });

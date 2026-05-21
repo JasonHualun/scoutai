@@ -24,6 +24,7 @@ import { defaultPreferenceValues, RiskLevel, riskProfiles } from "@/lib/preferen
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime } from "@/lib/time-format";
 import { useAuthStore } from "@/lib/authStore";
+import { PaymentCountdown } from "@/components/PaymentCountdown";
 
 type MatchStatus = "live" | "upcoming" | "finished";
 type PortfolioMode = "stable" | "balanced" | "opportunity";
@@ -536,6 +537,8 @@ function ProUpgradeDialog({
                 续费 {PRO_RENEWAL_PRICE_CNY}：{PRO_RENEWAL_CREDITS} 预测积分，每场预测扣 {PREDICTION_CREDITS_PER_MATCH} 分。
               </div>
             </div>
+
+            <PaymentCountdown open={open} userKey={email} className="mt-3" />
 
             <div className="mt-4 text-[11px] text-white/45">注册邮箱</div>
             <div className="mt-1 break-all text-sm font-semibold text-white">
