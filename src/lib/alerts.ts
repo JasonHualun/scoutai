@@ -194,6 +194,10 @@ export function markAllAlertsRead() {
   saveStoredAlerts(readStoredAlerts().map((alert) => ({ ...alert, read: true })));
 }
 
+export function clearBrowserTestAlerts() {
+  saveStoredAlerts(readStoredAlerts().filter((alert) => alert.source !== "browser_test"));
+}
+
 export function readSnapshot(): AlertSnapshot | null {
   if (!isBrowser()) return null;
 
@@ -343,19 +347,23 @@ export function sendBrowserNotification(alert: AlertItem) {
   if (!browserNotificationsEnabled()) return false;
 
   const meta = alertTypeMeta[alert.type];
-  const notification = new window.Notification(`ScoutAI ${meta.label}`, {
-    body: `${alert.match_name} ${alert.score}\n${alert.content}`,
-    tag: alert.id,
-  });
+  try {
+    const notification = new window.Notification(`ScoutAI ${meta.label}`, {
+      body: `${alert.match_name} ${alert.score}\n${alert.content}`,
+      tag: alert.id,
+    });
 
-  notification.onclick = () => {
-    window.focus();
-    if (!alert.match_id.startsWith("test")) {
-      window.location.href = `/match/${alert.match_id}`;
-    }
-  };
+    notification.onclick = () => {
+      window.focus();
+      if (!alert.match_id.startsWith("test")) {
+        window.location.href = `/match/${alert.match_id}`;
+      }
+    };
 
-  return true;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function createBrowserTestAlert(): AlertItem {

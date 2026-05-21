@@ -7,6 +7,7 @@ import {
   AlertItem,
   alertTypeMeta,
   browserNotificationsEnabled,
+  clearBrowserTestAlerts,
   createBrowserTestAlert,
   enableBrowserNotifications,
   formatAlertTime,
@@ -15,7 +16,6 @@ import {
   markAllAlertsRead,
   readStoredAlerts,
   sendBrowserNotification,
-  appendStoredAlerts,
 } from "@/lib/alerts";
 
 type FilterMode = "all" | "unread";
@@ -41,6 +41,7 @@ export default function AlertsPage() {
   const [permission, setPermission] = useState<BrowserPermission>("unsupported");
   const [browserEnabled, setBrowserEnabled] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [testPreview, setTestPreview] = useState<AlertItem | null>(null);
 
   const refreshAlerts = useCallback(() => {
     setAlerts(readStoredAlerts());
@@ -49,6 +50,7 @@ export default function AlertsPage() {
   }, []);
 
   useEffect(() => {
+    clearBrowserTestAlerts();
     const timer = window.setTimeout(refreshAlerts, 0);
     window.addEventListener(ALERTS_UPDATED_EVENT, refreshAlerts);
     return () => {
@@ -67,14 +69,17 @@ export default function AlertsPage() {
   );
 
   async function handleEnableBrowserNotifications() {
+    if (browserNotificationsEnabled()) {
+      refreshAlerts();
+      setNotice("Chrome 通知已经开启了，不需要重复开启。");
+      return;
+    }
+
     const result = await enableBrowserNotifications();
     refreshAlerts();
 
     if (result === "granted") {
-      const testAlert = createBrowserTestAlert();
-      appendStoredAlerts([testAlert]);
-      sendBrowserNotification(testAlert);
-      setNotice("浏览器通知已开启，并已发送一条测试通知。");
+      setNotice("Chrome 通知已开启。可以点“发送测试通知”确认浏览器弹窗是否正常。");
       return;
     }
 
@@ -88,14 +93,13 @@ export default function AlertsPage() {
 
   function handleTestNotification() {
     const testAlert = createBrowserTestAlert();
-    appendStoredAlerts([testAlert]);
+    setTestPreview(testAlert);
     const sent = sendBrowserNotification(testAlert);
     setNotice(
       sent
-        ? "已发送测试通知。"
-        : "已写入站内提醒；如需 Chrome 弹窗，请先开启浏览器通知。"
+        ? "已发送测试通知。网页内预览也已显示，方便你确认按钮有反应。"
+        : "网页内测试预览已显示；如需 Chrome 弹窗，请先开启浏览器通知。"
     );
-    refreshAlerts();
   }
 
   function handleMarkAllRead() {
@@ -200,6 +204,26 @@ export default function AlertsPage() {
           {notice && (
             <div className="mt-3 rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-xs leading-5 text-[color:var(--accent)]">
               {notice}
+            </div>
+          )}
+
+          {testPreview && (
+            <div
+              role="status"
+              className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-3 text-xs leading-5 text-amber-100"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-amber-300/15 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+                  网页内测试预览
+                </span>
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/55">
+                  不计入未读
+                </span>
+              </div>
+              <div className="mt-2 font-semibold text-white">{testPreview.match_name}</div>
+              <p className="mt-1 text-white/65">
+                {testPreview.content} 如果 Chrome 右下角也弹出通知，说明网页外通知正常。
+              </p>
             </div>
           )}
         </div>

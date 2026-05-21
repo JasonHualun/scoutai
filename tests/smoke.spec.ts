@@ -334,6 +334,8 @@ test("alerts page uses real notification controls instead of demo alerts", async
   await page.waitForTimeout(500);
   await page.getByRole("button", { name: "发送测试通知" }).click();
   await expect(page.getByText("ScoutAI 通知测试")).toBeVisible();
+  await expect(page.getByText("网页内测试预览", { exact: true })).toBeVisible();
+  await expect(page.getByText("不计入未读")).toBeVisible();
 });
 
 test("favorites page shows portfolio recommendations for saved matches", async ({ page }) => {
