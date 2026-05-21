@@ -13,6 +13,10 @@ import {
 import {
   Membership,
   PRO_MONTHLY_PRICE_CNY,
+  PRO_ORIGINAL_PRICE_CNY,
+  PRO_RENEWAL_CREDITS,
+  PRO_RENEWAL_PRICE_CNY,
+  PRO_TRIAL_CREDITS,
   freeMembership,
 } from "@/lib/membership";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
@@ -165,8 +169,6 @@ const defaultPrefs: UserPreferences = {
   preferred_markets: ["胜平负", "大小球"],
   preferred_models: ["xG-Dixon-Coles", "赔率去水"],
 };
-
-const PRO_ORIGINAL_PRICE_CNY = "¥199";
 
 const proBenefits = [
   {
@@ -544,7 +546,7 @@ function UpgradeModal({
                 <span className="pb-1 text-sm text-white/65">首月体验</span>
               </div>
               <p className="mt-2 text-xs leading-5 text-white/55">
-                当前先人工核对到账，不会自动续费；后续续费价格会在付款前明确显示。
+                首月 {PRO_TRIAL_CREDITS} 预测积分，预计预测 10 场比赛结果；后续续费 {PRO_RENEWAL_PRICE_CNY}，获得 {PRO_RENEWAL_CREDITS} 预测积分。
               </p>
             </div>
 
@@ -912,9 +914,7 @@ export default function MatchDetailPage() {
     0,
     riskCapPercent
   );
-  const selectedExposureAmount = Math.round((simulatedPoints * selectedExposurePercent) / 100);
   const backupExposurePercent = Math.min(selectedExposurePercent * 0.6, riskCapPercent * 0.6);
-  const backupExposureAmount = Math.round((simulatedPoints * backupExposurePercent) / 100);
   const selectedPercentLabel = selectedExposurePercent.toFixed(1).replace(".0", "");
   const recommendedPercentLabel = recommendedExposurePercent.toFixed(1).replace(".0", "");
   const backupPercentLabel = backupExposurePercent.toFixed(1).replace(".0", "");
@@ -1243,7 +1243,7 @@ export default function MatchDetailPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--accent)]">
-              Pro 高级版 · {PRO_MONTHLY_PRICE_CNY}/月
+              Pro 高级版 · 首月 {PRO_MONTHLY_PRICE_CNY}
             </div>
             <h2 className="text-sm font-semibold">模型委员会深度预测</h2>
             <p className="mt-1 text-[11px] text-white/50">
@@ -1294,18 +1294,18 @@ export default function MatchDetailPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
-                会员模拟方案
+                会员占比方案
               </div>
               <h3 className="text-base font-semibold">本场购买参考</h3>
               <p className="mt-1 text-xs leading-5 text-white/52">
-                按你的模拟积分、风险偏好和模型选择，给出本场主方案、备选方案和比例上限。
+                按你的风险偏好和模型选择，给出本场主方案、备选方案和投注占比参考。
               </p>
             </div>
             <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/65">
               {prefsLoading
                 ? "正在同步会员偏好"
                 : isPro
-                  ? `${riskLabel(activePrefs.risk_level)} · ${simulatedPoints} 模拟积分`
+                  ? `${riskLabel(activePrefs.risk_level)} · 占比建议`
                   : "Pro 解锁后按你的设置计算"}
             </div>
           </div>
@@ -1317,7 +1317,7 @@ export default function MatchDetailPage() {
                 {recommendedPercentLabel}%
               </div>
               <div className="mt-1 text-[11px] text-white/45">
-                约 {prediction.staking.mainAmount} 模拟积分
+                作为本场参考上限
               </div>
             </div>
             <div className="rounded-xl bg-black/25 p-3">
@@ -1326,7 +1326,7 @@ export default function MatchDetailPage() {
                 {selectedPercentLabel}%
               </div>
               <div className="mt-1 text-[11px] text-white/45">
-                约 {selectedExposureAmount} 模拟积分
+                可手动调整占比
               </div>
             </div>
             <div className="rounded-xl bg-black/25 p-3">
@@ -1343,7 +1343,7 @@ export default function MatchDetailPage() {
           <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3">
             <div className="flex items-center justify-between gap-3 text-[11px] text-white/45">
               <span>0%</span>
-              <span>调整本场模拟比例</span>
+              <span>调整本场占比</span>
               <span>{riskCapPercent.toFixed(1).replace(".0", "")}%</span>
             </div>
             <input
@@ -1371,7 +1371,7 @@ export default function MatchDetailPage() {
                   onClick={openUpgrade}
                   className="rounded-full bg-[color:var(--accent)] px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300"
                 >
-                  解锁会员模拟方案
+                  解锁会员占比方案
                 </button>
               )}
             </div>
@@ -1381,7 +1381,7 @@ export default function MatchDetailPage() {
             <div className="rounded-xl border border-white/8 bg-black/25 p-3">
               <div className="text-[11px] text-white/45">主方案</div>
               <div className="mt-1 text-base font-semibold text-white">
-                {topSignal.label} · {selectedExposureAmount} 模拟积分
+                {topSignal.label} · {selectedPercentLabel}% 占比
               </div>
               <div className="mt-1 text-[11px] leading-5 text-white/45">
                 模型概率 {topSignal.modelProbability}% · 模型公平赔率 {topSignal.fairOdds.toFixed(2)}
@@ -1391,7 +1391,7 @@ export default function MatchDetailPage() {
             <div className="rounded-xl border border-white/8 bg-black/25 p-3">
               <div className="text-[11px] text-white/45">备选方案</div>
               <div className="mt-1 text-base font-semibold text-white">
-                {backupSignal.label} · {backupExposureAmount} 模拟积分
+                {backupSignal.label} · {backupPercentLabel}% 占比
               </div>
               <div className="mt-1 text-[11px] leading-5 text-white/45">
                 备选比例 {backupPercentLabel}% · 用于主方向不够清晰时参考
@@ -1461,7 +1461,7 @@ export default function MatchDetailPage() {
         ) : (
           <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/20 p-4 text-xs leading-6 text-white/55">
             {isPro
-              ? "点击生成后，会结合你的偏好、模拟积分和模型配置输出 Pro 深度分析。"
+              ? "点击生成后，会结合你的偏好和模型配置输出 Pro 深度分析。"
               : "免费版保留基础概率预测；Pro 会展示更完整的模型委员会报告。"}
           </div>
         )}

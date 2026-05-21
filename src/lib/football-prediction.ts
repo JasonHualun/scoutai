@@ -370,7 +370,7 @@ export function calculateFootballPrediction(
     notes: [
       "该模型用赔率去水概率、近期状态、xG、射正、控球和角球估计双方进球强度。",
       "比分分布采用泊松矩阵，并对低比分相关性做 Dixon-Coles 修正。",
-      "模拟积分是风控上限建议，不代表确定收益；临场阵容和伤停会显著改变概率。",
+      "投注占比只是风控上限建议，不代表确定收益；临场阵容和伤停会显著改变概率。",
     ],
   };
 }
@@ -390,7 +390,7 @@ export function formatPredictionSummary(data: MatchAnalysisData, prediction: Pre
     `胜平负概率：主胜 ${prediction.probabilities.homeWin}% / 平局 ${prediction.probabilities.draw}% / 客胜 ${prediction.probabilities.awayWin}%`,
     `大小球：大 2.5 概率 ${prediction.probabilities.over25}%；双方进球概率 ${prediction.probabilities.bothTeamsToScore}%`,
     `价值信号：${top.label}，${edgeText}，模型公平赔率 ${top.fairOdds.toFixed(2)}`,
-    `风控建议：主推 ${prediction.staking.mainSelection}，模拟积分 ${prediction.staking.mainAmount}；备选 ${prediction.staking.backupSelection}，模拟积分 ${prediction.staking.backupAmount}；单场风险上限 ${prediction.staking.riskCapPercent}%`,
+    `风控建议：主推 ${prediction.staking.mainSelection}；备选 ${prediction.staking.backupSelection}；单场风险上限 ${prediction.staking.riskCapPercent}%`,
     "风险提示：足球低比分随机性很强，临场阵容、红牌、天气和赛程轮换会改变结论；只把它当作概率工具。",
   ].join("\n");
 }

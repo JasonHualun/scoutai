@@ -120,13 +120,13 @@ export default function OnboardingPage() {
           <section className="rounded-xl bg-black/25 p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
-                <h2 className="text-sm font-semibold">风险偏好与模拟积分</h2>
+                <h2 className="text-sm font-semibold">风险偏好与占比基准</h2>
                 <p className="mt-1 text-xs text-white/50">
-                  模拟积分只用于 AI 计算单场风险上限，不代表真实支付。
+                  系统会把风险上限统一换算成投注占比，不代表确定收益。
                 </p>
               </div>
               <label className="w-full md:w-56">
-                <span className="mb-2 block text-[11px] text-white/45">模拟积分</span>
+                <span className="mb-2 block text-[11px] text-white/45">占比基准</span>
                 <input
                   type="number"
                   min={0}

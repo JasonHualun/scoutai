@@ -316,7 +316,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
         <p className="mt-2 text-sm text-white/60">
-          设置风险偏好、模拟积分、关注联赛和模型市场，ScoutAI 会据此调整首页推荐和 AI 风控建议。
+          设置风险偏好、关注联赛和模型市场，ScoutAI 会据此调整首页推荐、收藏预测和 AI 风控建议。
         </p>
       </div>
 
@@ -346,14 +346,14 @@ export default function SettingsPage() {
       <section className="rounded-2xl border border-white/8 bg-[color:var(--card)]/90 p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-sm font-semibold">风险偏好与模拟积分</h2>
+            <h2 className="text-sm font-semibold">风险偏好与占比基准</h2>
             <p className="mt-1 text-xs text-white/50">
-              风险偏好会自动调整下面的模型、市场和策略模式；模拟积分只用于计算风控上限。
+              风险偏好会自动调整下面的模型、市场和策略模式；推荐结果会统一换算成投注占比。
             </p>
           </div>
           <div className="w-full md:w-72">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-white/45">模拟积分</span>
+              <span className="text-[11px] text-white/45">占比基准</span>
               <button
                 type="button"
                 disabled={saving}
@@ -372,7 +372,7 @@ export default function SettingsPage() {
                       : "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/8 text-[color:var(--accent)] hover:bg-[color:var(--accent)]/14"
                 }`}
               >
-                {saving && capitalDirty ? "保存中" : capitalDirty ? "保存积分" : capitalEditing ? "锁定" : "修改"}
+                {saving && capitalDirty ? "保存中" : capitalDirty ? "保存基准" : capitalEditing ? "锁定" : "修改"}
               </button>
             </div>
             <input
@@ -395,21 +395,21 @@ export default function SettingsPage() {
             />
             <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
               <div className="rounded-lg bg-black/25 px-2 py-1.5 text-white/50">
-                收藏占用{" "}
+                当前占用{" "}
                 <span className="font-semibold text-white">{usedSimulatedPoints}</span>
               </div>
               <div className="rounded-lg bg-[color:var(--accent)]/10 px-2 py-1.5 text-[color:var(--accent)]">
-                剩余{" "}
+                剩余基准{" "}
                 <span className="font-semibold">{remainingSimulatedPoints}</span>
               </div>
             </div>
             {capitalDirty ? (
               <p className="mt-2 rounded-lg border border-red-400/25 bg-red-500/10 px-2 py-1.5 text-xs leading-5 text-red-200">
-                模拟积分已修改，还没有保存。请点“保存积分”或底部“保存设置”。
+                占比基准已修改，还没有保存。请点“保存基准”或底部“保存设置”。
               </p>
             ) : (
               <p className="mt-2 text-[11px] leading-5 text-white/40">
-                输入保存后会锁定；收藏组合占用后，这里的剩余积分会同步减少。
+                这里只作为系统内部换算基准，用户侧推荐会显示为百分比。
               </p>
             )}
           </div>
@@ -698,7 +698,7 @@ export default function SettingsPage() {
           </div>
           <p className="mt-2 text-xs text-white/52">
             {settingsDirty
-              ? "保存后会同步到账号，并更新收藏组合的剩余模拟积分。"
+              ? "保存后会同步到账号，并更新收藏推荐的占比基准。"
               : "设置已同步，提示会自动收起。"}
           </p>
         </div>

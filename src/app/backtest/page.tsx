@@ -134,7 +134,7 @@ export default function BacktestPage() {
             </div>
             <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">模型回测</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-              用历史样本把当前数学模型跑一遍，看它在不同风险偏好下会不会入场、命中率怎样、模拟积分曲线有没有明显回撤。
+              用历史样本把当前数学模型跑一遍，看它在不同风险偏好下会不会入场、命中率怎样、回测资金曲线有没有明显回撤。
               当前为内置校准样本，接入真实历史赔率和赛果数据库后会自动替换成正式回测。
             </p>
           </div>
@@ -185,7 +185,7 @@ export default function BacktestPage() {
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/35">
               Equity Curve
             </div>
-            <h2 className="mt-2 text-xl font-semibold">稳健型模拟积分曲线</h2>
+            <h2 className="mt-2 text-xl font-semibold">稳健型回测资金曲线</h2>
             <p className="mt-2 text-sm leading-6 text-white/55">
               这里不是为了证明一定盈利，而是用来发现模型是否过度激进、有没有连续亏损和回撤失控。
             </p>
@@ -232,7 +232,7 @@ export default function BacktestPage() {
             <span className="hidden md:block">选择</span>
             <span className="hidden md:block">赔率</span>
             <span>价值差</span>
-            <span>积分</span>
+            <span>占比</span>
             <span>结果</span>
           </div>
           {balanced.picks.map((pick) => (
@@ -248,7 +248,7 @@ export default function BacktestPage() {
               <span className="hidden md:block text-white/75">{pick.pickLabel}</span>
               <span className="hidden md:block text-white/65">{pick.odds ? pick.odds.toFixed(2) : "-"}</span>
               <span className="text-white/75">{pick.edge == null ? "-" : formatPercent(pick.edge)}</span>
-              <span className="text-white/75">{pick.stake || "-"}</span>
+              <span className="text-white/75">{pick.stake ? `${Math.round((pick.stake / 1000) * 100)}%` : "-"}</span>
               <span className={profitClass(pick.profit)}>
                 {pick.correct == null ? "跳过" : pick.correct ? `赢 ${formatPoints(pick.profit)}` : `亏 ${Math.abs(pick.profit)} 分`}
               </span>
@@ -266,7 +266,7 @@ export default function BacktestPage() {
           <div className="mt-4 grid gap-2 text-sm text-white/58">
             <div className="rounded-xl bg-black/25 p-3">胜平负概率是否能和赛果对上，使用 Brier 分数衡量概率质量。</div>
             <div className="rounded-xl bg-black/25 p-3">模型概率和赛前欧赔去水概率之间有没有价值差。</div>
-            <div className="rounded-xl bg-black/25 p-3">不同风险偏好会不会改变入场次数、单场积分和最大回撤。</div>
+            <div className="rounded-xl bg-black/25 p-3">不同风险偏好会不会改变入场次数、单场占比和最大回撤。</div>
             <div className="rounded-xl bg-black/25 p-3">当前回测只覆盖胜平负，大小球、让球和更多市场会在真实赔率源接入后扩展。</div>
           </div>
         </div>

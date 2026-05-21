@@ -201,16 +201,17 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
   await expect(page.getByText("不是真实盘口数据")).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型委员会深度预测" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "本场购买参考" })).toBeVisible();
-  await expect(page.getByText("调整本场模拟比例")).toBeVisible();
+  await expect(page.getByText("调整本场占比")).toBeVisible();
 
   await expect(page.getByText("免费版 · 模型基准估算")).toBeVisible();
   await expect(page.getByText("未接真实盘口").first()).toBeVisible();
-  await expect(page.getByText("Pro 高级版 · ¥69.9/月")).toBeVisible();
+  await expect(page.getByText("Pro 高级版 · 首月 ¥39.9")).toBeVisible();
   await page.getByRole("button", { name: /解锁 Pro|生成 Pro 分析/ }).click();
   await expect(page.getByRole("heading", { name: "首月 Pro 体验：把难懂的比赛先筛掉" })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByText("原价 ¥199/月")).toBeVisible();
+  await expect(page.getByText("原价 ¥99.9/月")).toBeVisible();
+  await expect(page.getByText("预计预测 10 场比赛结果")).toBeVisible();
   await expect(page.getByText("今日优惠倒计时")).toBeVisible();
   await expect(page.getByText("微信支付")).toBeVisible();
   await expect(page.getByText("支付宝")).toBeVisible();
@@ -238,7 +239,7 @@ test("settings save action appears only while needed", async ({ page }) => {
   await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("button", { name: "保存全部设置" })).toHaveCount(0);
-  await expect(page.getByText("风险偏好与模拟积分")).toBeVisible();
+  await expect(page.getByText("风险偏好与占比基准")).toBeVisible();
 
   const aggressiveButton = page.getByRole("button", { name: /进取型/ });
   await expect(aggressiveButton).toBeVisible();
@@ -343,17 +344,18 @@ test("favorites page shows portfolio recommendations for saved matches", async (
 
   await page.goto("/favorites", { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { name: "收藏组合推演" })).toBeVisible();
-  await expect(page.getByText("单场优先")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "收藏预测推荐" })).toBeVisible();
+  await expect(page.getByText("开始本次预测")).toBeVisible();
+  await expect(page.getByText("开通 Pro 后预测")).toBeVisible();
   await expect(page.getByText("按设置页自动匹配")).toBeVisible();
   await expect(page.getByRole("link", { name: "去设置修改" })).toBeVisible();
   await expect(page.getByRole("button", { name: /稳健组合/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /机会组合/ })).toHaveCount(0);
-  await expect(page.getByText("组合总模拟")).toBeVisible();
-  await expect(page.getByText("剩余模拟积分")).toBeVisible();
+  await expect(page.getByText("本次总占比")).toBeVisible();
+  await expect(page.getByText("剩余预测积分")).toBeVisible();
   await expect(page.getByText("分析口径")).toBeVisible();
   await expect(page.getByText("信号强度").first()).toBeVisible();
-  await page.getByRole("button", { name: "开通 Pro" }).click();
-  await expect(page.getByRole("heading", { name: "开通 Pro 收藏组合" })).toBeVisible();
+  await page.getByRole("button", { name: "开通 Pro", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
   await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
 });

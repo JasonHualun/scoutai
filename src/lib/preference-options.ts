@@ -42,7 +42,7 @@ export const modelOptions: PreferenceOption[] = [
   {
     id: "凯利风控",
     label: "模拟仓位上限",
-    description: "根据风险偏好给出单场模拟积分上限，防止单场波动过大。",
+    description: "根据风险偏好给出单场占比上限，防止单场波动过大。",
   },
   {
     id: "爆冷检测",
@@ -83,7 +83,7 @@ export const marketOptions: PreferenceOption[] = [
   {
     id: "平局退款",
     label: "平局退款",
-    description: "平局时退回模拟积分，适合胜负倾向明确但平局风险不低的比赛。",
+    description: "平局时降低损失，适合胜负倾向明确但平局风险不低的比赛。",
   },
   {
     id: "半场胜平负",

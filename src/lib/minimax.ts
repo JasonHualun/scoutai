@@ -84,7 +84,7 @@ function buildPrompt(
 
 任务要求：
 1. 以概率和风险为核心，不承诺收益。
-2. 先解释模型判断，再给出主推、备选、模拟积分和风险点。
+2. 先解释模型判断，再给出主推、备选、投注占比和风险点。
 3. 如果市场价值差不明显，要明确提示谨慎或放弃。
 4. 输出控制在 700 字以内，结构清晰。
 
@@ -101,7 +101,7 @@ function buildPrompt(
 
 用户画像：
 - 风险偏好：${translateRiskLevel(prefs.risk_level)}
-- 模拟积分：${prefs.capital}
+- 投注占比基准：统一换算成百分比展示
 - 关注市场：${prefs.preferred_markets.join("、") || "胜平负、让球、大小球、双方进球"}
 - 偏好模型：${prefs.preferred_models.join(" + ") || "数学模型 + 大模型解释"}
 

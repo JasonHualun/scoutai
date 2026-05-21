@@ -9,7 +9,13 @@ export type Membership = {
   email?: string | null;
 };
 
-export const PRO_MONTHLY_PRICE_CNY = "¥69.9";
+export const PRO_TRIAL_PRICE_CNY = "¥39.9";
+export const PRO_RENEWAL_PRICE_CNY = "¥99.9";
+export const PRO_ORIGINAL_PRICE_CNY = "¥99.9";
+export const PRO_TRIAL_CREDITS = 50;
+export const PRO_RENEWAL_CREDITS = 100;
+export const PREDICTION_CREDITS_PER_MATCH = 5;
+export const PRO_MONTHLY_PRICE_CNY = PRO_TRIAL_PRICE_CNY;
 export const PRO_MONTHLY_PRICE_USD = "$9.9";
 
 export function freeMembership(email?: string | null): Membership {

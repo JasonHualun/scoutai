@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
-import { PRO_MONTHLY_PRICE_CNY } from "@/lib/membership";
+import { PRO_RENEWAL_PRICE_CNY, PRO_TRIAL_PRICE_CNY } from "@/lib/membership";
 
 type PaymentApplicationBody = {
   orderNo?: string;
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
         order_no: orderNo,
         user_id: user.id,
         email: user.email ?? "",
-        amount: 69.9 * months,
+        amount: months === 1 ? 39.9 : 39.9 + 99.9 * (months - 1),
         currency: "CNY",
         months,
         status: "pending",
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       application: data,
-      message: `${PRO_MONTHLY_PRICE_CNY}/月付款申请已提交，管理员会人工核对到账。`,
+      message: `首月 ${PRO_TRIAL_PRICE_CNY}，续费 ${PRO_RENEWAL_PRICE_CNY} 的付款申请已提交，管理员会人工核对到账。`,
     });
   } catch (err) {
     const message = errorMessage(err, "提交付款申请失败");

@@ -48,7 +48,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-xl font-semibold tracking-tight">登录 ScoutAI</h1>
           <p className="mt-2 text-xs leading-5 text-white/60">
-            登录后可同步收藏、关注联赛、模拟积分偏好和 AI 分析参数。
+            登录后可同步收藏、关注联赛、风险偏好和 AI 分析参数。
           </p>
         </div>
 

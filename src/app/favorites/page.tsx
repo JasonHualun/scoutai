@@ -12,11 +12,15 @@ import {
 } from "@/lib/football-prediction";
 import {
   Membership,
+  PREDICTION_CREDITS_PER_MATCH,
   PRO_MONTHLY_PRICE_CNY,
+  PRO_ORIGINAL_PRICE_CNY,
+  PRO_RENEWAL_CREDITS,
+  PRO_RENEWAL_PRICE_CNY,
+  PRO_TRIAL_CREDITS,
   freeMembership,
 } from "@/lib/membership";
 import { defaultPreferenceValues, RiskLevel, riskProfiles } from "@/lib/preference-options";
-import { savePortfolioAllocation } from "@/lib/simulated-points";
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime } from "@/lib/time-format";
 import { useAuthStore } from "@/lib/authStore";
@@ -164,7 +168,7 @@ type PaymentApplication = {
 };
 
 const FAVORITES_KEY = "scoutai_favorites";
-const PRO_ORIGINAL_PRICE_CNY = "¥199";
+const PREDICTION_CREDITS_KEY = "scoutai:prediction-credits";
 
 const statusLabel: Record<MatchStatus, string> = {
   live: "进行中",
@@ -183,17 +187,17 @@ const portfolioModes: Array<{
 }> = [
   {
     id: "stable",
-    label: "稳健组合",
-    description: "少选、分散、优先低波动方向。",
-    size: 2,
+    label: "稳单方案",
+    description: "以单场为主，优先选择信号最清楚、波动更低的方向。",
+    size: 1,
     multiplier: 0.62,
     minScore: 66,
     maxSameLeague: 1,
   },
   {
     id: "balanced",
-    label: "均衡组合",
-    description: "兼顾单场强度、市场方向和分散度。",
+    label: "常规串关",
+    description: "从收藏池里挑赔率 2 以上的正常组合，兼顾强度和分散度。",
     size: 3,
     multiplier: 0.9,
     minScore: 60,
@@ -201,9 +205,9 @@ const portfolioModes: Array<{
   },
   {
     id: "opportunity",
-    label: "机会组合",
-    description: "允许更高波动，只给小比例机会观察。",
-    size: 4,
+    label: "高倍率串关",
+    description: "寻找预计组合倍率 5 以上的机会方向，只适合小比例观察。",
+    size: 3,
     multiplier: 1.08,
     minScore: 56,
     maxSameLeague: 2,
@@ -495,10 +499,10 @@ function ProUpgradeDialog({
               Pro
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-              开通 Pro 收藏组合
+              开通 Pro 预测积分
             </h2>
             <p className="mt-2 text-sm leading-6 text-white/60">
-              解锁收藏组合、模拟积分联动和更完整的盘口风控参考。
+              收藏页点击预测推荐时按比赛扣分。首月 50 积分，预计可预测 10 场比赛。
             </p>
           </div>
           <button
@@ -523,6 +527,14 @@ function ProUpgradeDialog({
                 {PRO_MONTHLY_PRICE_CNY}
               </span>
               <span className="pb-1 text-sm text-white/65">首月体验</span>
+            </div>
+            <div className="mt-3 grid gap-2 text-[11px] text-white/58">
+              <div className="rounded-lg bg-black/30 px-3 py-2">
+                首月 {PRO_MONTHLY_PRICE_CNY}：{PRO_TRIAL_CREDITS} 预测积分，预计预测 10 场比赛结果。
+              </div>
+              <div className="rounded-lg bg-black/30 px-3 py-2">
+                续费 {PRO_RENEWAL_PRICE_CNY}：{PRO_RENEWAL_CREDITS} 预测积分，每场预测扣 {PREDICTION_CREDITS_PER_MATCH} 分。
+              </div>
             </div>
 
             <div className="mt-4 text-[11px] text-white/45">注册邮箱</div>
@@ -821,6 +833,15 @@ function chooseOpportunity(
   return scored.sort((a, b) => b.score - a.score)[0]?.item ?? opportunities[0];
 }
 
+function estimatedPickOdds(pick: PortfolioPick) {
+  return Math.max(1.01, pick.offeredOdds ?? pick.fairOdds);
+}
+
+function combinedOdds(picks: PortfolioPick[]) {
+  if (picks.length === 0) return 0;
+  return picks.reduce((product, pick) => product * estimatedPickOdds(pick), 1);
+}
+
 function buildDataBasis(match: MatchCard, prefs: UserPrefs, snapshot: ModelSnapshot) {
   const basis = ["收藏池", "赛程时间", "联赛权重", "球队关注度"];
   if (match.status === "live") basis.push("实时比分");
@@ -848,7 +869,7 @@ function buildReason(
       : "比分差距已经拉开，模型会降低组合权重，避免追高。";
   }
   if (!snapshot.hasRealOdds) {
-    return `当前先按模型公平赔率筛选：${opportunity.direction}，${opportunity.valueLabel}。等真实盘口接入后，会用市场赔率重新计算价值差和模拟比例。`;
+    return `当前先按模型公平赔率筛选：${opportunity.direction}，${opportunity.valueLabel}。等真实盘口接入后，会用市场赔率重新计算价值差和占比建议。`;
   }
   if (opportunity.bucket === "爆冷小注") {
     return `${opportunity.direction} 属于高赔率机会，${opportunity.valueLabel}；只适合小比例放进机会组合，不适合重仓。`;
@@ -860,7 +881,7 @@ function buildReason(
     return `收藏池里信号较强，当前信号强度 ${confidence}%，${opportunity.valueLabel}，适合作为组合主选候选。`;
   }
   if (score >= 62) {
-    return `${opportunity.direction} 信息量够用，适合作为分散场次；不建议把模拟积分集中在这一场。`;
+    return `${opportunity.direction} 信息量够用，适合作为分散场次；不建议把本次比例集中在这一场。`;
   }
   return mode === "opportunity"
     ? "信号偏弱，只能作为小比例机会观察，等盘口和阵容数据确认。"
@@ -1000,38 +1021,51 @@ function buildPortfolioPlan(
   const config = portfolioModes.find((item) => item.id === mode) ?? portfolioModes[1];
   const picks = matches
     .map((match) => buildPortfolioPick(match, mode, prefs, detailByMatch[match.id]))
-    .sort((a, b) => b.score - a.score || a.riskLabel.localeCompare(b.riskLabel));
+    .sort((a, b) => {
+      if (mode === "opportunity") {
+        return estimatedPickOdds(b) - estimatedPickOdds(a) || b.score - a.score;
+      }
+      if (mode === "stable") {
+        return a.riskLabel.localeCompare(b.riskLabel) || b.confidence - a.confidence || b.score - a.score;
+      }
+      return b.score - a.score || a.riskLabel.localeCompare(b.riskLabel);
+    });
   const selected: PortfolioPick[] = [];
 
   for (const pick of picks) {
     if (!pick.worthWatching) continue;
+    if (mode === "balanced" && estimatedPickOdds(pick) < 1.75 && selected.length > 0) continue;
+    if (mode === "opportunity" && estimatedPickOdds(pick) < 2 && selected.length > 0) continue;
     const sameLeagueCount = selected.filter(
       (item) => item.match.leagueId === pick.match.leagueId
     ).length;
     if (sameLeagueCount >= config.maxSameLeague && selected.length < config.size - 1) continue;
     selected.push(pick);
     if (selected.length >= config.size) break;
+    if (mode === "balanced" && selected.length >= 2 && combinedOdds(selected) >= 2) break;
+    if (mode === "opportunity" && selected.length >= 2 && combinedOdds(selected) >= 5) break;
   }
 
   if (selected.length === 0 && picks[0]?.score >= 58 && picks[0].match.status !== "finished") {
     selected.push({ ...picks[0], role: "观察", exposurePercent: 0, exposurePoints: 0 });
   }
 
-  const totalExposurePercent = selected.reduce((sum, pick) => sum + pick.exposurePercent, 0);
-  const totalExposurePoints = selected.reduce((sum, pick) => sum + pick.exposurePoints, 0);
+  const totalExposurePercent = selected.length > 0 ? 100 : 0;
+  const totalExposurePoints = 0;
+  const odds = combinedOdds(selected);
   const label = config.label;
   const headline =
     selected.length <= 1
       ? "本期单场优先"
       : mode === "stable"
-        ? "低波动分散"
+        ? "稳单优先"
         : mode === "opportunity"
-          ? "小比例机会"
-          : "均衡组合";
+          ? "高倍率机会"
+          : "常规串关";
   const summary =
     selected.length <= 1
-      ? "收藏池暂时没有足够多的强信号，不建议为了组合而组合。"
-      : `${label} 选出 ${selected.length} 场，按不同比赛分散模拟积分，避免集中在单一场次。`;
+      ? "以单场为主，不为了组合而组合。"
+      : `${label} 选出 ${selected.length} 场，预计组合倍率约 ${odds.toFixed(2)}，本次 100% 占比会按信号强弱分配。`;
 
   return {
     mode,
@@ -1064,9 +1098,26 @@ export default function FavoritesPage() {
   const [paymentApplication, setPaymentApplication] = useState<PaymentApplication | null>(null);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [predictionCredits, setPredictionCredits] = useState<number | null>(null);
+  const [predictionStarted, setPredictionStarted] = useState(false);
+  const [predictionMessage, setPredictionMessage] = useState<string | null>(null);
 
   const isPro = membership.plan === "pro" && membership.status === "active";
   const activePrefs = isPro && userPrefs ? userPrefs : defaultPrefs;
+
+  useEffect(() => {
+    if (!isPro) {
+      setPredictionCredits(null);
+      setPredictionStarted(false);
+      return;
+    }
+
+    const raw = window.localStorage.getItem(PREDICTION_CREDITS_KEY);
+    const parsed = raw == null ? Number.NaN : Number(raw);
+    const nextCredits = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : PRO_TRIAL_CREDITS;
+    window.localStorage.setItem(PREDICTION_CREDITS_KEY, String(nextCredits));
+    setPredictionCredits(nextCredits);
+  }, [isPro]);
 
   useEffect(() => {
     async function load() {
@@ -1229,38 +1280,42 @@ export default function FavoritesPage() {
     portfolioModes.find((item) => item.id === activePortfolioMode) ?? portfolioModes[1];
   const singleBestPick = portfolioPicks[0];
   const recommendedIds = activePlan.selectedIds;
-  const activeSelectedIds = selectionTouched ? selectedIds : recommendedIds;
+  const activeSelectedIds = useMemo(
+    () => (predictionStarted ? (selectionTouched ? selectedIds : recommendedIds) : []),
+    [predictionStarted, recommendedIds, selectedIds, selectionTouched]
+  );
   const selectedSet = useMemo(() => new Set(activeSelectedIds), [activeSelectedIds]);
   const selectedPicks = useMemo(
     () => portfolioPicks.filter((pick) => selectedSet.has(pick.match.id)),
     [portfolioPicks, selectedSet]
   );
-  const totalExposurePercent = selectedPicks.reduce(
-    (sum, pick) => sum + pick.exposurePercent,
+  const selectedWeightTotal = selectedPicks.reduce(
+    (sum, pick) => sum + Math.max(1, pick.exposurePercent),
     0
   );
-  const totalExposurePoints = selectedPicks.reduce(
-    (sum, pick) => sum + pick.exposurePoints,
-    0
-  );
-  const remainingPortfolioPoints = Math.max(0, activePrefs.capital - totalExposurePoints);
-  const selectedMatchIdsKey = activeSelectedIds.join(",");
+  const allocationByMatch = selectedPicks.reduce<Record<number, number>>((map, pick) => {
+    map[pick.match.id] =
+      selectedWeightTotal > 0
+        ? (Math.max(1, pick.exposurePercent) / selectedWeightTotal) * 100
+        : 0;
+    return map;
+  }, {});
+  const totalExposurePercent = selectedPicks.length > 0 ? 100 : 0;
+  const favoriteIdsKey = favoriteIds.join(",");
   const corePicks = activePlan.coreCount;
   const firstFavoriteMatchId = favoriteMatches[0]?.id;
   const isEmpty = !loading && favoriteMatches.length === 0;
   const activeProfile = riskProfiles[activePrefs.risk_level];
   const visibleModels = activePrefs.preferred_models.slice(0, 3);
   const visibleMarkets = activePrefs.preferred_markets.slice(0, 4);
+  const predictionCost = favoriteMatches.length * PREDICTION_CREDITS_PER_MATCH;
+  const canStartPrediction =
+    isPro && !detailLoading && favoriteMatches.length > 0 && (predictionCredits ?? 0) >= predictionCost;
 
   useEffect(() => {
-    if (!isPro) return;
-
-    savePortfolioAllocation({
-      usedPoints: totalExposurePoints,
-      totalPercent: totalExposurePercent,
-      selectedMatchIds: selectedPicks.map((pick) => pick.match.id),
-    });
-  }, [isPro, selectedMatchIdsKey, selectedPicks, totalExposurePercent, totalExposurePoints]);
+    setPredictionStarted(false);
+    setPredictionMessage(null);
+  }, [favoriteIdsKey, favoriteMatches.length]);
 
   function handleUnfavorite(id: number) {
     const updated = favoriteIds.filter((favoriteId) => favoriteId !== id);
@@ -1273,6 +1328,41 @@ export default function FavoritesPage() {
       return next;
     });
     setSelectedIds((prev) => prev.filter((matchId) => matchId !== id));
+  }
+
+  function handleStartPrediction() {
+    if (!isPro) {
+      openUpgrade();
+      return;
+    }
+
+    if (detailLoading) {
+      setPredictionMessage("正在读取盘口和近况数据，请稍等几秒再开始预测。");
+      return;
+    }
+
+    if (favoriteMatches.length === 0) {
+      setPredictionMessage("请先收藏要预测的比赛。");
+      return;
+    }
+
+    if ((predictionCredits ?? 0) < predictionCost) {
+      setPredictionMessage(
+        `预测积分不足：本次需要 ${predictionCost} 分，当前剩余 ${predictionCredits ?? 0} 分。`
+      );
+      openUpgrade();
+      return;
+    }
+
+    const nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
+    window.localStorage.setItem(PREDICTION_CREDITS_KEY, String(nextCredits));
+    setPredictionCredits(nextCredits);
+    setPredictionStarted(true);
+    setPredictionMessage(
+      `已扣除 ${predictionCost} 预测积分，本次按 ${favoriteMatches.length} 场比赛生成推荐。`
+    );
+    setSelectionTouched(false);
+    setSelectedIds(recommendedIds);
   }
 
   function togglePortfolioMatch(id: number) {
@@ -1335,12 +1425,12 @@ export default function FavoritesPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">收藏</h1>
           <p className="mt-2 text-sm text-white/60">
-            先在热门赛事里点“加入组合池”，这里会按设置页偏好自动筛选比赛并生成模拟组合参考。
+            先在热门赛事里点“加入组合池”，再点击“开始预测推荐”。系统会按收藏场次扣预测积分，并给出投注占比建议。
           </p>
         </div>
         <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/60">
           {isPro
-            ? `${riskLabel(activePrefs.risk_level)} · ${activePrefs.capital} 模拟积分`
+            ? `${riskLabel(activePrefs.risk_level)} · 剩余 ${predictionCredits ?? PRO_TRIAL_CREDITS} 预测积分`
             : "当前为免费版"}
         </div>
       </div>
@@ -1352,8 +1442,8 @@ export default function FavoritesPage() {
       ) : isEmpty ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-6 text-sm text-white/60">
           <div className="mb-3 text-base text-white/75">暂无收藏比赛</div>
-          <p className="mb-4 max-w-xl text-xs leading-5 text-white/55">
-            去热门赛事页，把你想重点观察的比赛点“加入组合池”。收藏 2-4 场后，这里会生成组合参考和模拟比例。
+            <p className="mb-4 max-w-xl text-xs leading-5 text-white/55">
+            去热门赛事页，把你想重点观察的比赛点“加入组合池”。收藏后点击开始预测，系统会生成单场优先、常规串关和高倍率串关参考。
           </p>
           <Link
             href="/"
@@ -1368,11 +1458,11 @@ export default function FavoritesPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
                 <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
-                  Pro 收藏组合
+                  Pro 预测推荐
                 </div>
-                <h2 className="text-lg font-semibold">收藏组合推演</h2>
+                <h2 className="text-lg font-semibold">收藏预测推荐</h2>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-white/55">
-                  不在收藏页重复选模型。系统会读取设置页偏好，再逐场拉取赔率、统计和近况；有真实盘口时按价值差分组，没有盘口时只做赛前观察。
+                  模型回测是用历史样本检验模型；这里是你收藏未来比赛后实际生成推荐。系统读取设置页偏好，再逐场计算玩法、占比和组合方向。
                 </p>
                 {detailLoading && (
                   <p className="mt-2 text-[11px] text-amber-200/80">
@@ -1392,7 +1482,37 @@ export default function FavoritesPage() {
               )}
             </div>
 
-            {singleBestPick && (
+            <div className="mt-4 rounded-2xl border border-white/8 bg-black/25 p-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-white">开始本次预测</div>
+                  <p className="mt-1 text-[11px] leading-5 text-white/50">
+                    本次收藏 {favoriteMatches.length} 场，每场扣 {PREDICTION_CREDITS_PER_MATCH} 预测积分，合计扣 {predictionCost} 分。
+                    预测完成后，投注建议只按 100% 占比分配，不再显示投注积分。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleStartPrediction}
+                  disabled={isPro && !canStartPrediction}
+                  className="rounded-full bg-[color:var(--accent)] px-5 py-2 text-xs font-black text-black shadow-[0_0_28px_rgba(0,255,135,0.45)] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {isPro ? "开始预测推荐" : "开通 Pro 后预测"}
+                </button>
+              </div>
+              {predictionMessage && (
+                <div className="mt-3 rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-xs text-[color:var(--accent)]">
+                  {predictionMessage}
+                </div>
+              )}
+              {!predictionStarted && isPro && (
+                <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/20 px-3 py-2 text-xs text-white/45">
+                  还没有开始本次预测。点击按钮后才会扣积分，并展开单场、常规串关和高倍率串关推荐。
+                </div>
+              )}
+            </div>
+
+            {predictionStarted && singleBestPick && (
               <div className="mt-4 rounded-2xl border border-[color:var(--accent)]/25 bg-black/25 p-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -1421,7 +1541,7 @@ export default function FavoritesPage() {
                       <div className="text-[color:var(--accent)]/70">建议占比</div>
                       <div className="mt-1 font-semibold text-[color:var(--accent)]">
                         {singleBestPick.worthWatching
-                          ? `${formatPercent(singleBestPick.exposurePercent)}%`
+                          ? `${formatPercent(allocationByMatch[singleBestPick.match.id] ?? 100)}%`
                           : "观望"}
                       </div>
                     </div>
@@ -1445,7 +1565,7 @@ export default function FavoritesPage() {
                     </p>
                   </div>
                   <div className="shrink-0 rounded-full bg-[color:var(--accent)]/10 px-3 py-1 text-xs font-semibold text-[color:var(--accent)]">
-                    自动推荐 {activePlan.selectedIds.length} 场
+                    {predictionStarted ? `自动推荐 ${activePlan.selectedIds.length} 场` : "点击开始后生成"}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -1511,11 +1631,11 @@ export default function FavoritesPage() {
                       <div>
                         <div className="text-xs font-semibold text-white">{plan.label}</div>
                         <div className="mt-1 text-[11px] text-white/45">
-                          {topBucket} · {plan.selectedIds.length} 场
+                          {predictionStarted ? `${topBucket} · ${plan.selectedIds.length} 场` : "待开始预测"}
                         </div>
                       </div>
                       <div className="rounded-full bg-black/35 px-2 py-1 text-[11px] text-[color:var(--accent)]">
-                        {formatPercent(plan.totalExposurePercent)}%
+                        {predictionStarted ? `${formatPercent(plan.totalExposurePercent)}%` : "待开始"}
                       </div>
                     </div>
                     <p className="mt-3 text-[11px] leading-5 text-white/50">{plan.summary}</p>
@@ -1544,21 +1664,21 @@ export default function FavoritesPage() {
                 </div>
               </div>
               <div className="rounded-xl bg-black/25 p-3">
-                <div className="text-[11px] text-white/45">组合总模拟</div>
+                <div className="text-[11px] text-white/45">本次总占比</div>
                 <div className="mt-1 text-2xl font-semibold text-white">
                   {formatPercent(totalExposurePercent)}%
                 </div>
                 <div className="mt-1 text-[11px] text-white/45">
-                  约 {totalExposurePoints} 模拟积分
+                  所有推荐合计按 100%
                 </div>
               </div>
               <div className="rounded-xl bg-[color:var(--accent)]/10 p-3">
-                <div className="text-[11px] text-[color:var(--accent)]/70">剩余模拟积分</div>
+                <div className="text-[11px] text-[color:var(--accent)]/70">剩余预测积分</div>
                 <div className="mt-1 text-2xl font-semibold text-[color:var(--accent)]">
-                  {remainingPortfolioPoints}
+                  {predictionCredits ?? "-"}
                 </div>
                 <div className="mt-1 text-[11px] text-white/45">
-                  与设置页联动
+                  每场预测扣 {PREDICTION_CREDITS_PER_MATCH} 分
                 </div>
               </div>
             </div>
@@ -1567,9 +1687,9 @@ export default function FavoritesPage() {
               <span className="font-semibold text-[color:var(--accent)]">组合建议：</span>
               {selectedPicks.length === 0
                 ? "收藏里暂时没有足够强的信号，建议先观察，不强行组合。"
-                : `${activePlan.headline}：稳定主选会给更高模拟比例，爆冷或高赔率方向只保留小注观察。已选 ${selectedPicks.length} 场，总模拟比例 ${formatPercent(
+                : `${activePlan.headline}：稳定主选会给更高占比，爆冷或高赔率方向只保留小比例观察。已选 ${selectedPicks.length} 场，本次总占比 ${formatPercent(
                     totalExposurePercent
-                  )}%。优先分散到不同比赛，不把模拟积分集中在单一场次。`}
+                  )}%。优先分散到不同比赛，不把占比集中在单一场次。`}
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
               <span className="font-semibold text-white/75">分析口径：</span>
@@ -1633,12 +1753,14 @@ export default function FavoritesPage() {
                         <div className="rounded-xl bg-black/25 p-2">
                           <div className="text-white/42">建议占比</div>
                           <div className="mt-1 font-semibold text-[color:var(--accent)]">
-                            {pick.worthWatching ? `${formatPercent(pick.exposurePercent)}%` : "观望"}
+                            {pick.worthWatching && selected
+                              ? `${formatPercent(allocationByMatch[pick.match.id] ?? 0)}%`
+                              : "观望"}
                           </div>
                         </div>
                         <button
                           type="button"
-                          disabled={!isPro || !pick.worthWatching}
+                          disabled={!isPro || !predictionStarted || !pick.worthWatching}
                           onClick={() => togglePortfolioMatch(pick.match.id)}
                           className={`rounded-xl border px-3 py-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                             selected
@@ -1646,7 +1768,13 @@ export default function FavoritesPage() {
                               : "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black"
                           }`}
                         >
-                          {!isPro ? "Pro 解锁后选择" : selected ? "移出组合" : "加入组合"}
+                          {!isPro
+                            ? "Pro 解锁后选择"
+                            : !predictionStarted
+                              ? "开始后可调整"
+                              : selected
+                                ? "移出组合"
+                                : "加入组合"}
                         </button>
                       </div>
                     </div>
