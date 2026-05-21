@@ -20,6 +20,7 @@ import {
 
 type FilterMode = "all" | "unread";
 type BrowserPermission = NotificationPermission | "unsupported";
+const FAVORITES_KEY = "scoutai_favorites";
 
 function browserStatusText(permission: BrowserPermission, enabled: boolean) {
   if (permission === "unsupported") return "当前浏览器不支持";
@@ -35,6 +36,16 @@ function browserStatusTone(permission: BrowserPermission, enabled: boolean) {
   return "text-amber-300";
 }
 
+function readFavoriteCount() {
+  try {
+    const raw = window.localStorage.getItem(FAVORITES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [filter, setFilter] = useState<FilterMode>("all");
@@ -42,11 +53,13 @@ export default function AlertsPage() {
   const [browserEnabled, setBrowserEnabled] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [testPreview, setTestPreview] = useState<AlertItem | null>(null);
+  const [favoriteCount, setFavoriteCount] = useState(0);
 
   const refreshAlerts = useCallback(() => {
     setAlerts(readStoredAlerts());
     setPermission(getBrowserNotificationPermission());
     setBrowserEnabled(browserNotificationsEnabled());
+    setFavoriteCount(readFavoriteCount());
   }, []);
 
   useEffect(() => {
@@ -113,10 +126,13 @@ export default function AlertsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">异常提醒</h1>
           <p className="mt-2 text-sm text-white/60">
-            真实比赛发生比分变化或模型风险变化时，站内提醒和 Chrome 通知会同步触发。
+            只监控你收藏里的比赛。进球、牌、角球、赔率异动和冷门概率升高时，站内提醒和 Chrome 通知会同步触发。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-1.5 text-[color:var(--accent)]">
+            收藏监控 {favoriteCount} 场
+          </span>
           {[
             ["all", "全部"],
             ["unread", `未读 ${unreadCount}`],
@@ -155,7 +171,7 @@ export default function AlertsPage() {
               </div>
               <h2 className="mt-2 text-base font-semibold">通知状态</h2>
               <p className="mt-1 text-xs leading-5 text-white/55">
-                站内提醒始终开启；Chrome 通知需要用户点一次允许。
+                站内提醒始终开启；Chrome 通知需要用户点一次允许。提醒范围只来自收藏池。
               </p>
             </div>
             <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-[color:var(--accent)]">
@@ -170,7 +186,7 @@ export default function AlertsPage() {
                 已开启
               </div>
               <p className="mt-1 text-[11px] leading-5 text-white/45">
-                异常发生时，页面右上角会弹出绿色提醒。
+                收藏比赛发生异常时，页面右上角会弹出绿色提醒。
               </p>
             </div>
             <div className="rounded-xl bg-black/25 p-3">
@@ -232,24 +248,29 @@ export default function AlertsPage() {
           <h2 className="text-base font-semibold">当前会触发的真实提醒</h2>
           <div className="mt-3 grid gap-2 text-xs text-white/60">
             <div className="rounded-xl bg-black/25 px-3 py-2">
-              1. 实时比赛比分变化：进球后写入站内提醒，并弹出 Chrome 通知。
+              1. 收藏比赛比分变化：进球后写入站内提醒，并弹出 Chrome 通知。
             </div>
             <div className="rounded-xl bg-black/25 px-3 py-2">
-              2. 客队从不领先变成领先：标记为异常预警，提醒重新看风险。
+              2. 黄牌、红牌、角球增加：实时数据 API 返回后会按变化提醒。
             </div>
             <div className="rounded-xl bg-black/25 px-3 py-2">
-              3. 比赛进入实时监控：从未开赛变成进行中时会提醒。
+              3. 赔率大幅变化或冷门概率升高：提醒重新检查收藏组合风险。
+            </div>
+            <div className="rounded-xl bg-black/25 px-3 py-2">
+              4. 收藏比赛进入实时监控：从开赛后第一次进入实时接口时会提醒。
             </div>
           </div>
           <p className="mt-3 text-[11px] leading-5 text-white/45">
-            红黄牌、角球和盘口异动需要实时数据 API 返回对应字段后接入；现在不会再显示演示提醒。
+            当前只对收藏比赛生效。红黄牌、角球、赔率和冷门概率会在实时数据 API 返回对应字段后进入同一套提醒。
           </p>
         </div>
       </section>
 
       {visibleAlerts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/70 p-6 text-sm leading-6 text-white/60">
-          暂无真实异常提醒。打开 Chrome 通知后，网站会每 60 秒检查实时比赛；发生变化时会自动写入这里。
+          {favoriteCount > 0
+            ? "暂无收藏比赛异常提醒。网站会每 60 秒检查收藏池里的实时比赛；发生进球、牌、角球、盘口或冷门概率变化时会自动写入这里。"
+            : "你还没有收藏要监控的比赛。先到热门赛事点星标加入收藏池，开赛后这里才会提醒。"}
         </div>
       ) : (
         <div className="space-y-3">

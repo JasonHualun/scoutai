@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertItem,
+  LiveAlertMatch,
   appendStoredAlerts,
   alertTypeMeta,
   buildLiveAlerts,
@@ -13,19 +14,123 @@ import {
 } from "@/lib/alerts";
 
 type LiveMatchesResponse = {
-  matches?: Array<{
-    id: number;
-    league?: string;
-    homeTeam: string;
-    awayTeam: string;
-    homeScore: number;
-    awayScore: number;
-    status: "live" | "upcoming" | "finished";
-    minute?: number;
-  }>;
+  matches?: LiveAlertMatch[];
 };
 
 const POLL_INTERVAL_MS = 60_000;
+const FAVORITES_KEY = "scoutai_favorites";
+const MAX_ENRICHED_MATCHES = 12;
+
+type ApiStatItem = { type: string; value: number | string | null };
+type ApiTeamStats = { statistics?: ApiStatItem[] };
+type ApiBet = {
+  name: string;
+  values?: Array<{ value: string; odd?: string }>;
+};
+type MatchDetailResponse = {
+  statistics?: { response?: ApiTeamStats[] } | null;
+  odds?: { response?: Array<{ bookmakers?: Array<{ bets?: ApiBet[] }> }> } | null;
+};
+
+function readFavoriteIds() {
+  try {
+    const raw = window.localStorage.getItem(FAVORITES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(parsed)) return new Set<string>();
+
+    return new Set(
+      parsed
+        .map((item) => String(item))
+        .filter((item) => item && item !== "NaN" && item !== "undefined")
+    );
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function statValue(items: ApiStatItem[] | undefined, type: string) {
+  const item = items?.find((stat) => stat.type === type);
+  if (!item) return undefined;
+  const raw =
+    typeof item.value === "string" ? Number(item.value.replace("%", "")) : item.value;
+  return Number.isFinite(raw) ? Number(raw) : undefined;
+}
+
+function oddValue(bets: ApiBet[] | undefined, name: string) {
+  const winner = bets?.find((bet) => bet.name === "Match Winner");
+  const value = Number(winner?.values?.find((item) => item.value === name)?.odd);
+  return Number.isFinite(value) && value > 1 ? value : undefined;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function buildUpsetSignal(match: LiveAlertMatch) {
+  const { homeWinOdds, drawOdds, awayWinOdds } = match;
+  if (!homeWinOdds || !awayWinOdds || homeWinOdds <= 1 || awayWinOdds <= 1) return {};
+
+  const oddsGap = Math.abs(homeWinOdds - awayWinOdds);
+  if (oddsGap < 0.35) return {};
+
+  const homeIsFavorite = homeWinOdds < awayWinOdds;
+  const underdogOdd = homeIsFavorite ? awayWinOdds : homeWinOdds;
+  const favoriteScore = homeIsFavorite ? match.homeScore : match.awayScore;
+  const underdogScore = homeIsFavorite ? match.awayScore : match.homeScore;
+  const impliedTotal =
+    1 / homeWinOdds + (drawOdds && drawOdds > 1 ? 1 / drawOdds : 0) + 1 / awayWinOdds;
+  const baseProbability = impliedTotal > 0 ? (1 / underdogOdd / impliedTotal) * 100 : 0;
+  const scoreGap = underdogScore - favoriteScore;
+  const minute = match.minute ?? 0;
+  const scoreBoost = scoreGap > 0 ? 28 + scoreGap * 14 : scoreGap === 0 ? 6 : -10;
+  const lateBoost = scoreGap >= 0 ? clamp(((minute - 45) / 45) * 16, 0, 16) : 0;
+  const upsetProbability = clamp(baseProbability + scoreBoost + lateBoost, 0, 95);
+
+  return {
+    upsetProbability: Math.round(upsetProbability * 10) / 10,
+    upsetSide: homeIsFavorite ? `${match.awayTeam} 爆冷方向` : `${match.homeTeam} 爆冷方向`,
+  };
+}
+
+async function enrichMatch(match: LiveAlertMatch): Promise<LiveAlertMatch> {
+  try {
+    const res = await fetch(`/api/match/${match.id}`, { cache: "no-store" });
+    if (!res.ok) return match;
+
+    const detail = (await res.json()) as MatchDetailResponse;
+    const homeStats = detail.statistics?.response?.[0]?.statistics;
+    const awayStats = detail.statistics?.response?.[1]?.statistics;
+    const bets = detail.odds?.response?.[0]?.bookmakers?.[0]?.bets;
+    const enriched: LiveAlertMatch = {
+      ...match,
+      yellowCardsHome: statValue(homeStats, "Yellow Cards"),
+      yellowCardsAway: statValue(awayStats, "Yellow Cards"),
+      redCardsHome: statValue(homeStats, "Red Cards"),
+      redCardsAway: statValue(awayStats, "Red Cards"),
+      cornersHome: statValue(homeStats, "Corner Kicks"),
+      cornersAway: statValue(awayStats, "Corner Kicks"),
+      homeWinOdds: oddValue(bets, "Home"),
+      drawOdds: oddValue(bets, "Draw"),
+      awayWinOdds: oddValue(bets, "Away"),
+    };
+
+    return {
+      ...enriched,
+      ...buildUpsetSignal(enriched),
+    };
+  } catch {
+    return match;
+  }
+}
+
+async function enrichMatches(matches: LiveAlertMatch[]) {
+  const selected = matches.slice(0, MAX_ENRICHED_MATCHES);
+  const results = await Promise.allSettled(selected.map(enrichMatch));
+  const enriched = results.map((result, index) =>
+    result.status === "fulfilled" ? result.value : selected[index]
+  );
+  return [...enriched, ...matches.slice(MAX_ENRICHED_MATCHES)];
+}
 
 export function AlertNotifier() {
   const [toastAlerts, setToastAlerts] = useState<AlertItem[]>([]);
@@ -40,10 +145,19 @@ export function AlertNotifier() {
 
   const checkLiveMatches = useCallback(async () => {
     try {
+      const favoriteIds = readFavoriteIds();
+      if (!favoriteIds.size) {
+        saveSnapshot({});
+        return;
+      }
+
       const res = await fetch("/api/football/live", { cache: "no-store" });
       const json = (await res.json()) as LiveMatchesResponse;
-      const matches = json.matches ?? [];
-      const currentSnapshot = snapshotFromMatches(matches);
+      const matches = (json.matches ?? []).filter((match) =>
+        favoriteIds.has(String(match.id))
+      );
+      const enrichedMatches = await enrichMatches(matches);
+      const currentSnapshot = snapshotFromMatches(enrichedMatches);
       const previousSnapshot = readSnapshot();
 
       saveSnapshot(currentSnapshot);

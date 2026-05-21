@@ -28,6 +28,17 @@ export type LiveAlertMatch = {
   awayScore: number;
   status: "live" | "upcoming" | "finished";
   minute?: number;
+  yellowCardsHome?: number;
+  yellowCardsAway?: number;
+  redCardsHome?: number;
+  redCardsAway?: number;
+  cornersHome?: number;
+  cornersAway?: number;
+  homeWinOdds?: number;
+  drawOdds?: number;
+  awayWinOdds?: number;
+  upsetProbability?: number;
+  upsetSide?: string;
 };
 
 export type AlertTypeMeta = {
@@ -45,6 +56,17 @@ type MatchSnapshot = {
   awayScore: number;
   status: "live" | "upcoming" | "finished";
   minute?: number;
+  yellowCardsHome?: number;
+  yellowCardsAway?: number;
+  redCardsHome?: number;
+  redCardsAway?: number;
+  cornersHome?: number;
+  cornersAway?: number;
+  homeWinOdds?: number;
+  drawOdds?: number;
+  awayWinOdds?: number;
+  upsetProbability?: number;
+  upsetSide?: string;
 };
 
 export type AlertSnapshot = Record<string, MatchSnapshot>;
@@ -93,6 +115,11 @@ function alertTimeLabel(iso: string) {
 function safeNumber(value: unknown) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
+}
+
+function optionalNumber(value: unknown) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
 }
 
 function createAlertId(matchId: string, type: AlertType, score: string) {
@@ -229,9 +256,99 @@ export function snapshotFromMatches(matches: LiveAlertMatch[]): AlertSnapshot {
       awayScore: safeNumber(match.awayScore),
       status: match.status,
       minute: match.minute,
+      yellowCardsHome: optionalNumber(match.yellowCardsHome),
+      yellowCardsAway: optionalNumber(match.yellowCardsAway),
+      redCardsHome: optionalNumber(match.redCardsHome),
+      redCardsAway: optionalNumber(match.redCardsAway),
+      cornersHome: optionalNumber(match.cornersHome),
+      cornersAway: optionalNumber(match.cornersAway),
+      homeWinOdds: optionalNumber(match.homeWinOdds),
+      drawOdds: optionalNumber(match.drawOdds),
+      awayWinOdds: optionalNumber(match.awayWinOdds),
+      upsetProbability: optionalNumber(match.upsetProbability),
+      upsetSide: match.upsetSide,
     };
     return snapshot;
   }, {});
+}
+
+function hasNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function pushIncrementAlert({
+  alerts,
+  match,
+  oldValue,
+  newValue,
+  type,
+  teamName,
+  label,
+  score,
+  createdAt,
+}: {
+  alerts: AlertItem[];
+  match: MatchSnapshot;
+  oldValue?: number;
+  newValue?: number;
+  type: AlertType;
+  teamName: string;
+  label: string;
+  score: string;
+  createdAt: string;
+}) {
+  if (!hasNumber(oldValue) || !hasNumber(newValue)) return;
+  const delta = newValue - oldValue;
+  if (delta <= 0) return;
+
+  alerts.push({
+    id: createAlertId(match.id, type, `${score}-${label}-${teamName}`),
+    match_id: match.id,
+    match_name: match.match_name,
+    score,
+    type,
+    content: `${teamName} 新增 ${delta} 次${label}，当前${label}数 ${newValue}。`,
+    created_at: createdAt,
+    read: false,
+    source: "live",
+  });
+}
+
+function pushOddsAlert({
+  alerts,
+  match,
+  oldOdd,
+  newOdd,
+  label,
+  score,
+  createdAt,
+}: {
+  alerts: AlertItem[];
+  match: MatchSnapshot;
+  oldOdd?: number;
+  newOdd?: number;
+  label: string;
+  score: string;
+  createdAt: string;
+}) {
+  if (!hasNumber(oldOdd) || !hasNumber(newOdd) || oldOdd <= 1 || newOdd <= 1) return;
+
+  const diff = newOdd - oldOdd;
+  const pct = Math.abs(diff / oldOdd) * 100;
+  if (pct < 8 && Math.abs(diff) < 0.15) return;
+
+  const direction = diff < 0 ? "被压低" : "被抬高";
+  alerts.push({
+    id: createAlertId(match.id, "odds_shift", `${score}-${label}`),
+    match_id: match.id,
+    match_name: match.match_name,
+    score,
+    type: "odds_shift",
+    content: `${label}赔率从 ${oldOdd.toFixed(2)} 变到 ${newOdd.toFixed(2)}，${direction} ${pct.toFixed(1)}%，盘口关注度发生变化。`,
+    created_at: createdAt,
+    read: false,
+    source: "live",
+  });
 }
 
 export function buildLiveAlerts(previous: AlertSnapshot, current: AlertSnapshot) {
@@ -239,24 +356,25 @@ export function buildLiveAlerts(previous: AlertSnapshot, current: AlertSnapshot)
 
   Object.values(current).forEach((match) => {
     const old = previous[match.id];
-    if (!old) return;
 
     const score = `${match.homeScore} : ${match.awayScore}`;
     const createdAt = nowIso();
 
-    if (old.status !== "live" && match.status === "live") {
+    if ((!old || old.status !== "live") && match.status === "live") {
       alerts.push({
         id: createAlertId(match.id, "ai_update", score),
         match_id: match.id,
         match_name: match.match_name,
         score,
         type: "ai_update",
-        content: "比赛已进入实时监控，后续比分变化会自动提醒。",
+        content: "收藏比赛已进入实时监控，后续进球、牌、角球和盘口变化会自动提醒。",
         created_at: createdAt,
         read: false,
         source: "live",
       });
     }
+
+    if (!old) return;
 
     if (match.homeScore > old.homeScore) {
       alerts.push({
@@ -286,6 +404,101 @@ export function buildLiveAlerts(previous: AlertSnapshot, current: AlertSnapshot)
       });
     }
 
+    pushIncrementAlert({
+      alerts,
+      match,
+      oldValue: old.yellowCardsHome,
+      newValue: match.yellowCardsHome,
+      type: "yellow_card",
+      teamName: match.homeTeam,
+      label: "黄牌",
+      score,
+      createdAt,
+    });
+    pushIncrementAlert({
+      alerts,
+      match,
+      oldValue: old.yellowCardsAway,
+      newValue: match.yellowCardsAway,
+      type: "yellow_card",
+      teamName: match.awayTeam,
+      label: "黄牌",
+      score,
+      createdAt,
+    });
+    pushIncrementAlert({
+      alerts,
+      match,
+      oldValue: old.redCardsHome,
+      newValue: match.redCardsHome,
+      type: "red_card",
+      teamName: match.homeTeam,
+      label: "红牌",
+      score,
+      createdAt,
+    });
+    pushIncrementAlert({
+      alerts,
+      match,
+      oldValue: old.redCardsAway,
+      newValue: match.redCardsAway,
+      type: "red_card",
+      teamName: match.awayTeam,
+      label: "红牌",
+      score,
+      createdAt,
+    });
+    pushIncrementAlert({
+      alerts,
+      match,
+      oldValue: old.cornersHome,
+      newValue: match.cornersHome,
+      type: "corner",
+      teamName: match.homeTeam,
+      label: "角球",
+      score,
+      createdAt,
+    });
+    pushIncrementAlert({
+      alerts,
+      match,
+      oldValue: old.cornersAway,
+      newValue: match.cornersAway,
+      type: "corner",
+      teamName: match.awayTeam,
+      label: "角球",
+      score,
+      createdAt,
+    });
+
+    pushOddsAlert({
+      alerts,
+      match,
+      oldOdd: old.homeWinOdds,
+      newOdd: match.homeWinOdds,
+      label: "主胜",
+      score,
+      createdAt,
+    });
+    pushOddsAlert({
+      alerts,
+      match,
+      oldOdd: old.drawOdds,
+      newOdd: match.drawOdds,
+      label: "平局",
+      score,
+      createdAt,
+    });
+    pushOddsAlert({
+      alerts,
+      match,
+      oldOdd: old.awayWinOdds,
+      newOdd: match.awayWinOdds,
+      label: "客胜",
+      score,
+      createdAt,
+    });
+
     const wasAwayLeading = old.awayScore > old.homeScore;
     const isAwayLeading = match.awayScore > match.homeScore;
     if (!wasAwayLeading && isAwayLeading) {
@@ -300,6 +513,24 @@ export function buildLiveAlerts(previous: AlertSnapshot, current: AlertSnapshot)
         read: false,
         source: "live",
       });
+    }
+
+    if (hasNumber(old.upsetProbability) && hasNumber(match.upsetProbability)) {
+      const delta = match.upsetProbability - old.upsetProbability;
+      const crossedRiskLine = old.upsetProbability < 55 && match.upsetProbability >= 55;
+      if (delta >= 8 || crossedRiskLine) {
+        alerts.push({
+          id: createAlertId(match.id, "upset_warning", `${score}-upset`),
+          match_id: match.id,
+          match_name: match.match_name,
+          score,
+          type: "upset_warning",
+          content: `${match.upsetSide ?? "冷门方向"}概率从 ${old.upsetProbability.toFixed(1)}% 升到 ${match.upsetProbability.toFixed(1)}%，建议重新检查收藏组合风险。`,
+          created_at: createdAt,
+          read: false,
+          source: "live",
+        });
+      }
     }
   });
 

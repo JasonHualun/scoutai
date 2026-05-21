@@ -328,6 +328,8 @@ test("alerts page uses real notification controls instead of demo alerts", async
   await page.goto("/alerts", { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { name: "异常提醒" })).toBeVisible();
+  await expect(page.getByText("只监控你收藏里的比赛")).toBeVisible();
+  await expect(page.getByText("收藏监控 0 场")).toBeVisible();
   await expect(page.getByRole("button", { name: "开启 Chrome 通知" })).toBeVisible();
   await expect(page.getByText("演示数据")).toHaveCount(0);
 
@@ -336,6 +338,96 @@ test("alerts page uses real notification controls instead of demo alerts", async
   await expect(page.getByText("ScoutAI 通知测试")).toBeVisible();
   await expect(page.getByText("网页内测试预览", { exact: true })).toBeVisible();
   await expect(page.getByText("不计入未读")).toBeVisible();
+});
+
+test("alerts only monitor favorite matches and surface live data changes", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("scoutai_favorites", JSON.stringify([77001]));
+    window.localStorage.setItem(
+      "scoutai:live-alert-snapshot",
+      JSON.stringify({
+        "77001": {
+          id: "77001",
+          match_name: "阿森纳 vs 切尔西",
+          homeTeam: "阿森纳",
+          awayTeam: "切尔西",
+          homeScore: 0,
+          awayScore: 0,
+          status: "live",
+          yellowCardsHome: 0,
+          yellowCardsAway: 0,
+          cornersHome: 1,
+          cornersAway: 0,
+        },
+      })
+    );
+  });
+
+  await page.route("**/api/football/live", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        matches: [
+          {
+            id: 77001,
+            league: "英超",
+            homeTeam: "阿森纳",
+            awayTeam: "切尔西",
+            homeScore: 1,
+            awayScore: 0,
+            status: "live",
+            minute: 62,
+          },
+          {
+            id: 77002,
+            league: "英超",
+            homeTeam: "曼城",
+            awayTeam: "热刺",
+            homeScore: 2,
+            awayScore: 0,
+            status: "live",
+            minute: 62,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/match/77001", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        statistics: {
+          response: [
+            {
+              statistics: [
+                { type: "Yellow Cards", value: 1 },
+                { type: "Corner Kicks", value: 2 },
+              ],
+            },
+            {
+              statistics: [
+                { type: "Yellow Cards", value: 0 },
+                { type: "Corner Kicks", value: 0 },
+              ],
+            },
+          ],
+        },
+        odds: { response: [] },
+      }),
+    });
+  });
+
+  await page.goto("/alerts", { waitUntil: "networkidle" });
+
+  await expect(page.getByText("收藏监控 1 场")).toBeVisible();
+  await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("body")).toContainText("阿森纳 出现进球");
+  await expect(page.locator("body")).toContainText("阿森纳 新增 1 次黄牌");
+  await expect(page.locator("body")).toContainText("阿森纳 新增 1 次角球");
+  await expect(page.locator("body")).not.toContainText("曼城 vs 热刺");
 });
 
 test("favorites page shows portfolio recommendations for saved matches", async ({ page }) => {
