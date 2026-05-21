@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest, unauthorized } from "@/lib/admin-auth";
-import { addMonths } from "@/lib/membership";
+import { PRO_TRIAL_CREDITS, addMonths, creditPlanByAmount } from "@/lib/membership";
 import { createServiceRoleClient } from "@/lib/supabase";
 
 type OpenMembershipBody = {
@@ -30,10 +30,25 @@ function paymentApplicationTableMissing(message: string) {
   );
 }
 
+function missingCreditsColumn(message: string) {
+  const lower = message.toLowerCase();
+  return lower.includes("prediction_credits") && (lower.includes("column") || lower.includes("schema cache"));
+}
+
+function creditsFromApplication(amount: unknown, note?: string | null) {
+  const matchedPlan = creditPlanByAmount(Number(amount));
+  if (matchedPlan) return matchedPlan.credits;
+
+  const noteMatch = note?.match(/(\d+)\s*预测积分/);
+  const parsed = noteMatch ? Number(noteMatch[1]) : Number.NaN;
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : PRO_TRIAL_CREDITS;
+}
+
 async function openProForEmail(
   supabase: ReturnType<typeof createServiceRoleClient>,
   email: string,
-  months: number
+  months: number,
+  creditsToAdd = PRO_TRIAL_CREDITS
 ) {
   const { data, error: listError } = await supabase.auth.admin.listUsers({
     page: 1,
@@ -47,26 +62,54 @@ async function openProForEmail(
     return { error: "没有找到这个注册邮箱", status: 404 as const };
   }
 
-  const { data: current } = await supabase
+  let creditsSupported = true;
+  let current: { pro_until?: string | null; prediction_credits?: number | null } | null = null;
+  const { data: currentWithCredits, error: currentError } = await supabase
     .from("memberships")
-    .select("pro_until")
+    .select("pro_until, prediction_credits")
     .eq("user_id", user.id)
     .maybeSingle();
+
+  if (currentError) {
+    if (!missingCreditsColumn(currentError.message)) throw currentError;
+    creditsSupported = false;
+    const { data: currentWithoutCredits, error: fallbackError } = await supabase
+      .from("memberships")
+      .select("pro_until")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (fallbackError) throw fallbackError;
+    current = currentWithoutCredits;
+  } else {
+    current = currentWithCredits;
+  }
 
   const currentEnd = current?.pro_until ? new Date(current.pro_until) : new Date();
   const base = currentEnd.getTime() > Date.now() ? currentEnd : new Date();
   const proUntil = addMonths(base, months).toISOString();
+  const nextCredits = Math.max(0, Math.round(Number(current?.prediction_credits ?? 0))) + creditsToAdd;
 
-  const { error: upsertError } = await supabase.from("memberships").upsert(
-    {
-      user_id: user.id,
-      email,
-      plan: "pro",
-      pro_until: proUntil,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  );
+  const payload: {
+    user_id: string;
+    email: string;
+    plan: "pro";
+    pro_until: string;
+    updated_at: string;
+    prediction_credits?: number;
+  } = {
+    user_id: user.id,
+    email,
+    plan: "pro",
+    pro_until: proUntil,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (creditsSupported) payload.prediction_credits = nextCredits;
+
+  const { error: upsertError } = await supabase
+    .from("memberships")
+    .upsert(payload, { onConflict: "user_id" });
 
   if (upsertError) throw upsertError;
 
@@ -75,6 +118,7 @@ async function openProForEmail(
       email,
       plan: "pro",
       proUntil,
+      predictionCredits: creditsSupported ? nextCredits : undefined,
     },
   };
 }
@@ -123,7 +167,7 @@ export async function POST(req: NextRequest) {
     if (body.applicationId) {
       const { data: application, error: appError } = await supabase
         .from("payment_applications")
-        .select("id, email, months, status")
+        .select("id, email, amount, months, status, note")
         .eq("id", body.applicationId)
         .single();
 
@@ -153,7 +197,8 @@ export async function POST(req: NextRequest) {
       const result = await openProForEmail(
         supabase,
         String(application.email).trim().toLowerCase(),
-        safeMonths(application.months)
+        safeMonths(application.months),
+        creditsFromApplication(application.amount, application.note)
       );
 
       if ("error" in result) {

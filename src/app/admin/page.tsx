@@ -120,7 +120,7 @@ export default function AdminPage() {
       const json = (await res.json()) as {
         ok?: boolean;
         error?: string;
-        membership?: { email: string; proUntil: string };
+        membership?: { email: string; proUntil: string; predictionCredits?: number };
       };
 
       if (!res.ok) throw new Error(json.error ?? "确认开通失败");
@@ -129,7 +129,9 @@ export default function AdminPage() {
       setMessage(
         `${json.membership?.email ?? "用户"} 已开通 Pro，有效期至 ${new Date(
           json.membership?.proUntil ?? ""
-        ).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })}`
+        ).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })}，预测积分余额 ${
+          json.membership?.predictionCredits ?? "待同步"
+        }`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "确认开通失败");
@@ -156,7 +158,7 @@ export default function AdminPage() {
       const json = (await res.json()) as {
         ok?: boolean;
         error?: string;
-        membership?: { email: string; proUntil: string };
+        membership?: { email: string; proUntil: string; predictionCredits?: number };
       };
 
       if (!res.ok) throw new Error(json.error ?? "开通失败");
@@ -164,7 +166,9 @@ export default function AdminPage() {
       setMessage(
         `${json.membership?.email ?? email} 已开通 Pro，有效期至 ${new Date(
           json.membership?.proUntil ?? ""
-        ).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })}`
+        ).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })}，预测积分余额 ${
+          json.membership?.predictionCredits ?? "待同步"
+        }`
       );
       setEmail("");
       setMonths(1);
@@ -301,7 +305,7 @@ export default function AdminPage() {
                   disabled={confirmingId === application.id || !hasAdminCredential}
                   className="rounded-full border border-[color:var(--accent)]/45 bg-[color:var(--accent)]/10 px-4 py-2 text-xs font-semibold text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {confirmingId === application.id ? "开通中..." : "确认开通 Pro"}
+                  {confirmingId === application.id ? "开通中..." : "确认开通 / 补积分"}
                 </button>
               </div>
             ))

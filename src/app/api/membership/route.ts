@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
 import { freeMembership, normalizeMembership } from "@/lib/membership";
 
+function missingCreditsColumn(message: string) {
+  const lower = message.toLowerCase();
+  return lower.includes("prediction_credits") && lower.includes("column");
+}
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("Authorization");
 
@@ -23,11 +28,26 @@ export async function GET(req: NextRequest) {
   const serviceSupabase = createServiceRoleClient();
   const { data, error } = await serviceSupabase
     .from("memberships")
-    .select("plan, pro_until")
+    .select("plan, pro_until, prediction_credits")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (error) {
+    if (missingCreditsColumn(error.message)) {
+      const { data: fallbackData, error: fallbackError } = await serviceSupabase
+        .from("memberships")
+        .select("plan, pro_until")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!fallbackError) {
+        return NextResponse.json({
+          membership: normalizeMembership(fallbackData, user),
+          creditsSetupRequired: true,
+        });
+      }
+    }
+
     console.error("[membership] read failed:", error.message);
     return NextResponse.json({
       membership: freeMembership(user.email),

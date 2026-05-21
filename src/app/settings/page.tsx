@@ -3,7 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/authStore";
-import { Membership, freeMembership } from "@/lib/membership";
+import {
+  Membership,
+  PREDICTION_CREDITS_KEY,
+  PREDICTION_CREDITS_UPDATED_EVENT,
+  freeMembership,
+} from "@/lib/membership";
 import {
   Currency,
   RiskLevel,
@@ -19,12 +24,8 @@ import {
   riskProfiles,
   toggleString,
 } from "@/lib/preference-options";
-import {
-  PortfolioAllocation,
-  portfolioAllocationEventName,
-  readPortfolioAllocation,
-} from "@/lib/simulated-points";
 import { signOut, supabase } from "@/lib/supabase";
+import { ProPurchaseDialog } from "@/components/ProPurchaseDialog";
 
 type Preferences = {
   risk_level: RiskLevel;
@@ -45,6 +46,23 @@ const LOCAL_PREFERENCES_KEY = "scoutai_preferences";
 const allowedLeagueIds = new Set(
   leagueGroups.flatMap((group) => group.items.map((item) => item.id))
 );
+
+function readPredictionCredits() {
+  try {
+    const raw = window.localStorage.getItem(PREDICTION_CREDITS_KEY);
+    const parsed = raw == null ? Number.NaN : Number(raw);
+    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writePredictionCredits(value: number) {
+  const credits = Math.max(0, Math.round(value));
+  window.localStorage.setItem(PREDICTION_CREDITS_KEY, String(credits));
+  window.dispatchEvent(new Event(PREDICTION_CREDITS_UPDATED_EVENT));
+  return credits;
+}
 
 function optionSelectedClass(active: boolean) {
   return active
@@ -127,12 +145,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
-  const [capitalEditing, setCapitalEditing] = useState(false);
-  const [savedCapital, setSavedCapital] = useState(defaultPreferences.capital);
   const [saveFlash, setSaveFlash] = useState(false);
-  const [portfolioAllocation, setPortfolioAllocation] = useState<PortfolioAllocation>(() =>
-    readPortfolioAllocation()
-  );
+  const [predictionCredits, setPredictionCredits] = useState(0);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -149,7 +164,11 @@ export default function SettingsPage() {
             const membershipJson = (await membershipRes.json()) as {
               membership?: Membership;
             };
-            setMembership(membershipJson.membership ?? freeMembership(authUser.email));
+            const nextMembership = membershipJson.membership ?? freeMembership(authUser.email);
+            setMembership(nextMembership);
+            if (typeof nextMembership.predictionCredits === "number") {
+              setPredictionCredits(writePredictionCredits(nextMembership.predictionCredits));
+            }
           }
 
           const { data } = await supabase
@@ -186,13 +205,11 @@ export default function SettingsPage() {
 
             setPreferences(nextPreferences);
             setSavedPreferences(nextPreferences);
-            setSavedCapital(nextCapital);
           } else {
             const localPreferences = readLocalPreferences();
             if (localPreferences) {
               setPreferences(localPreferences);
               setSavedPreferences(localPreferences);
-              setSavedCapital(localPreferences.capital);
             }
           }
         } else {
@@ -201,7 +218,6 @@ export default function SettingsPage() {
           if (localPreferences) {
             setPreferences(localPreferences);
             setSavedPreferences(localPreferences);
-            setSavedCapital(localPreferences.capital);
           }
         }
 
@@ -224,17 +240,17 @@ export default function SettingsPage() {
   }, [authLoading, authSession, authUser]);
 
   useEffect(() => {
-    const refreshAllocation = () => setPortfolioAllocation(readPortfolioAllocation());
-    const timer = window.setTimeout(refreshAllocation, 0);
-    window.addEventListener("storage", refreshAllocation);
-    window.addEventListener("focus", refreshAllocation);
-    window.addEventListener(portfolioAllocationEventName(), refreshAllocation);
+    const refreshCredits = () => setPredictionCredits(readPredictionCredits());
+    const timer = window.setTimeout(refreshCredits, 0);
+    window.addEventListener("storage", refreshCredits);
+    window.addEventListener("focus", refreshCredits);
+    window.addEventListener(PREDICTION_CREDITS_UPDATED_EVENT, refreshCredits);
 
     return () => {
       window.clearTimeout(timer);
-      window.removeEventListener("storage", refreshAllocation);
-      window.removeEventListener("focus", refreshAllocation);
-      window.removeEventListener(portfolioAllocationEventName(), refreshAllocation);
+      window.removeEventListener("storage", refreshCredits);
+      window.removeEventListener("focus", refreshCredits);
+      window.removeEventListener(PREDICTION_CREDITS_UPDATED_EVENT, refreshCredits);
     };
   }, []);
 
@@ -265,8 +281,6 @@ export default function SettingsPage() {
         setMessage("已保存到本机。登录后可同步到云端。");
         setSavedPreferences(nextPreferences);
         setSavedLeagueIds(selectedLeagueIds);
-        setSavedCapital(nextPreferences.capital);
-        setCapitalEditing(false);
         setSaveFlash(true);
         return;
       }
@@ -279,8 +293,6 @@ export default function SettingsPage() {
       setMessage("设置已保存并同步。");
       setSavedPreferences(nextPreferences);
       setSavedLeagueIds(selectedLeagueIds);
-      setSavedCapital(nextPreferences.capital);
-      setCapitalEditing(false);
       setSaveFlash(true);
       router.refresh();
     } catch (err) {
@@ -291,12 +303,7 @@ export default function SettingsPage() {
   }
 
   const activeProfile = riskProfiles[preferences.risk_level];
-  const usedSimulatedPoints = Math.min(
-    preferences.capital,
-    portfolioAllocation.usedPoints
-  );
-  const remainingSimulatedPoints = Math.max(0, preferences.capital - usedSimulatedPoints);
-  const capitalDirty = preferences.capital !== savedCapital;
+  const isPro = membership.plan === "pro" && membership.status === "active";
   const settingsDirty =
     !samePreferences(preferences, savedPreferences) || !sameList(selectedLeagueIds, savedLeagueIds);
   const saveDockVisible = settingsDirty || saving || saveFlash;
@@ -325,7 +332,7 @@ export default function SettingsPage() {
 
       <section className="rounded-2xl border border-white/8 bg-[color:var(--card)]/90 p-4">
         <h2 className="text-sm font-semibold">账户</h2>
-        <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+        <div className="mt-3 grid gap-3 text-xs md:grid-cols-3">
           <div className="rounded-xl bg-black/30 p-3">
             <div className="text-white/45">当前邮箱</div>
             <div className="mt-1 font-mono text-white/80">{email ?? "未登录"}</div>
@@ -340,78 +347,37 @@ export default function SettingsPage() {
                 : "免费版 · 基础预测"}
             </div>
           </div>
+          <div className="rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 p-3">
+            <div className="text-[color:var(--accent)]/70">预测积分</div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="text-xl font-semibold text-[color:var(--accent)]">
+                {predictionCredits}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!authUser) {
+                    router.push("/login");
+                    return;
+                  }
+                  setPurchaseOpen(true);
+                }}
+                className="rounded-full bg-[color:var(--accent)] px-3 py-1.5 text-[11px] font-semibold text-black shadow-[0_0_18px_rgba(0,255,135,0.35)] hover:bg-emerald-300"
+              >
+                {isPro ? "购买积分" : "升级会员"}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
       <section className="rounded-2xl border border-white/8 bg-[color:var(--card)]/90 p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-sm font-semibold">风险偏好与占比基准</h2>
+            <h2 className="text-sm font-semibold">风险偏好</h2>
             <p className="mt-1 text-xs text-white/50">
-              风险偏好会自动调整下面的模型、市场和策略模式；推荐结果会统一换算成投注占比。
+              风险偏好会自动调整下面的模型、市场和策略模式；收藏推荐会直接给出每场建议占比。
             </p>
-          </div>
-          <div className="w-full md:w-72">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-white/45">占比基准</span>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => {
-                  if (capitalDirty) {
-                    void saveSettings();
-                    return;
-                  }
-                  setCapitalEditing((current) => !current);
-                }}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  capitalDirty
-                    ? "border-red-400/60 bg-red-500/12 text-red-200 shadow-[0_0_18px_rgba(248,113,113,0.18)]"
-                    : capitalEditing
-                      ? "border-[color:var(--accent)]/55 bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
-                      : "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/8 text-[color:var(--accent)] hover:bg-[color:var(--accent)]/14"
-                }`}
-              >
-                {saving && capitalDirty ? "保存中" : capitalDirty ? "保存基准" : capitalEditing ? "锁定" : "修改"}
-              </button>
-            </div>
-            <input
-              type="number"
-              min={0}
-              value={preferences.capital}
-              disabled={!capitalEditing}
-              onChange={(event) =>
-                setPreferences((prev) => ({
-                  ...prev,
-                  capital: Number(event.target.value || 0),
-                  currency: "CNY",
-                }))
-              }
-              className={`w-full rounded-lg border bg-black/40 px-3 py-2 text-sm text-white outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                capitalDirty
-                  ? "border-red-400/70 focus:border-red-300"
-                  : "border-white/10 focus:border-[color:var(--accent)]"
-              }`}
-            />
-            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-              <div className="rounded-lg bg-black/25 px-2 py-1.5 text-white/50">
-                当前占用{" "}
-                <span className="font-semibold text-white">{usedSimulatedPoints}</span>
-              </div>
-              <div className="rounded-lg bg-[color:var(--accent)]/10 px-2 py-1.5 text-[color:var(--accent)]">
-                剩余基准{" "}
-                <span className="font-semibold">{remainingSimulatedPoints}</span>
-              </div>
-            </div>
-            {capitalDirty ? (
-              <p className="mt-2 rounded-lg border border-red-400/25 bg-red-500/10 px-2 py-1.5 text-xs leading-5 text-red-200">
-                占比基准已修改，还没有保存。请点“保存基准”或底部“保存设置”。
-              </p>
-            ) : (
-              <p className="mt-2 text-[11px] leading-5 text-white/40">
-                这里只作为系统内部换算基准，用户侧推荐会显示为百分比。
-              </p>
-            )}
           </div>
         </div>
 
@@ -698,7 +664,7 @@ export default function SettingsPage() {
           </div>
           <p className="mt-2 text-xs text-white/52">
             {settingsDirty
-              ? "保存后会同步到账号，并更新收藏推荐的占比基准。"
+              ? "保存后会同步到账号，并更新收藏推荐的模型和市场偏好。"
               : "设置已同步，提示会自动收起。"}
           </p>
         </div>
@@ -715,6 +681,15 @@ export default function SettingsPage() {
           {saving ? "正在保存..." : settingsDirty ? "保存全部设置" : "已保存"}
         </button>
       </div>
+
+      <ProPurchaseDialog
+        open={purchaseOpen}
+        onClose={() => setPurchaseOpen(false)}
+        email={authUser?.email ?? email}
+        accessToken={authSession?.access_token}
+        defaultPlanId={isPro ? "renewal" : "trial"}
+        heading={isPro ? "购买 Pro 预测积分" : "开通 Pro 预测积分"}
+      />
     </div>
   );
 }

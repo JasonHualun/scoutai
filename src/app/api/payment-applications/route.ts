@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
-import { PRO_RENEWAL_PRICE_CNY, PRO_TRIAL_PRICE_CNY } from "@/lib/membership";
+import {
+  PRO_RENEWAL_PRICE_CNY,
+  PRO_TRIAL_PRICE_CNY,
+  creditPlanById,
+} from "@/lib/membership";
 
 type PaymentApplicationBody = {
   orderNo?: string;
   months?: number;
+  planId?: string;
   note?: string;
 };
 
@@ -95,6 +100,7 @@ export async function POST(req: NextRequest) {
   }
 
   const months = Math.max(1, Math.min(24, Number(body.months) || 1));
+  const selectedPlan = creditPlanById(body.planId);
   const submittedOrderNo = body.orderNo?.trim().toUpperCase();
   const orderNo = submittedOrderNo && ORDER_PATTERN.test(submittedOrderNo) ? submittedOrderNo : makeOrderNo();
 
@@ -106,11 +112,13 @@ export async function POST(req: NextRequest) {
         order_no: orderNo,
         user_id: user.id,
         email: user.email ?? "",
-        amount: months === 1 ? 39.9 : 39.9 + 99.9 * (months - 1),
+        amount: selectedPlan.price,
         currency: "CNY",
         months,
         status: "pending",
-        note: body.note?.slice(0, 300) ?? null,
+        note:
+          body.note?.slice(0, 220) ??
+          `${selectedPlan.label}：${selectedPlan.priceLabel}，${selectedPlan.credits} 预测积分`,
       })
       .select("id, order_no, email, amount, currency, months, status, created_at")
       .single();
@@ -120,7 +128,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       application: data,
-      message: `首月 ${PRO_TRIAL_PRICE_CNY}，续费 ${PRO_RENEWAL_PRICE_CNY} 的付款申请已提交，管理员会人工核对到账。`,
+      message: `${selectedPlan.label} ${selectedPlan.priceLabel} 的付款申请已提交，管理员会人工核对到账。首月 ${PRO_TRIAL_PRICE_CNY}，续费 ${PRO_RENEWAL_PRICE_CNY}。`,
     });
   } catch (err) {
     const message = errorMessage(err, "提交付款申请失败");

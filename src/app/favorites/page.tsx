@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { calculateHotScore } from "@/lib/hot-score";
@@ -12,11 +11,9 @@ import {
 } from "@/lib/football-prediction";
 import {
   Membership,
+  PREDICTION_CREDITS_KEY,
+  PREDICTION_CREDITS_UPDATED_EVENT,
   PREDICTION_CREDITS_PER_MATCH,
-  PRO_MONTHLY_PRICE_CNY,
-  PRO_ORIGINAL_PRICE_CNY,
-  PRO_RENEWAL_CREDITS,
-  PRO_RENEWAL_PRICE_CNY,
   PRO_TRIAL_CREDITS,
   freeMembership,
 } from "@/lib/membership";
@@ -24,7 +21,7 @@ import { defaultPreferenceValues, RiskLevel, riskProfiles } from "@/lib/preferen
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime } from "@/lib/time-format";
 import { useAuthStore } from "@/lib/authStore";
-import { PaymentCountdown } from "@/components/PaymentCountdown";
+import { ProPurchaseDialog } from "@/components/ProPurchaseDialog";
 
 type MatchStatus = "live" | "upcoming" | "finished";
 type PortfolioMode = "stable" | "balanced" | "opportunity";
@@ -157,19 +154,7 @@ type UserPrefs = {
   preferred_models: string[];
 };
 
-type PaymentApplication = {
-  id: string;
-  order_no: string;
-  email: string;
-  amount: number;
-  currency: "CNY" | "USD";
-  months: number;
-  status: "pending" | "confirmed" | "rejected";
-  created_at: string;
-};
-
 const FAVORITES_KEY = "scoutai_favorites";
-const PREDICTION_CREDITS_KEY = "scoutai:prediction-credits";
 
 const statusLabel: Record<MatchStatus, string> = {
   live: "进行中",
@@ -455,156 +440,6 @@ function buildPortfolioRiskLabel(
   if (riskScore >= 20) return "波动偏高";
   if (riskScore >= 10) return "中等波动";
   return "低波动";
-}
-
-function createDraftOrderNo() {
-  const date = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .format(new Date())
-    .replaceAll("-", "");
-  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `PRO-${date}-${random}`;
-}
-
-function ProUpgradeDialog({
-  open,
-  onClose,
-  email,
-  orderNo,
-  application,
-  submitting,
-  error,
-  onSubmit,
-}: {
-  open: boolean;
-  onClose: () => void;
-  email?: string | null;
-  orderNo: string;
-  application: PaymentApplication | null;
-  submitting: boolean;
-  error: string | null;
-  onSubmit: () => void;
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-5 shadow-[0_25px_90px_rgba(0,0,0,0.85)]">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">
-              Pro
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-              开通 Pro 预测积分
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-white/60">
-              收藏页点击预测推荐时按比赛扣分。首月 50 积分，预计可预测 10 场比赛。
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60 hover:text-white"
-          >
-            关闭
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-            <div className="text-xs font-semibold text-[color:var(--accent)]">
-              新用户首月优惠
-            </div>
-            <div className="mt-2 flex flex-wrap items-end gap-2">
-              <span className="pb-1 text-sm text-white/42 line-through">
-                原价 {PRO_ORIGINAL_PRICE_CNY}/月
-              </span>
-              <span className="text-4xl font-semibold tracking-tight text-white">
-                {PRO_MONTHLY_PRICE_CNY}
-              </span>
-              <span className="pb-1 text-sm text-white/65">首月体验</span>
-            </div>
-            <div className="mt-3 grid gap-2 text-[11px] text-white/58">
-              <div className="rounded-lg bg-black/30 px-3 py-2">
-                首月 {PRO_MONTHLY_PRICE_CNY}：{PRO_TRIAL_CREDITS} 预测积分，预计预测 10 场比赛结果。
-              </div>
-              <div className="rounded-lg bg-black/30 px-3 py-2">
-                续费 {PRO_RENEWAL_PRICE_CNY}：{PRO_RENEWAL_CREDITS} 预测积分，每场预测扣 {PREDICTION_CREDITS_PER_MATCH} 分。
-              </div>
-            </div>
-
-            <PaymentCountdown open={open} userKey={email} className="mt-3" />
-
-            <div className="mt-4 text-[11px] text-white/45">注册邮箱</div>
-            <div className="mt-1 break-all text-sm font-semibold text-white">
-              {email ?? "请先登录后再提交申请"}
-            </div>
-            <div className="mt-3 text-[11px] text-white/45">订单编号</div>
-            <div className="mt-1 break-all rounded-lg bg-black/35 px-3 py-2 text-xs font-semibold text-[color:var(--accent)]">
-              {application?.order_no ?? orderNo}
-            </div>
-            <div className="mt-3 rounded-lg border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-[11px] leading-5 text-[color:var(--accent)]">
-              付款时如能填写备注，请填订单编号；付款后点下方按钮提交申请。
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-              <div className="mb-2 text-xs font-semibold text-white">微信支付</div>
-              <Image
-                src="/payments/wechat.jpg"
-                alt="微信支付收款码"
-                width={414}
-                height={586}
-                className="mx-auto h-64 w-full rounded-lg bg-white object-contain"
-              />
-            </div>
-            <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-              <div className="mb-2 text-xs font-semibold text-white">支付宝</div>
-              <Image
-                src="/payments/alipay.jpg"
-                alt="支付宝收款码"
-                width={640}
-                height={960}
-                className="mx-auto h-64 w-full rounded-lg bg-white object-contain"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3 text-xs leading-6 text-white/58">
-          <div>付款完成后，通常 30 分钟内人工开通。</div>
-          <div>客服开通时间：每日 09:00 - 18:00。非工作时间付款会顺延处理。</div>
-        </div>
-
-        {application ? (
-          <div className="mt-4 rounded-xl border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-2 text-xs leading-6 text-[color:var(--accent)]">
-            付款申请已提交：{application.order_no}。管理员核对到账后会为 {application.email} 开通 Pro。
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={submitting || !email}
-            className="mt-4 w-full rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_28px_rgba(0,255,135,0.55)] hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting ? "提交中..." : email ? "我已付款，提交开通申请" : "请先登录"}
-          </button>
-        )}
-
-        {error && (
-          <div className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-            {error}
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function hoursUntilKickoff(match: MatchCard) {
@@ -1068,7 +903,7 @@ function buildPortfolioPlan(
   const summary =
     selected.length <= 1
       ? "以单场为主，不为了组合而组合。"
-      : `${label} 选出 ${selected.length} 场，预计组合倍率约 ${odds.toFixed(2)}，本次 100% 占比会按信号强弱分配。`;
+      : `${label} 选出 ${selected.length} 场，预计组合倍率约 ${odds.toFixed(2)}，系统会按信号强弱给出分配建议。`;
 
   return {
     mode,
@@ -1081,6 +916,19 @@ function buildPortfolioPlan(
     totalExposurePoints,
     coreCount: selected.filter((pick) => pick.role === "核心").length,
   };
+}
+
+function readLocalPredictionCredits() {
+  const raw = window.localStorage.getItem(PREDICTION_CREDITS_KEY);
+  const parsed = raw == null ? Number.NaN : Number(raw);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : PRO_TRIAL_CREDITS;
+}
+
+function writeLocalPredictionCredits(value: number) {
+  const credits = Math.max(0, Math.round(value));
+  window.localStorage.setItem(PREDICTION_CREDITS_KEY, String(credits));
+  window.dispatchEvent(new Event(PREDICTION_CREDITS_UPDATED_EVENT));
+  return credits;
 }
 
 export default function FavoritesPage() {
@@ -1097,10 +945,6 @@ export default function FavoritesPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectionTouched, setSelectionTouched] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [paymentOrderNo, setPaymentOrderNo] = useState("");
-  const [paymentApplication, setPaymentApplication] = useState<PaymentApplication | null>(null);
-  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [predictionCredits, setPredictionCredits] = useState<number | null>(null);
   const [predictionStarted, setPredictionStarted] = useState(false);
   const [predictionMessage, setPredictionMessage] = useState<string | null>(null);
@@ -1115,12 +959,12 @@ export default function FavoritesPage() {
       return;
     }
 
-    const raw = window.localStorage.getItem(PREDICTION_CREDITS_KEY);
-    const parsed = raw == null ? Number.NaN : Number(raw);
-    const nextCredits = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : PRO_TRIAL_CREDITS;
-    window.localStorage.setItem(PREDICTION_CREDITS_KEY, String(nextCredits));
+    const nextCredits =
+      typeof membership.predictionCredits === "number"
+        ? writeLocalPredictionCredits(membership.predictionCredits)
+        : writeLocalPredictionCredits(readLocalPredictionCredits());
     setPredictionCredits(nextCredits);
-  }, [isPro]);
+  }, [isPro, membership.predictionCredits]);
 
   useEffect(() => {
     async function load() {
@@ -1209,7 +1053,11 @@ export default function FavoritesPage() {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const json = (await res.json()) as { membership?: Membership };
-        if (!cancelled) setMembership(json.membership ?? freeMembership(user?.email));
+        const nextMembership = json.membership ?? freeMembership(user?.email);
+        if (!cancelled) setMembership(nextMembership);
+        if (!cancelled && typeof nextMembership.predictionCredits === "number") {
+          setPredictionCredits(writeLocalPredictionCredits(nextMembership.predictionCredits));
+        }
       } catch {
         if (!cancelled) setMembership(freeMembership(user?.email));
       }
@@ -1303,7 +1151,6 @@ export default function FavoritesPage() {
         : 0;
     return map;
   }, {});
-  const totalExposurePercent = selectedPicks.length > 0 ? 100 : 0;
   const favoriteIdsKey = favoriteIds.join(",");
   const corePicks = activePlan.coreCount;
   const firstFavoriteMatchId = favoriteMatches[0]?.id;
@@ -1333,7 +1180,7 @@ export default function FavoritesPage() {
     setSelectedIds((prev) => prev.filter((matchId) => matchId !== id));
   }
 
-  function handleStartPrediction() {
+  async function handleStartPrediction() {
     if (!isPro) {
       openUpgrade();
       return;
@@ -1357,8 +1204,34 @@ export default function FavoritesPage() {
       return;
     }
 
-    const nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
-    window.localStorage.setItem(PREDICTION_CREDITS_KEY, String(nextCredits));
+    let nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
+    if (session?.access_token) {
+      try {
+        const res = await fetch("/api/prediction-credits", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ cost: predictionCost }),
+        });
+        const json = (await res.json()) as {
+          credits?: number;
+          error?: string;
+        };
+        if (res.ok && typeof json.credits === "number") {
+          nextCredits = json.credits;
+        } else if (res.status === 402) {
+          setPredictionMessage(json.error ?? "预测积分不足，请先购买积分。");
+          openUpgrade();
+          return;
+        }
+      } catch {
+        nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
+      }
+    }
+
+    writeLocalPredictionCredits(nextCredits);
     setPredictionCredits(nextCredits);
     setPredictionStarted(true);
     setPredictionMessage(
@@ -1383,43 +1256,7 @@ export default function FavoritesPage() {
   }
 
   function openUpgrade() {
-    setPaymentError(null);
-    setPaymentApplication(null);
-    setPaymentOrderNo(createDraftOrderNo());
     setUpgradeOpen(true);
-  }
-
-  async function handleSubmitPaymentApplication() {
-    if (!session) {
-      setPaymentError("请先登录后再提交付款申请");
-      return;
-    }
-
-    setPaymentSubmitting(true);
-    setPaymentError(null);
-
-    try {
-      const res = await fetch("/api/payment-applications", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ orderNo: paymentOrderNo || createDraftOrderNo(), months: 1 }),
-      });
-
-      const json = (await res.json()) as {
-        application?: PaymentApplication;
-        error?: string;
-      };
-
-      if (!res.ok) throw new Error(json.error ?? "提交付款申请失败");
-      setPaymentApplication(json.application ?? null);
-    } catch (error) {
-      setPaymentError(error instanceof Error ? error.message : "提交付款申请失败");
-    } finally {
-      setPaymentSubmitting(false);
-    }
   }
 
   return (
@@ -1491,7 +1328,7 @@ export default function FavoritesPage() {
                   <div className="text-xs font-semibold text-white">开始本次预测</div>
                   <p className="mt-1 text-[11px] leading-5 text-white/50">
                     本次收藏 {favoriteMatches.length} 场，每场扣 {PREDICTION_CREDITS_PER_MATCH} 预测积分，合计扣 {predictionCost} 分。
-                    预测完成后，投注建议只按 100% 占比分配，不再显示投注积分。
+                    预测完成后，系统会直接给出每场建议占比。
                   </p>
                 </div>
                 <button
@@ -1637,9 +1474,6 @@ export default function FavoritesPage() {
                           {predictionStarted ? `${topBucket} · ${plan.selectedIds.length} 场` : "待开始预测"}
                         </div>
                       </div>
-                      <div className="rounded-full bg-black/35 px-2 py-1 text-[11px] text-[color:var(--accent)]">
-                        {predictionStarted ? `${formatPercent(plan.totalExposurePercent)}%` : "待开始"}
-                      </div>
                     </div>
                     <p className="mt-3 text-[11px] leading-5 text-white/50">{plan.summary}</p>
                   </div>
@@ -1647,7 +1481,7 @@ export default function FavoritesPage() {
               })}
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-5">
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
               <div className="rounded-xl bg-black/25 p-3">
                 <div className="text-[11px] text-white/45">可组合场次</div>
                 <div className="mt-1 text-2xl font-semibold text-white">
@@ -1666,15 +1500,6 @@ export default function FavoritesPage() {
                   {selectedPicks.length}
                 </div>
               </div>
-              <div className="rounded-xl bg-black/25 p-3">
-                <div className="text-[11px] text-white/45">本次总占比</div>
-                <div className="mt-1 text-2xl font-semibold text-white">
-                  {formatPercent(totalExposurePercent)}%
-                </div>
-                <div className="mt-1 text-[11px] text-white/45">
-                  所有推荐合计按 100%
-                </div>
-              </div>
               <div className="rounded-xl bg-[color:var(--accent)]/10 p-3">
                 <div className="text-[11px] text-[color:var(--accent)]/70">剩余预测积分</div>
                 <div className="mt-1 text-2xl font-semibold text-[color:var(--accent)]">
@@ -1690,9 +1515,7 @@ export default function FavoritesPage() {
               <span className="font-semibold text-[color:var(--accent)]">组合建议：</span>
               {selectedPicks.length === 0
                 ? "收藏里暂时没有足够强的信号，建议先观察，不强行组合。"
-                : `${activePlan.headline}：稳定主选会给更高占比，爆冷或高赔率方向只保留小比例观察。已选 ${selectedPicks.length} 场，本次总占比 ${formatPercent(
-                    totalExposurePercent
-                  )}%。优先分散到不同比赛，不把占比集中在单一场次。`}
+                : `${activePlan.headline}：稳定主选会给更高占比，爆冷或高赔率方向只保留小比例观察。已选 ${selectedPicks.length} 场，优先分散到不同比赛，不把占比集中在单一场次。`}
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
               <span className="font-semibold text-white/75">分析口径：</span>
@@ -1842,15 +1665,12 @@ export default function FavoritesPage() {
           </div>
         </>
       )}
-      <ProUpgradeDialog
+      <ProPurchaseDialog
         open={upgradeOpen}
         onClose={() => setUpgradeOpen(false)}
         email={user?.email ?? membership.email}
-        orderNo={paymentOrderNo}
-        application={paymentApplication}
-        submitting={paymentSubmitting}
-        error={paymentError}
-        onSubmit={handleSubmitPaymentApplication}
+        accessToken={session?.access_token}
+        defaultPlanId={isPro ? "renewal" : "trial"}
       />
     </div>
   );

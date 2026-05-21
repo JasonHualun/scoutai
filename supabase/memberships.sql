@@ -3,9 +3,19 @@ create table if not exists public.memberships (
   email text not null,
   plan text not null default 'free' check (plan in ('free', 'pro')),
   pro_until timestamptz,
+  prediction_credits integer not null default 0 check (prediction_credits >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.memberships
+add column if not exists prediction_credits integer not null default 0;
+
+alter table public.memberships
+drop constraint if exists memberships_prediction_credits_check;
+
+alter table public.memberships
+add constraint memberships_prediction_credits_check check (prediction_credits >= 0);
 
 alter table public.memberships enable row level security;
 
@@ -23,7 +33,7 @@ create table if not exists public.payment_applications (
   order_no text not null unique,
   user_id uuid not null references auth.users(id) on delete cascade,
   email text not null,
-  amount numeric not null default 69.9,
+  amount numeric not null default 39.9,
   currency text not null default 'CNY' check (currency in ('CNY', 'USD')),
   months integer not null default 1 check (months between 1 and 24),
   status text not null default 'pending' check (status in ('pending', 'confirmed', 'rejected')),

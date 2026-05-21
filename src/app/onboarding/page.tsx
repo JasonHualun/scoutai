@@ -27,7 +27,6 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { user, loading } = useAuthStore();
   const [riskLevel, setRiskLevel] = useState<RiskLevel>("balanced");
-  const [simulatedPoints, setSimulatedPoints] = useState(DEFAULT_SIMULATED_POINTS);
   const [preferredModels, setPreferredModels] = useState<string[]>([
     ...riskProfiles.balanced.models,
   ]);
@@ -71,7 +70,7 @@ export default function OnboardingPage() {
           {
             user_id: user.id,
             risk_level: riskLevel,
-            capital: simulatedPoints,
+            capital: DEFAULT_SIMULATED_POINTS,
             currency: "CNY",
             preferred_models: preferredModels,
             bet_type: betTypes,
@@ -120,23 +119,11 @@ export default function OnboardingPage() {
           <section className="rounded-xl bg-black/25 p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
-                <h2 className="text-sm font-semibold">风险偏好与占比基准</h2>
+                <h2 className="text-sm font-semibold">风险偏好</h2>
                 <p className="mt-1 text-xs text-white/50">
-                  系统会把风险上限统一换算成投注占比，不代表确定收益。
+                  先选择你更习惯的判断风格，系统会自动匹配模型、市场和组合口径。
                 </p>
               </div>
-              <label className="w-full md:w-56">
-                <span className="mb-2 block text-[11px] text-white/45">占比基准</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={simulatedPoints}
-                  onChange={(event) =>
-                    setSimulatedPoints(Number(event.target.value || 0))
-                  }
-                  className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[color:var(--accent)]"
-                />
-              </label>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">

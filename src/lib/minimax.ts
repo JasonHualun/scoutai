@@ -101,7 +101,7 @@ function buildPrompt(
 
 用户画像：
 - 风险偏好：${translateRiskLevel(prefs.risk_level)}
-- 投注占比基准：统一换算成百分比展示
+- 投注建议：只输出每场建议占比，不展示模拟本金或总基准
 - 关注市场：${prefs.preferred_markets.join("、") || "胜平负、让球、大小球、双方进球"}
 - 偏好模型：${prefs.preferred_models.join(" + ") || "数学模型 + 大模型解释"}
 
