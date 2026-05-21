@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 const navItems = [
   { href: "/", label: "热门赛事" },
   { href: "/favorites", label: "收藏" },
+  { href: "/backtest", label: "模型回测" },
   { href: "/alerts", label: "异常提醒" },
   { href: "/settings", label: "设置" },
   { href: "/support", label: "客服" },

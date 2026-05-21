@@ -9,6 +9,7 @@ const routes = [
   "/settings",
   "/alerts",
   "/favorites",
+  "/backtest",
   "/support",
 ];
 const mojibakePattern = /[鑻鐧璧鍏鍗鈿馃�]/;
@@ -174,6 +175,17 @@ test("core pages render without mojibake", async ({ page }) => {
   }
 });
 
+test("backtest page renders model validation metrics", async ({ page }) => {
+  await page.goto("/backtest", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("heading", { name: "模型回测" })).toBeVisible();
+  await expect(page.getByText("内置校准样本").first()).toBeVisible();
+  await expect(page.getByText("命中率").first()).toBeVisible();
+  await expect(page.getByText("最大回撤").first()).toBeVisible();
+  await expect(page.getByText("Brier 分数").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "逐场回测明细" })).toBeVisible();
+});
+
 test("match detail flow can generate a local analysis", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "五大联赛 + 世界杯" })).toHaveCount(0);
@@ -226,8 +238,16 @@ test("settings save action appears only while needed", async ({ page }) => {
   await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("button", { name: "保存全部设置" })).toHaveCount(0);
+  await expect(page.getByText("风险偏好与模拟积分")).toBeVisible();
 
-  await page.getByRole("button", { name: /进取型/ }).click();
+  const aggressiveButton = page.getByRole("button", { name: /进取型/ });
+  await expect(aggressiveButton).toBeVisible();
+  await expect(aggressiveButton).toBeEnabled();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await aggressiveButton.click({ force: true });
+    if ((await page.getByRole("button", { name: "保存全部设置" }).count()) > 0) break;
+    await page.waitForTimeout(400);
+  }
   await expect(page.getByRole("button", { name: "保存全部设置" })).toBeVisible();
   await expect(page.getByText("有修改未保存")).toBeVisible();
 
