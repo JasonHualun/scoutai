@@ -13,6 +13,53 @@ const routes = [
   "/support",
 ];
 const mojibakePattern = /[鑻鐧璧鍏鍗鈿馃�]/;
+const supabaseAuthStorageKey = "sb-potcjehpqcowpugckukt-auth-token";
+
+async function mockLoggedInUser(page: Page, email = "header-user@example.com") {
+  await page.addInitScript(
+    ({ storageKey, userEmail }) => {
+      const now = new Date().toISOString();
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          access_token: "mock-access-token",
+          token_type: "bearer",
+          expires_in: 3600,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_token: "mock-refresh-token",
+          user: {
+            id: "00000000-0000-4000-8000-000000000001",
+            aud: "authenticated",
+            role: "authenticated",
+            email: userEmail,
+            email_confirmed_at: now,
+            app_metadata: { provider: "email", providers: ["email"] },
+            user_metadata: {},
+            created_at: now,
+            updated_at: now,
+          },
+        })
+      );
+    },
+    { storageKey: supabaseAuthStorageKey, userEmail: email }
+  );
+
+  await page.route("**/api/membership", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        membership: {
+          plan: "free",
+          status: "free",
+          proUntil: null,
+          email,
+          predictionCredits: 20,
+        },
+      }),
+    });
+  });
+}
 
 async function mockUpcomingMatch(page: Page, fixtureId: number) {
   await page.route(`**/api/match/${fixtureId}`, async (route) => {
@@ -173,6 +220,33 @@ test("core pages render without mojibake", async ({ page }) => {
     expect(response?.status(), route).toBeLessThan(500);
     await expect(page.locator("body")).not.toContainText(mojibakePattern);
   }
+});
+
+test("top nav upgrade opens payment dialog above page content", async ({ page }) => {
+  await mockLoggedInUser(page);
+  await page.goto("/", { waitUntil: "networkidle" });
+
+  await page.getByRole("button", { name: "升级会员" }).click();
+  await expect(page.getByTestId("pro-purchase-dialog")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
+  await expect(page.getByText("新用户首单").first()).toBeVisible();
+  await expect(page.getByText("¥69.9").first()).toBeVisible();
+  await expect(page.getByText("请按所选套餐金额付款")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("付款备注请填订单编号");
+
+  const panel = await page.getByTestId("pro-purchase-panel").boundingBox();
+  expect(panel, "payment panel should be visible").not.toBeNull();
+  expect(panel!.y, "payment panel should start inside the viewport").toBeGreaterThanOrEqual(0);
+
+  const panelIsTopmost = await page.evaluate(() => {
+    const panelEl = document.querySelector('[data-testid="pro-purchase-panel"]');
+    if (!panelEl) return false;
+    const rect = panelEl.getBoundingClientRect();
+    const x = rect.left + Math.min(80, rect.width / 2);
+    const y = rect.top + Math.min(80, rect.height / 2);
+    return document.elementFromPoint(x, y)?.closest('[data-testid="pro-purchase-panel"]') === panelEl;
+  });
+  expect(panelIsTopmost, "payment panel must be above the match list").toBe(true);
 });
 
 test("backtest page renders model validation metrics", async ({ page }) => {

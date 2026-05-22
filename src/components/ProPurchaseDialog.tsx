@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   creditPlanById,
   creditPlans,
@@ -62,10 +63,15 @@ export function ProPurchaseDialog({
   const [application, setApplication] = useState<PaymentApplication | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const selectedPlan = creditPlanById(selectedPlanId);
   const selectedQr = paymentQrByPlan[selectedPlan.id];
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -126,14 +132,18 @@ export function ProPurchaseDialog({
     }
   }
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/75 px-3 py-5 backdrop-blur-sm overscroll-contain sm:px-5 sm:py-8"
+      data-testid="pro-purchase-dialog"
+      className="fixed inset-0 z-[1000] overflow-y-auto bg-black/75 px-3 py-5 backdrop-blur-sm overscroll-contain sm:px-5 sm:py-8"
     >
-      <div className="mx-auto w-full max-w-4xl rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-4 shadow-[0_25px_90px_rgba(0,0,0,0.85)] sm:p-5">
+      <div
+        data-testid="pro-purchase-panel"
+        className="mx-auto w-full max-w-4xl rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-4 shadow-[0_25px_90px_rgba(0,0,0,0.85)] sm:p-5"
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">
@@ -283,6 +293,7 @@ export function ProPurchaseDialog({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
