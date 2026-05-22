@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   creditPlanById,
   creditPlans,
@@ -18,6 +18,13 @@ type PaymentApplication = {
   months: number;
   status: "pending" | "confirmed" | "rejected";
   created_at: string;
+};
+
+const paymentQrByPlan: Record<CreditPlanId, { wechat: string; alipay: string }> = {
+  trial: { wechat: "/payments/wechat.jpg", alipay: "/payments/alipay.jpg" },
+  renewal: { wechat: "/payments/wechat.jpg", alipay: "/payments/alipay.jpg" },
+  growth: { wechat: "/payments/wechat.jpg", alipay: "/payments/alipay.jpg" },
+  pro: { wechat: "/payments/wechat.jpg", alipay: "/payments/alipay.jpg" },
 };
 
 function createDraftOrderNo() {
@@ -55,8 +62,10 @@ export function ProPurchaseDialog({
   const [application, setApplication] = useState<PaymentApplication | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const selectedPlan = creditPlanById(selectedPlanId);
+  const selectedQr = paymentQrByPlan[selectedPlan.id];
 
   useEffect(() => {
     if (!open) return;
@@ -64,6 +73,9 @@ export function ProPurchaseDialog({
     setOrderNo(createDraftOrderNo());
     setApplication(null);
     setError(null);
+    window.setTimeout(() => {
+      panelRef.current?.scrollTo({ top: 0 });
+    }, 0);
   }, [defaultPlanId, open]);
 
   function changePlan(plan: CreditPlan) {
@@ -112,8 +124,11 @@ export function ProPurchaseDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-5 shadow-[0_25px_90px_rgba(0,0,0,0.85)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
+      <div
+        ref={panelRef}
+        className="max-h-[calc(100dvh-32px)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-4 shadow-[0_25px_90px_rgba(0,0,0,0.85)] sm:p-5"
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">
@@ -131,7 +146,7 @@ export function ProPurchaseDialog({
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {creditPlans.map((plan) => {
             const selected = plan.id === selectedPlan.id;
             return (
@@ -139,7 +154,7 @@ export function ProPurchaseDialog({
                 key={plan.id}
                 type="button"
                 onClick={() => changePlan(plan)}
-                className={`min-h-36 rounded-2xl border p-4 text-left transition ${
+                className={`min-h-32 rounded-2xl border p-4 text-left transition ${
                   selected
                     ? "border-[color:var(--accent)] bg-[color:var(--accent)]/12 shadow-[0_0_28px_rgba(0,255,135,0.18)]"
                     : "border-white/10 bg-black/25 hover:border-white/25 hover:bg-white/[0.03]"
@@ -180,7 +195,7 @@ export function ProPurchaseDialog({
           })}
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-[0.9fr_1.1fr]">
+        <div className="mt-5 grid gap-3 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="rounded-xl border border-white/8 bg-black/25 p-3">
             <PaymentCountdown open={open} userKey={email} />
 
@@ -208,7 +223,10 @@ export function ProPurchaseDialog({
               {application?.order_no ?? orderNo}
             </div>
             <div className="mt-3 rounded-lg border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-[11px] leading-5 text-[color:var(--accent)]">
-              付款备注请填订单编号。现在使用通用收款码；后续你提供固定金额二维码后，可以按套餐自动切换成对应金额二维码。
+              付款备注请填订单编号。当前先用固定收款码，订单会记录套餐金额和积分；你后台确认后，系统会按套餐自动补对应积分。
+            </div>
+            <div className="mt-2 rounded-lg border border-yellow-300/20 bg-yellow-300/10 px-3 py-2 text-[11px] leading-5 text-yellow-100/80">
+              真正自动到账需要官方商户接口回调；个人收款码暂时只能人工核对到账。
             </div>
           </div>
 
@@ -216,21 +234,21 @@ export function ProPurchaseDialog({
             <div className="rounded-xl border border-white/8 bg-black/25 p-3">
               <div className="mb-2 text-xs font-semibold text-white">微信支付</div>
               <Image
-                src="/payments/wechat.jpg"
+                src={selectedQr.wechat}
                 alt="微信支付收款码"
                 width={414}
                 height={586}
-                className="mx-auto h-72 w-full rounded-lg bg-white object-contain"
+                className="mx-auto h-56 w-full rounded-lg bg-white object-contain sm:h-64"
               />
             </div>
             <div className="rounded-xl border border-white/8 bg-black/25 p-3">
               <div className="mb-2 text-xs font-semibold text-white">支付宝</div>
               <Image
-                src="/payments/alipay.jpg"
+                src={selectedQr.alipay}
                 alt="支付宝收款码"
                 width={640}
                 height={960}
-                className="mx-auto h-72 w-full rounded-lg bg-white object-contain"
+                className="mx-auto h-56 w-full rounded-lg bg-white object-contain sm:h-64"
               />
             </div>
           </div>
