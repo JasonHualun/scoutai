@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
-import { freeMembership, normalizeMembership } from "@/lib/membership";
+import { NEW_USER_FREE_CREDITS, freeMembership, normalizeMembership } from "@/lib/membership";
 
 function missingCreditsColumn(message: string) {
   const lower = message.toLowerCase();
@@ -53,6 +53,34 @@ export async function GET(req: NextRequest) {
       membership: freeMembership(user.email),
       setupRequired: true,
     });
+  }
+
+  if (!data) {
+    const starterRow = {
+      user_id: user.id,
+      email: user.email ?? "",
+      plan: "free",
+      pro_until: null,
+      prediction_credits: NEW_USER_FREE_CREDITS,
+    };
+    const { data: created, error: createError } = await serviceSupabase
+      .from("memberships")
+      .insert(starterRow)
+      .select("plan, pro_until, prediction_credits")
+      .single();
+
+    if (!createError) {
+      return NextResponse.json({ membership: normalizeMembership(created, user) });
+    }
+
+    if (missingCreditsColumn(createError.message)) {
+      return NextResponse.json({
+        membership: freeMembership(user.email),
+        creditsSetupRequired: true,
+      });
+    }
+
+    console.error("[membership] starter row create failed:", createError.message);
   }
 
   return NextResponse.json({ membership: normalizeMembership(data, user) });

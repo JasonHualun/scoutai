@@ -3,13 +3,16 @@ create table if not exists public.memberships (
   email text not null,
   plan text not null default 'free' check (plan in ('free', 'pro')),
   pro_until timestamptz,
-  prediction_credits integer not null default 0 check (prediction_credits >= 0),
+  prediction_credits integer not null default 20 check (prediction_credits >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.memberships
-add column if not exists prediction_credits integer not null default 0;
+add column if not exists prediction_credits integer not null default 20;
+
+alter table public.memberships
+alter column prediction_credits set default 20;
 
 alter table public.memberships
 drop constraint if exists memberships_prediction_credits_check;

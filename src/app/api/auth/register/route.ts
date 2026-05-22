@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CAPTCHA_COOKIE, verifyCaptchaToken } from "@/lib/captcha";
+import { NEW_USER_FREE_CREDITS } from "@/lib/membership";
 import { createServiceRoleClient } from "@/lib/supabase";
 
 type RegisterBody = {
@@ -32,6 +33,37 @@ async function hasActiveProMembership(
     !!data.pro_until &&
     new Date(data.pro_until).getTime() > Date.now()
   );
+}
+
+async function ensureStarterMembership(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  userId: string,
+  email: string
+) {
+  const { data: current, error: readError } = await supabase
+    .from("memberships")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (readError) {
+    console.error("[auth register] starter membership read failed:", readError.message);
+    return;
+  }
+
+  if (current) return;
+
+  const { error: insertError } = await supabase.from("memberships").insert({
+    user_id: userId,
+    email,
+    plan: "free",
+    pro_until: null,
+    prediction_credits: NEW_USER_FREE_CREDITS,
+  });
+
+  if (insertError) {
+    console.error("[auth register] starter membership create failed:", insertError.message);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -89,6 +121,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (updateError) throw updateError;
+      await ensureStarterMembership(supabase, existingUser.id, email);
 
       const response = NextResponse.json({
         ok: true,
@@ -106,6 +139,9 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) throw error;
+    if (data.user?.id) {
+      await ensureStarterMembership(supabase, data.user.id, email);
+    }
 
     const response = NextResponse.json({
       ok: true,
