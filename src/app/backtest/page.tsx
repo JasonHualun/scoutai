@@ -414,12 +414,31 @@ export default function BacktestPage() {
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5">
-          <h2 className="text-lg font-semibold">这页到底给客户看什么？</h2>
-          <div className="mt-4 grid gap-2 text-sm text-white/58">
-            <div className="rounded-xl bg-black/25 p-3">不是承诺稳赚，而是展示模型会筛选、会跳过、会控制回撤。</div>
-            <div className="rounded-xl bg-black/25 p-3">命中率、ROI、最大回撤一起看，避免只用一个数字误导用户。</div>
-            <div className="rounded-xl bg-black/25 p-3">现在是内置案例，适合营销展示；真实数据接入后再切换为正式历史回测。</div>
-            <div className="rounded-xl bg-black/25 p-3">后续可按英超、西甲、德甲、意甲、法甲和世界杯单独展示案例。</div>
+          <h2 className="text-lg font-semibold">模型和术语说明</h2>
+          <p className="mt-2 text-sm leading-6 text-white/55">
+            这页用历史样本解释 ScoutAI 怎么筛比赛、怎么避开风险，以及每个指标代表什么。
+          </p>
+          <div className="mt-4 grid gap-2 text-sm text-white/62">
+            <div className="rounded-xl bg-black/25 p-3">
+              <span className="font-semibold text-white">模型筛选：</span>
+              不是每场都推荐。模型会先看赔率、概率、价值差和风险，信号不够强时会选择跳过。
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <span className="font-semibold text-white">ROI：</span>
+              可以理解为回报率。正数代表这组案例整体有收益，负数代表整体亏损。
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <span className="font-semibold text-white">最大回撤：</span>
+              表示过程中最多曾经亏下去多少，用来观察策略会不会让资金波动太大。
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <span className="font-semibold text-white">命中率：</span>
+              只看猜中多少场还不够，还要结合赔率和 ROI；低赔率命中高，也可能赚得不多。
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <span className="font-semibold text-white">价值差：</span>
+              模型概率和市场赔率之间的差距。差距越明显，才越值得进一步观察。
+            </div>
           </div>
         </div>
 

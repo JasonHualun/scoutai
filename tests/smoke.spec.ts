@@ -267,6 +267,10 @@ test("backtest page renders model validation metrics", async ({ page }) => {
   await expect(page.getByText("最大回撤").first()).toBeVisible();
   await expect(page.getByText("Brier 分数").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "精选案例明细" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "模型和术语说明" })).toBeVisible();
+  await expect(page.getByText("ROI：")).toBeVisible();
+  await expect(page.getByText("最大回撤：")).toBeVisible();
+  await expect(page.getByText("价值差：")).toBeVisible();
 });
 
 test("match detail flow can generate a local analysis", async ({ page }) => {
