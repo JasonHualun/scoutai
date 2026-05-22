@@ -62,20 +62,25 @@ export function ProPurchaseDialog({
   const [application, setApplication] = useState<PaymentApplication | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   const selectedPlan = creditPlanById(selectedPlanId);
   const selectedQr = paymentQrByPlan[selectedPlan.id];
 
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     setSelectedPlanId(defaultPlanId);
     setOrderNo(createDraftOrderNo());
     setApplication(null);
     setError(null);
     window.setTimeout(() => {
-      panelRef.current?.scrollTo({ top: 0 });
+      overlayRef.current?.scrollTo({ top: 0 });
     }, 0);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
   }, [defaultPlanId, open]);
 
   function changePlan(plan: CreditPlan) {
@@ -124,11 +129,11 @@ export function ProPurchaseDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
-      <div
-        ref={panelRef}
-        className="max-h-[calc(100dvh-32px)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-4 shadow-[0_25px_90px_rgba(0,0,0,0.85)] sm:p-5"
-      >
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/75 px-3 py-5 backdrop-blur-sm overscroll-contain sm:px-5 sm:py-8"
+    >
+      <div className="mx-auto w-full max-w-4xl rounded-2xl border border-[color:var(--accent)]/25 bg-[#101513] p-4 shadow-[0_25px_90px_rgba(0,0,0,0.85)] sm:p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">
