@@ -207,6 +207,11 @@ export function ProPurchaseDialog({
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg bg-black/30 px-3 py-2">
                 <div className="text-white/45">应付金额</div>
+                {selectedPlan.originalPriceLabel && (
+                  <div className="mt-1 text-[11px] text-white/40 line-through">
+                    原价 {selectedPlan.originalPriceLabel}
+                  </div>
+                )}
                 <div className="mt-1 text-xl font-semibold text-white">
                   {selectedPlan.priceLabel}
                 </div>
@@ -223,15 +228,8 @@ export function ProPurchaseDialog({
             <div className="mt-1 break-all text-sm font-semibold text-white">
               {email ?? "请先登录后再提交申请"}
             </div>
-            <div className="mt-3 text-[11px] text-white/45">订单编号</div>
-            <div className="mt-1 break-all rounded-lg bg-black/35 px-3 py-2 text-xs font-semibold text-[color:var(--accent)]">
-              {application?.order_no ?? orderNo}
-            </div>
             <div className="mt-3 rounded-lg border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-[11px] leading-5 text-[color:var(--accent)]">
-              付款备注请填订单编号。当前先用固定收款码，订单会记录套餐金额和积分；你后台确认后，系统会按套餐自动补对应积分。
-            </div>
-            <div className="mt-2 rounded-lg border border-yellow-300/20 bg-yellow-300/10 px-3 py-2 text-[11px] leading-5 text-yellow-100/80">
-              真正自动到账需要官方商户接口回调；个人收款码暂时只能人工核对到账。
+              请按所选套餐金额付款，金额不一致可能导致积分无法到账或延迟处理。
             </div>
           </div>
 
@@ -260,13 +258,13 @@ export function ProPurchaseDialog({
         </div>
 
         <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3 text-xs leading-6 text-white/58">
-          <div>付款完成后，通常 30 分钟内人工开通或补充积分。</div>
-          <div>客服开通时间：每日 09:00 - 18:00。非工作时间付款会顺延处理。</div>
+          <div>工作时间：每日 09:00 - 18:00。</div>
+          <div>付款完成后，通常 30 分钟内开通或补充积分；非工作时间会顺延处理。</div>
         </div>
 
         {application ? (
           <div className="mt-4 rounded-xl border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-2 text-xs leading-6 text-[color:var(--accent)]">
-            付款申请已提交：{application.order_no}。管理员核对到账后会为 {application.email} 处理 {selectedPlan.label}。
+            付款申请已提交。后台会按你的注册邮箱、所选金额和付款时间核对，通常 30 分钟内处理。
           </div>
         ) : (
           <button

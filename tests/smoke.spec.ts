@@ -207,19 +207,19 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
 
   await expect(page.getByText("免费版 · 模型基准估算")).toBeVisible();
   await expect(page.getByText("未接真实盘口").first()).toBeVisible();
-  await expect(page.getByText("Pro 高级版 · 首月 ¥39.9")).toBeVisible();
+  await expect(page.getByText("Pro 高级版 · 首单 ¥69.9")).toBeVisible();
   await page.getByRole("button", { name: /解锁 Pro|生成 Pro 分析/ }).click();
-  await expect(page.getByRole("heading", { name: "首月 Pro 体验：把难懂的比赛先筛掉" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "首单 Pro 体验：把难懂的比赛先筛掉" })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByText("原价 ¥99.9/月")).toBeVisible();
+  await expect(page.getByText("原价 ¥99.9").first()).toBeVisible();
   await expect(page.getByText("预计预测 10 场比赛结果")).toBeVisible();
   await expect(page.getByText("¥299")).toBeVisible();
   await expect(page.getByText("¥699")).toBeVisible();
   await expect(page.getByText("用户专属优惠倒计时")).toBeVisible();
   await expect(page.getByText("微信支付")).toBeVisible();
   await expect(page.getByText("支付宝")).toBeVisible();
-  await expect(page.getByText("付款完成后，通常 30 分钟内人工开通或补充积分。")).toBeVisible();
+  await expect(page.getByText("付款完成后，通常 30 分钟内开通或补充积分；非工作时间会顺延处理。")).toBeVisible();
 });
 
 test("login and register require captcha", async ({ page }) => {

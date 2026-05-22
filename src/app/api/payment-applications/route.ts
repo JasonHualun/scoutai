@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       application: data,
-      message: `${selectedPlan.label} ${selectedPlan.priceLabel} 的付款申请已提交，管理员会人工核对到账。首月 ${PRO_TRIAL_PRICE_CNY}，续费 ${PRO_RENEWAL_PRICE_CNY}。`,
+      message: `${selectedPlan.label} ${selectedPlan.priceLabel} 的付款申请已提交，后台会按注册邮箱、所选金额和付款时间核对。首单 ${PRO_TRIAL_PRICE_CNY}，续费 ${PRO_RENEWAL_PRICE_CNY}。`,
     });
   } catch (err) {
     const message = errorMessage(err, "提交付款申请失败");

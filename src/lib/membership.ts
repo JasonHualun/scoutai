@@ -11,7 +11,7 @@ export type Membership = {
   predictionCredits?: number;
 };
 
-export const PRO_TRIAL_PRICE_CNY = "¥39.9";
+export const PRO_TRIAL_PRICE_CNY = "¥69.9";
 export const PRO_RENEWAL_PRICE_CNY = "¥99.9";
 export const PRO_ORIGINAL_PRICE_CNY = "¥99.9";
 export const PRO_TRIAL_CREDITS = 50;
@@ -38,13 +38,13 @@ export type CreditPlan = {
 export const creditPlans: CreditPlan[] = [
   {
     id: "trial",
-    label: "新用户首月",
-    price: 39.9,
-    priceLabel: "¥39.9",
-    originalPriceLabel: "¥99.9/月",
+    label: "新用户首单",
+    price: 69.9,
+    priceLabel: "¥69.9",
+    originalPriceLabel: "¥99.9",
     credits: PRO_TRIAL_CREDITS,
     estimate: "预计预测 10 场比赛结果",
-    badge: "首月体验",
+    badge: "首单优惠",
     description: "适合先体验 Pro 预测和收藏推荐。",
   },
   {

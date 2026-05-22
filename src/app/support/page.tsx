@@ -46,7 +46,7 @@ export default function SupportPage() {
               {SUPPORT_QQ}
             </a>
             <p className="mt-2 text-xs leading-5 text-white/55">
-              付款后未开通时，发送注册邮箱、订单编号和付款时间，客服会核对并处理。
+              付款后未开通时，发送注册邮箱、付款金额和付款时间，客服会核对并处理。
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <a
@@ -78,7 +78,7 @@ export default function SupportPage() {
             1. 已付款并提交申请，超过 30 分钟仍未开通。
           </div>
           <div className="rounded-xl bg-black/25 px-3 py-2">
-            2. 付款时没有填写订单编号，需要人工核对付款时间。
+            2. 付款金额和所选套餐不一致，需要人工核对付款时间。
           </div>
           <div className="rounded-xl bg-black/25 px-3 py-2">
             3. 账号能登录，但会员状态没有刷新。

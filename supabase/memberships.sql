@@ -36,7 +36,7 @@ create table if not exists public.payment_applications (
   order_no text not null unique,
   user_id uuid not null references auth.users(id) on delete cascade,
   email text not null,
-  amount numeric not null default 39.9,
+  amount numeric not null default 69.9,
   currency text not null default 'CNY' check (currency in ('CNY', 'USD')),
   months integer not null default 1 check (months between 1 and 24),
   status text not null default 'pending' check (status in ('pending', 'confirmed', 'rejected')),

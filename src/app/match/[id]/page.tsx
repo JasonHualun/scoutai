@@ -964,7 +964,7 @@ export default function MatchDetailPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--accent)]">
-              Pro 高级版 · 首月 {PRO_MONTHLY_PRICE_CNY}
+              Pro 高级版 · 首单 {PRO_MONTHLY_PRICE_CNY}
             </div>
             <h2 className="text-sm font-semibold">模型委员会深度预测</h2>
             <p className="mt-1 text-[11px] text-white/50">
@@ -1194,7 +1194,7 @@ export default function MatchDetailPage() {
         email={user?.email ?? membership.email}
         accessToken={session?.access_token}
         defaultPlanId={isPro ? "renewal" : "trial"}
-        heading="首月 Pro 体验：把难懂的比赛先筛掉"
+        heading="首单 Pro 体验：把难懂的比赛先筛掉"
         description="免费版给基础概率；Pro 会把风险、热度、盘口信号和 AI 解读合成一份更容易看的赛前判断。"
       />
     </div>

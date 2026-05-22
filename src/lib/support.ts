@@ -5,6 +5,6 @@ export const SUPPORT_RESPONSE = "通常 30 分钟内处理";
 
 export function supportMessage(email?: string) {
   return email
-    ? `我的 ScoutAI 注册邮箱是 ${email}，订单编号是 ____，付款时间是 ____，请帮我核对开通。`
-    : "我的 ScoutAI 注册邮箱是 ____，订单编号是 ____，付款时间是 ____，请帮我核对开通。";
+    ? `我的 ScoutAI 注册邮箱是 ${email}，付款金额是 ____，付款时间是 ____，请帮我核对开通。`
+    : "我的 ScoutAI 注册邮箱是 ____，付款金额是 ____，付款时间是 ____，请帮我核对开通。";
 }
