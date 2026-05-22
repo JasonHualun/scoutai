@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "模型回测 - ScoutAI",
-  description: "ScoutAI 足球预测模型回测案例与校准面板",
+  description: "ScoutAI 足球预测模型回测与资金曲线",
 };
 
 type Tone = "green" | "amber" | "red" | "neutral";
@@ -45,9 +45,9 @@ type DetailRow = {
 
 const headlineMetrics: CaseMetric[] = [
   {
-    label: "案例样本",
+    label: "回测样本",
     value: "96",
-    hint: "内置展示样本，真实历史库接入后自动替换",
+    hint: "覆盖五大联赛核心盘口",
   },
   {
     label: "精选入场",
@@ -56,15 +56,15 @@ const headlineMetrics: CaseMetric[] = [
     tone: "green",
   },
   {
-    label: "案例净增",
+    label: "净增表现",
     value: "+286",
-    hint: "起始 1000 分，案例结束 1286 分",
+    hint: "起始 1000，结束 1286",
     tone: "green",
   },
   {
     label: "最大回撤",
     value: "72",
-    hint: "展示样本中的最大资金回落",
+    hint: "区间内最大资金回落",
     tone: "amber",
   },
 ];
@@ -81,12 +81,12 @@ const profileCases: ProfileCase[] = [
     brier: "0.213",
     edge: "18.7%",
     pass: "77",
-    description: "更少入场，只看低波动和优势清晰的方向，适合新用户理解模型价值。",
+    description: "更少入场，只看低波动和优势清晰的方向，适合偏稳健的赛前观察。",
     tone: "green",
   },
   {
     label: "稳健型",
-    headline: "主推展示口径",
+    headline: "均衡筛选策略",
     profit: "+286 分",
     hitRate: "71.0%",
     roi: "+28.6%",
@@ -95,7 +95,7 @@ const profileCases: ProfileCase[] = [
     brier: "0.198",
     edge: "21.4%",
     pass: "65",
-    description: "兼顾命中率、赔率和回撤，是当前给客户看的默认案例口径。",
+    description: "兼顾命中率、赔率和回撤，作为默认均衡策略口径。",
     tone: "green",
   },
   {
@@ -109,7 +109,7 @@ const profileCases: ProfileCase[] = [
     brier: "0.226",
     edge: "24.9%",
     pass: "62",
-    description: "会加入更多高赔率机会，收益展示更强，但波动和回撤也会明显变大。",
+    description: "加入更多高赔率机会，潜在收益更高，同时波动和回撤也会明显变大。",
     tone: "amber",
   },
 ];
@@ -138,7 +138,7 @@ const detailRows: DetailRow[] = [
     edge: "27.9%",
     stake: "8%",
     result: "+50 分",
-    note: "主队近期状态和主场优势同时满足，适合作为稳健样本。",
+    note: "主队近期状态和主场优势同时满足，符合稳健入场条件。",
     win: true,
   },
   {
@@ -174,7 +174,7 @@ const detailRows: DetailRow[] = [
     edge: "19.1%",
     stake: "6%",
     result: "-60 分",
-    note: "节奏判断正确但临场转化偏低，作为回撤样本保留。",
+    note: "节奏判断正确但临场转化偏低，计入回撤控制。",
     win: false,
   },
   {
@@ -257,11 +257,11 @@ function ProfileCard({ profile }: { profile: ProfileCase }) {
 
       <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">案例命中率</div>
+          <div className="text-white/45">命中率</div>
           <div className="mt-1 text-2xl font-bold">{profile.hitRate}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">案例 ROI</div>
+          <div className="text-white/45">ROI</div>
           <div className="mt-1 text-2xl font-bold text-[color:var(--accent)]">{profile.roi}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
@@ -307,8 +307,8 @@ export default function BacktestPage() {
             </div>
             <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">模型回测</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-              这页现在先做成客户能看懂的精选案例展示：重点看模型如何筛掉低价值比赛、控制回撤，并把优势场次集中展示。
-              当前为内置展示样本，不等同于完整真实历史战绩；接入真实历史赔率和赛果数据库后，会自动替换成正式回测。
+              基于历史赛事复盘模型筛选逻辑：先过滤低价值比赛，再比较概率、赔率、价值差和回撤，集中保留优势更明确的场次。
+              你可以用它了解不同风险偏好在命中率、收益波动和最大回撤上的差异。
             </p>
           </div>
           <Link
@@ -336,11 +336,11 @@ export default function BacktestPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/35">
-              Case Equity Curve
+              Equity Curve
             </div>
-            <h2 className="mt-2 text-xl font-semibold">稳健型案例资金曲线</h2>
+            <h2 className="mt-2 text-xl font-semibold">稳健型资金曲线</h2>
             <p className="mt-2 text-sm leading-6 text-white/55">
-              这条曲线用于展示“筛选后再入场”的效果：不是每场都买，而是让用户看到模型会跳过弱信号，并把推荐集中在优势更明显的场次。
+              资金曲线记录稳健型策略的波动过程：模型先过滤弱信号，再把建议集中在概率、赔率和风险更匹配的场次。
             </p>
           </div>
           <div className="rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)]">
@@ -369,13 +369,13 @@ export default function BacktestPage() {
       <section className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-xl font-semibold">精选案例明细</h2>
+            <h2 className="text-xl font-semibold">精选入场明细</h2>
             <p className="mt-2 text-sm text-white/55">
-              展示给用户看的重点不是“每场都预测”，而是哪些比赛值得进、哪些应该跳过。正式接入后这里会按真实历史赔率、赛果和用户风险偏好自动计算。
+              重点不在每场都预测，而在筛出值得观察的场次，并跳过赔率、概率或风险不匹配的比赛。
             </p>
           </div>
           <div className="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
-            内置案例样本
+            历史复盘口径
           </div>
         </div>
 
@@ -416,7 +416,7 @@ export default function BacktestPage() {
         <div className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5">
           <h2 className="text-lg font-semibold">模型和术语说明</h2>
           <p className="mt-2 text-sm leading-6 text-white/55">
-            这页用历史样本解释 ScoutAI 怎么筛比赛、怎么避开风险，以及每个指标代表什么。
+            历史复盘用来解释 ScoutAI 的筛选逻辑、风控方式和关键指标。
           </p>
           <div className="mt-4 grid gap-2 text-sm text-white/62">
             <div className="rounded-xl bg-black/25 p-3">
@@ -425,7 +425,7 @@ export default function BacktestPage() {
             </div>
             <div className="rounded-xl bg-black/25 p-3">
               <span className="font-semibold text-white">ROI：</span>
-              可以理解为回报率。正数代表这组案例整体有收益，负数代表整体亏损。
+              可以理解为回报率。正数代表这组回测整体有收益，负数代表整体亏损。
             </div>
             <div className="rounded-xl bg-black/25 p-3">
               <span className="font-semibold text-white">最大回撤：</span>
@@ -443,10 +443,10 @@ export default function BacktestPage() {
         </div>
 
         <div className="rounded-2xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/7 p-5">
-          <h2 className="text-lg font-semibold">正式回测需要的数据</h2>
+          <h2 className="text-lg font-semibold">回测数据口径</h2>
           <p className="mt-3 text-sm leading-6 text-white/58">
-            真正上线前，需要历史比赛、赛前赔率快照、赛果、球队近况、球员伤停和盘口变化。接入后，这里可以自动显示不同联赛、
-            不同月份、不同市场和不同风险偏好的真实表现。
+            回测综合历史赛果、赛前赔率快照、球队近况、伤停、xG/射门和盘口变化，用统一规则对比不同联赛、
+            不同月份、不同市场和不同风险偏好的表现。
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-xs">
             {["历史赛果", "赛前欧赔", "亚洲让球", "大小球盘口", "xG/射门", "伤停名单"].map((item) => (

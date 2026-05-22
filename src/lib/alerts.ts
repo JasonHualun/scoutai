@@ -367,7 +367,7 @@ export function buildLiveAlerts(previous: AlertSnapshot, current: AlertSnapshot)
         match_name: match.match_name,
         score,
         type: "ai_update",
-        content: "收藏比赛已进入实时监控，后续进球、牌、角球和盘口变化会自动提醒。",
+        content: "收藏比赛已进入实时监控，比赛进球、牌、角球和盘口变化会自动提醒。",
         created_at: createdAt,
         read: false,
         source: "live",

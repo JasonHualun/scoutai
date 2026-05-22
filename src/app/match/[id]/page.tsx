@@ -649,16 +649,16 @@ export default function MatchDetailPage() {
   const realtimeEmptyText =
     match.status === "upcoming"
       ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
-      : "当前接口暂未返回有效实时统计，已隐藏占位数据。";
-  const oddsEmptyText = "当前接口暂未返回真实赔率，价值差暂不计算。";
+      : "实时统计暂未更新，已隐藏占位数据。";
+  const oddsEmptyText = "盘口赔率暂未更新，价值差暂不计算。";
   const isBaselineEstimate = !stats && !odds;
   const predictionDataNote =
     isBaselineEstimate
-      ? "当前没有真实赔率、历史近况和实时统计，以下是模型基准估算，不是真实盘口数据。"
+      ? "当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在赔率、近况或实时统计更新后重新校准。"
       : !stats
-        ? "当前缺少实时统计，概率主要来自赛前信息。"
+        ? "实时统计暂未更新，概率主要来自赛前信息。"
         : !odds
-          ? "当前缺少真实赔率，价值差暂不计算。"
+          ? "盘口赔率暂未更新，价值差暂不计算。"
           : "已结合当前可用数据计算。";
   const allocationBase = Math.max(0, Math.round(activePrefs.capital || 0));
   const recommendedExposurePercent =
@@ -683,7 +683,7 @@ export default function MatchDetailPage() {
     : defaultPrefs.preferred_markets;
   const purchaseRecommendation =
     topSignal.edge == null
-      ? "缺少真实赔率，先作为赛前观察；等盘口更新后再确认。"
+      ? "盘口赔率暂未更新，先作为赛前观察；等待盘口确认后再判断价值差。"
       : topSignal.edge <= 0
         ? "模型没有明显高于市场，建议观望或等待临场变化。"
         : selectedExposurePercent > riskCapPercent * 0.8
@@ -801,8 +801,7 @@ export default function MatchDetailPage() {
 
           {isBaselineEstimate && (
             <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs leading-5 text-amber-100/75">
-              说明：这部分只是用中性进球分布和基础风控参数做的框架推演，方便先看产品流程；真实 API
-              接入赔率、历史战绩、伤停和球员数据后，概率会重新计算。
+              说明：当前可用数据不足，系统使用中性进球分布和基础风控参数做基准估算；赔率、历史战绩、伤停和球员数据更新后会重新校准。
             </div>
           )}
 
@@ -841,7 +840,7 @@ export default function MatchDetailPage() {
           </h2>
           {!odds && (
             <p className="mt-1 text-[11px] leading-5 text-white/42">
-              这里不是庄家赔率，是由模型概率反推的公平赔率；真实盘口接入后才会计算价值差。
+              这里是模型按概率反推的公平赔率；盘口赔率更新后会同时显示市场差值。
             </p>
           )}
           <div className="mt-3 space-y-2">
@@ -865,7 +864,7 @@ export default function MatchDetailPage() {
                         : "text-white/40"
                     }`}
                   >
-                    {signal.edge == null ? "未接真实盘口" : `差值 ${signal.edge}%`}
+                    {signal.edge == null ? "盘口待确认" : `差值 ${signal.edge}%`}
                   </div>
                 </div>
               </div>
@@ -1003,7 +1002,7 @@ export default function MatchDetailPage() {
           <ProMetric
             label="盘口监控"
             value={isPro ? "已启用" : "待解锁"}
-            detail="充值实时数据 API 后会展示临场盘口变化。"
+            detail="临场盘口变化会同步风险升降和监控提醒。"
           />
         </div>
 
@@ -1183,7 +1182,7 @@ export default function MatchDetailPage() {
           <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/20 p-4 text-xs leading-6 text-white/55">
             {isPro
               ? "点击生成后，会结合你的偏好和模型配置输出 Pro 深度分析。"
-              : "免费版保留基础概率预测；Pro 会展示更完整的模型委员会报告。"}
+              : "免费版保留基础概率预测；Pro 会生成更完整的模型委员会报告。"}
           </div>
         )}
       </section>

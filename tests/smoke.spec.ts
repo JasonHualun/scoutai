@@ -260,13 +260,13 @@ test("backtest page renders model validation metrics", async ({ page }) => {
   await page.goto("/backtest", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "模型回测" })).toBeVisible();
-  await expect(page.getByText("内置案例样本").first()).toBeVisible();
-  await expect(page.getByText("案例净增")).toBeVisible();
+  await expect(page.getByText("历史复盘口径").first()).toBeVisible();
+  await expect(page.getByText("净增表现")).toBeVisible();
   await expect(page.getByText("起始 1000 分 · 结束 1286 分")).toBeVisible();
   await expect(page.getByText("命中率").first()).toBeVisible();
   await expect(page.getByText("最大回撤").first()).toBeVisible();
   await expect(page.getByText("Brier 分数").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "精选案例明细" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "精选入场明细" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型和术语说明" })).toBeVisible();
   await expect(page.getByText("ROI：")).toBeVisible();
   await expect(page.getByText("最大回撤：")).toBeVisible();
@@ -285,13 +285,15 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
   await expect(page.getByText("阿森纳").first()).toBeVisible({ timeout: 20_000 });
 
   await expect(page.getByRole("heading", { name: "模型基准估算" })).toBeVisible();
-  await expect(page.getByText("不是真实盘口数据")).toBeVisible();
+  await expect(
+    page.getByText("当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在赔率、近况或实时统计更新后重新校准。")
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型委员会深度预测" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "本场购买参考" })).toBeVisible();
   await expect(page.getByText("调整本场占比")).toBeVisible();
 
   await expect(page.getByText("免费版 · 模型基准估算")).toBeVisible();
-  await expect(page.getByText("未接真实盘口").first()).toBeVisible();
+  await expect(page.getByText("盘口待确认").first()).toBeVisible();
   await expect(page.getByText("Pro 高级版 · 首单 ¥69.9")).toBeVisible();
   await page.getByRole("button", { name: /解锁 Pro|生成 Pro 分析/ }).click();
   await expect(page.getByRole("heading", { name: "首单 Pro 体验：把难懂的比赛先筛掉" })).toBeVisible({
@@ -359,7 +361,7 @@ test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await expect(page.getByText("比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByText("当前接口暂未返回真实赔率，价值差暂不计算。")).toBeVisible();
+  await expect(page.getByText("盘口赔率暂未更新，价值差暂不计算。")).toBeVisible();
   await expect(page.getByText("暂无近况数据")).toHaveCount(2);
   await expect(page.locator("body")).not.toContainText("50%");
   await expect(page.locator("body")).not.toContainText("1.35");

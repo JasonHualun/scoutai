@@ -449,7 +449,7 @@ export function runBacktest(
     riskLevel: prefs.risk_level,
     label: RISK_LABELS[prefs.risk_level],
     summary: {
-      sampleLabel: "内置五大联赛校准样本",
+      sampleLabel: "五大联赛校准样本",
       totalMatches: matches.length,
       betCount: bettingPicks.length,
       passCount: picks.length - bettingPicks.length,

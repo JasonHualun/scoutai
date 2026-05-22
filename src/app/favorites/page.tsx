@@ -683,7 +683,7 @@ function combinedOdds(picks: PortfolioPick[]) {
 function buildDataBasis(match: MatchCard, prefs: UserPrefs, snapshot: ModelSnapshot) {
   const basis = ["收藏池", "赛程时间", "联赛权重", "球队关注度"];
   if (match.status === "live") basis.push("实时比分");
-  if (snapshot.hasRealOdds) basis.push("真实赔率");
+  if (snapshot.hasRealOdds) basis.push("盘口赔率");
   else basis.push("待盘口");
   if (snapshot.hasStats) basis.push("实时统计");
   if (snapshot.hasRecentForm) basis.push("近况");
@@ -703,11 +703,11 @@ function buildReason(
   if (match.status === "finished") return "比赛已结束，只保留复盘价值，不进入组合。";
   if (match.status === "live") {
     return Math.abs(match.homeScore - match.awayScore) <= 1
-      ? "实时比分仍接近，保留组合观察价值；临场数据接入后会继续校准。"
+      ? "实时比分仍接近，保留组合观察价值；临场数据更新时会继续校准。"
       : "比分差距已经拉开，模型会降低组合权重，避免追高。";
   }
   if (!snapshot.hasRealOdds) {
-    return `当前先按模型公平赔率筛选：${opportunity.direction}，${opportunity.valueLabel}。等真实盘口接入后，会用市场赔率重新计算价值差和占比建议。`;
+    return `盘口赔率暂未更新，先按模型公平赔率筛选：${opportunity.direction}，${opportunity.valueLabel}。盘口确认后会重新计算价值差和占比建议。`;
   }
   if (opportunity.bucket === "爆冷小注") {
     return `${opportunity.direction} 属于高赔率机会，${opportunity.valueLabel}；只适合小比例放进机会组合，不适合重仓。`;
@@ -1302,7 +1302,7 @@ export default function FavoritesPage() {
                 </div>
                 <h2 className="text-lg font-semibold">收藏预测推荐</h2>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-white/55">
-                  模型回测是用历史样本检验模型；这里是你收藏未来比赛后实际生成推荐。系统读取设置页偏好，再逐场计算玩法、占比和组合方向。
+                  模型回测用于复盘历史表现；收藏预测推荐用于你已收藏的未来比赛。系统读取设置页偏好，再逐场计算玩法、占比和组合方向。
                 </p>
                 {detailLoading && (
                   <p className="mt-2 text-[11px] text-amber-200/80">
@@ -1519,7 +1519,7 @@ export default function FavoritesPage() {
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
               <span className="font-semibold text-white/75">分析口径：</span>
-              组合先读取用户设置的风险偏好、模型和关注市场，再逐场计算模型公平赔率、市场赔率去水概率和价值差。有真实盘口时才按“模型高于市场”给价值分；没有盘口时只显示待盘口确认，不当作真实投注信号。
+              组合先读取设置页的风险偏好、模型和关注市场，再逐场计算模型公平赔率、市场赔率去水概率和价值差。盘口赔率更新后才按“模型高于市场”给价值分；没有盘口时只显示待盘口确认，避免把基础估算当成正式建议。
             </div>
 
             <div className={`mt-4 grid gap-3 ${isPro ? "" : "opacity-70"}`}>
