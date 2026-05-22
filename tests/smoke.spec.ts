@@ -223,16 +223,23 @@ test("core pages render without mojibake", async ({ page }) => {
 });
 
 test("top nav upgrade opens payment dialog above page content", async ({ page }) => {
-  await mockLoggedInUser(page);
+  const email = "header-user@example.com";
+  await mockLoggedInUser(page, email);
   await page.goto("/", { waitUntil: "networkidle" });
+  await page.evaluate((countdownKey) => {
+    window.localStorage.setItem(countdownKey, String(Date.now() + 9 * 60 * 1000 + 45_000));
+  }, `scoutai:payment-countdown:${email}`);
 
   await page.getByRole("button", { name: "升级会员" }).click();
   await expect(page.getByTestId("pro-purchase-dialog")).toBeVisible();
   await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
   await expect(page.getByText("新用户首单").first()).toBeVisible();
   await expect(page.getByText("¥69.9").first()).toBeVisible();
+  await expect(page.getByText(/^09:\d{2}$/)).toBeVisible();
+  await expect(page.getByText("首次打开后开始计时，关闭再打开不会重置")).toBeVisible();
   await expect(page.getByText("请按所选套餐金额付款")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("付款备注请填订单编号");
+  await expect(page.locator("body")).not.toContainText("每次打开付款页都会重新计算");
 
   const panel = await page.getByTestId("pro-purchase-panel").boundingBox();
   expect(panel, "payment panel should be visible").not.toBeNull();

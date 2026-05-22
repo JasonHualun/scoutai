@@ -212,7 +212,7 @@ export function ProPurchaseDialog({
 
         <div className="mt-5 grid gap-3 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-            <PaymentCountdown open={open} userKey={email} />
+            <PaymentCountdown key={email ?? "guest"} open={open} userKey={email} />
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg bg-black/30 px-3 py-2">

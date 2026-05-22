@@ -15,6 +15,19 @@ function normalizeUserKey(userKey?: string | null) {
   return userKey?.trim().toLowerCase() || "guest";
 }
 
+function readOrCreateDeadline(storageKey: string) {
+  const fallback = Date.now() + PROMO_WINDOW_MS;
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    const parsed = stored == null ? Number.NaN : Number(stored);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    window.localStorage.setItem(storageKey, String(fallback));
+  } catch {
+    // localStorage is only used to keep the countdown scoped per browser user.
+  }
+  return fallback;
+}
+
 export function PaymentCountdown({
   open,
   userKey,
@@ -28,21 +41,17 @@ export function PaymentCountdown({
     () => `scoutai:payment-countdown:${normalizeUserKey(userKey)}`,
     [userKey]
   );
-  const [deadline] = useState(() => Date.now() + PROMO_WINDOW_MS);
+  const [deadline] = useState(() =>
+    typeof window === "undefined" ? Date.now() + PROMO_WINDOW_MS : readOrCreateDeadline(storageKey)
+  );
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!open) return;
 
-    try {
-      window.localStorage.setItem(storageKey, String(deadline));
-    } catch {
-      // localStorage is only used to keep the countdown scoped per browser user.
-    }
-
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [deadline, open, storageKey]);
+  }, [open]);
 
   const remaining = Math.max(0, deadline - now);
 
@@ -57,7 +66,7 @@ export function PaymentCountdown({
         {formatRemaining(remaining)}
       </div>
       <div className="mt-1 text-[11px] leading-4 text-amber-100/55">
-        每次打开付款页都会重新计算
+        首次打开后开始计时，关闭再打开不会重置
       </div>
     </div>
   );
