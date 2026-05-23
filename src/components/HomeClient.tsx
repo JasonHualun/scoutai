@@ -30,6 +30,7 @@ type Props = {
 };
 
 const FAVORITES_KEY = "scoutai_favorites";
+const PREDICTION_POOL_KEY = "scoutai_prediction_pool";
 const SELECTED_LEAGUES_KEY = "scoutai_selected_leagues";
 
 const DEFAULT_LEAGUE_IDS = new Set([
@@ -95,6 +96,7 @@ function matchHotScore(match: MatchCard, favoriteLeagueIds: Set<number>) {
 export default function HomeClient({ initialMatches }: Props) {
   const [sortMode, setSortMode] = useState<SortMode>("hot");
   const [favorites, setFavorites] = useState<number[]>([]);
+  const [predictionPoolIds, setPredictionPoolIds] = useState<number[]>([]);
   const [matches, setMatches] = useState<MatchCard[]>(initialMatches);
   const [selectedLeagueIds, setSelectedLeagueIds] = useState<number[]>([
     ...DEFAULT_LEAGUE_IDS,
@@ -111,8 +113,15 @@ export default function HomeClient({ initialMatches }: Props) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) setFavorites(parsed);
       }
+
+      const poolRaw = window.localStorage.getItem(PREDICTION_POOL_KEY);
+      if (poolRaw) {
+        const parsedPool = JSON.parse(poolRaw);
+        if (Array.isArray(parsedPool)) setPredictionPoolIds(parsedPool);
+      }
     } catch {
       setFavorites([]);
+      setPredictionPoolIds([]);
     }
   }, []);
 
@@ -209,6 +218,18 @@ export default function HomeClient({ initialMatches }: Props) {
     });
   }
 
+  function togglePredictionPool(id: number, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setPredictionPoolIds((prev) => {
+      const next = prev.includes(id)
+        ? prev.filter((item) => item !== id)
+        : [...prev, id];
+      window.localStorage.setItem(PREDICTION_POOL_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
   const handleLiveUpdate = useMemo(
     () => (newLiveMatches: MatchCard[]) => {
       setMatches((prev) => {
@@ -275,20 +296,20 @@ export default function HomeClient({ initialMatches }: Props) {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">
-              Portfolio
+              Prediction Pool
             </div>
             <h2 className="mt-1 text-base font-semibold text-white">
-              想让系统帮你做组合？先把比赛加入组合池
+              收藏看提醒，预测池才会扣积分
             </h2>
             <p className="mt-1 text-xs leading-5 text-white/58">
-              在比赛卡片上点“加入组合池”，收藏页会从这些比赛里筛选更值得重点观察的场次，并生成模拟组合参考。
+              收藏用于实时数据和异常提醒；只有点“加入预测池”的比赛，才会在预测页扣积分并生成占比建议。
             </p>
           </div>
           <Link
             href="/favorites"
             className="inline-flex shrink-0 items-center justify-center rounded-full border border-[color:var(--accent)]/45 bg-black/25 px-4 py-2 text-xs font-semibold text-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-black"
           >
-            查看收藏组合
+            查看预测池
           </Link>
         </div>
       </section>
@@ -304,6 +325,7 @@ export default function HomeClient({ initialMatches }: Props) {
               <LiveMatchUpdater onUpdate={handleLiveUpdate} />
               {sortedMatches.map((match) => {
                 const isFavorite = favorites.includes(match.id);
+                const inPredictionPool = predictionPoolIds.includes(match.id);
                 const hotScore = matchHotScore(match, favoriteLeagueIds);
 
                 return (
@@ -368,18 +390,32 @@ export default function HomeClient({ initialMatches }: Props) {
                       </div>
                     </Link>
 
-                    <button
-                      type="button"
-                      onClick={(event) => toggleFavorite(match.id, event)}
-                      aria-label={isFavorite ? "移出组合池" : "加入组合池"}
-                      className={`absolute bottom-3 right-16 z-10 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
-                        isFavorite
-                          ? "border-yellow-300/35 bg-yellow-300/12 text-yellow-200"
-                          : "border-white/12 bg-black/55 text-white/55 hover:border-[color:var(--accent)]/55 hover:text-[color:var(--accent)]"
-                      }`}
-                    >
-                      {isFavorite ? "★ 已入组合池" : "☆ 加入组合池"}
-                    </button>
+                    <div className="absolute bottom-3 right-14 z-10 flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={(event) => toggleFavorite(match.id, event)}
+                        aria-label={isFavorite ? "取消收藏" : "收藏比赛"}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
+                          isFavorite
+                            ? "border-yellow-300/35 bg-yellow-300/12 text-yellow-200"
+                            : "border-white/12 bg-black/60 text-white/55 hover:border-yellow-300/45 hover:text-yellow-100"
+                        }`}
+                      >
+                        {isFavorite ? "★ 已收藏" : "☆ 收藏"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => togglePredictionPool(match.id, event)}
+                        aria-label={inPredictionPool ? "移出预测池" : "加入预测池"}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
+                          inPredictionPool
+                            ? "border-[color:var(--accent)]/45 bg-[color:var(--accent)]/14 text-[color:var(--accent)]"
+                            : "border-white/12 bg-black/60 text-white/55 hover:border-[color:var(--accent)]/55 hover:text-[color:var(--accent)]"
+                        }`}
+                      >
+                        {inPredictionPool ? "✓ 已入预测" : "+ 加入预测"}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

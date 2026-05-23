@@ -155,6 +155,7 @@ type UserPrefs = {
 };
 
 const FAVORITES_KEY = "scoutai_favorites";
+const PREDICTION_POOL_KEY = "scoutai_prediction_pool";
 
 const statusLabel: Record<MatchStatus, string> = {
   live: "进行中",
@@ -183,7 +184,7 @@ const portfolioModes: Array<{
   {
     id: "balanced",
     label: "常规串关",
-    description: "从收藏池里挑赔率 2 以上的正常组合，兼顾强度和分散度。",
+    description: "从预测池里挑赔率 2 以上的正常组合，兼顾强度和分散度。",
     size: 3,
     multiplier: 0.9,
     minScore: 60,
@@ -681,7 +682,7 @@ function combinedOdds(picks: PortfolioPick[]) {
 }
 
 function buildDataBasis(match: MatchCard, prefs: UserPrefs, snapshot: ModelSnapshot) {
-  const basis = ["收藏池", "赛程时间", "联赛权重", "球队关注度"];
+  const basis = ["预测池", "赛程时间", "联赛权重", "球队关注度"];
   if (match.status === "live") basis.push("实时比分");
   if (snapshot.hasRealOdds) basis.push("盘口赔率");
   else basis.push("待盘口");
@@ -716,7 +717,7 @@ function buildReason(
     return `${opportunity.direction} 的模型概率更稳，${opportunity.valueLabel}；适合作为稳定组合的主选之一。`;
   }
   if (score >= 74) {
-    return `收藏池里信号较强，当前信号强度 ${confidence}%，${opportunity.valueLabel}，适合作为组合主选候选。`;
+  return `预测池里信号较强，当前信号强度 ${confidence}%，${opportunity.valueLabel}，适合作为组合主选候选。`;
   }
   if (score >= 62) {
     return `${opportunity.direction} 信息量够用，适合作为分散场次；不建议把本次比例集中在这一场。`;
@@ -937,6 +938,8 @@ export default function FavoritesPage() {
 
   const [favoriteMatches, setFavoriteMatches] = useState<MatchCard[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const [predictionPoolMatches, setPredictionPoolMatches] = useState<MatchCard[]>([]);
+  const [predictionPoolIds, setPredictionPoolIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailByMatch, setDetailByMatch] = useState<Record<number, MatchDetailResponse>>({});
   const [detailLoading, setDetailLoading] = useState(false);
@@ -970,20 +973,34 @@ export default function FavoritesPage() {
     async function load() {
       try {
         const raw = localStorage.getItem(FAVORITES_KEY);
-        const ids: number[] = raw ? JSON.parse(raw) : [];
-        setFavoriteIds(ids);
+        const favoriteIdsFromStorage: number[] = raw ? JSON.parse(raw) : [];
+        const poolRaw = localStorage.getItem(PREDICTION_POOL_KEY);
+        const predictionIdsFromStorage: number[] = poolRaw ? JSON.parse(poolRaw) : [];
+        setFavoriteIds(favoriteIdsFromStorage);
+        setPredictionPoolIds(predictionIdsFromStorage);
 
-        if (ids.length === 0) return;
+        const allIds = [...new Set([...favoriteIdsFromStorage, ...predictionIdsFromStorage])];
+        if (allIds.length === 0) return;
 
         const res = await fetch("/api/football/all");
         const json = (await res.json()) as { fixtures?: FixtureLike[] };
 
         if (Array.isArray(json.fixtures)) {
-          const idSet = new Set(ids.map(String));
+          const matchMap = new Map(
+            json.fixtures.map((fixture) => [
+              String(fixture.fixture.id),
+              mapFixtureToMatchCard(fixture),
+            ])
+          );
           setFavoriteMatches(
-            json.fixtures
-              .filter((fixture) => idSet.has(String(fixture.fixture.id)))
-              .map(mapFixtureToMatchCard)
+            favoriteIdsFromStorage
+              .map((id) => matchMap.get(String(id)))
+              .filter((match): match is MatchCard => !!match)
+          );
+          setPredictionPoolMatches(
+            predictionIdsFromStorage
+              .map((id) => matchMap.get(String(id)))
+              .filter((match): match is MatchCard => !!match)
           );
         }
       } catch (error) {
@@ -997,7 +1014,7 @@ export default function FavoritesPage() {
   }, []);
 
   useEffect(() => {
-    if (favoriteMatches.length === 0) {
+    if (predictionPoolMatches.length === 0) {
       setDetailByMatch({});
       return;
     }
@@ -1007,7 +1024,7 @@ export default function FavoritesPage() {
       setDetailLoading(true);
       try {
         const results = await Promise.allSettled(
-          favoriteMatches.slice(0, 12).map(async (match) => {
+          predictionPoolMatches.slice(0, 12).map(async (match) => {
             const res = await fetch(`/api/match/${match.id}`);
             if (!res.ok) throw new Error("match detail failed");
             const detail = (await res.json()) as MatchDetailResponse;
@@ -1037,7 +1054,7 @@ export default function FavoritesPage() {
     return () => {
       cancelled = true;
     };
-  }, [favoriteMatches]);
+  }, [predictionPoolMatches]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1116,15 +1133,15 @@ export default function FavoritesPage() {
   const plansByMode = useMemo(
     () =>
       portfolioModes.map((mode) =>
-        buildPortfolioPlan(favoriteMatches, mode.id, activePrefs, detailByMatch)
+        buildPortfolioPlan(predictionPoolMatches, mode.id, activePrefs, detailByMatch)
       ),
-    [activePrefs, detailByMatch, favoriteMatches]
+    [activePrefs, detailByMatch, predictionPoolMatches]
   );
   const activePlan = useMemo(
     () =>
       plansByMode.find((plan) => plan.mode === activePortfolioMode) ??
-      buildPortfolioPlan(favoriteMatches, activePortfolioMode, activePrefs, detailByMatch),
-    [activePortfolioMode, activePrefs, detailByMatch, favoriteMatches, plansByMode]
+      buildPortfolioPlan(predictionPoolMatches, activePortfolioMode, activePrefs, detailByMatch),
+    [activePortfolioMode, activePrefs, detailByMatch, predictionPoolMatches, plansByMode]
   );
   const portfolioPicks = activePlan.picks;
   const modeConfig =
@@ -1151,27 +1168,58 @@ export default function FavoritesPage() {
         : 0;
     return map;
   }, {});
-  const favoriteIdsKey = favoriteIds.join(",");
+  const predictionPoolIdsKey = predictionPoolIds.join(",");
   const corePicks = activePlan.coreCount;
-  const firstFavoriteMatchId = favoriteMatches[0]?.id;
-  const isEmpty = !loading && favoriteMatches.length === 0;
+  const firstPredictionMatchId = predictionPoolMatches[0]?.id;
+  const isEmpty = !loading && favoriteMatches.length === 0 && predictionPoolMatches.length === 0;
   const activeProfile = riskProfiles[activePrefs.risk_level];
   const visibleModels = activePrefs.preferred_models.slice(0, 3);
   const visibleMarkets = activePrefs.preferred_markets.slice(0, 4);
-  const predictionCost = favoriteMatches.length * PREDICTION_CREDITS_PER_MATCH;
-  const canStartPrediction =
-    isPro && !detailLoading && favoriteMatches.length > 0 && (predictionCredits ?? 0) >= predictionCost;
+  const predictionCost = predictionPoolMatches.length * PREDICTION_CREDITS_PER_MATCH;
+  const missingPredictionCredits = Math.max(0, predictionCost - (predictionCredits ?? 0));
+  const startPredictionButtonLabel = predictionPoolMatches.length === 0
+    ? "先加入预测池"
+    : !isPro
+      ? "开通 Pro 后预测"
+      : missingPredictionCredits > 0
+        ? "购买积分增加场次"
+        : "开始预测推荐";
 
   useEffect(() => {
     setPredictionStarted(false);
     setPredictionMessage(null);
-  }, [favoriteIdsKey, favoriteMatches.length]);
+  }, [predictionPoolIdsKey, predictionPoolMatches.length]);
 
   function handleUnfavorite(id: number) {
     const updated = favoriteIds.filter((favoriteId) => favoriteId !== id);
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
     setFavoriteIds(updated);
     setFavoriteMatches((prev) => prev.filter((match) => match.id !== id));
+  }
+
+  function handleTogglePredictionPool(match: MatchCard) {
+    const exists = predictionPoolIds.includes(match.id);
+    const updated = exists
+      ? predictionPoolIds.filter((matchId) => matchId !== match.id)
+      : [...predictionPoolIds, match.id];
+    localStorage.setItem(PREDICTION_POOL_KEY, JSON.stringify(updated));
+    setPredictionPoolIds(updated);
+    setPredictionPoolMatches((prev) =>
+      exists ? prev.filter((item) => item.id !== match.id) : [...prev, match]
+    );
+    setDetailByMatch((prev) => {
+      const next = { ...prev };
+      if (exists) delete next[match.id];
+      return next;
+    });
+    setSelectedIds((prev) => prev.filter((matchId) => matchId !== match.id));
+  }
+
+  function handleRemoveFromPredictionPool(id: number) {
+    const updated = predictionPoolIds.filter((matchId) => matchId !== id);
+    localStorage.setItem(PREDICTION_POOL_KEY, JSON.stringify(updated));
+    setPredictionPoolIds(updated);
+    setPredictionPoolMatches((prev) => prev.filter((match) => match.id !== id));
     setDetailByMatch((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -1191,14 +1239,14 @@ export default function FavoritesPage() {
       return;
     }
 
-    if (favoriteMatches.length === 0) {
-      setPredictionMessage("请先收藏要预测的比赛。");
+    if (predictionPoolMatches.length === 0) {
+      setPredictionMessage("请先把要预测的比赛加入预测池。");
       return;
     }
 
-    if ((predictionCredits ?? 0) < predictionCost) {
+    if (missingPredictionCredits > 0) {
       setPredictionMessage(
-        `预测积分不足：本次需要 ${predictionCost} 分，当前剩余 ${predictionCredits ?? 0} 分。`
+        `还需要 ${missingPredictionCredits} 预测积分，可预测当前预测池 ${predictionPoolMatches.length} 场比赛。`
       );
       openUpgrade();
       return;
@@ -1235,7 +1283,7 @@ export default function FavoritesPage() {
     setPredictionCredits(nextCredits);
     setPredictionStarted(true);
     setPredictionMessage(
-      `已扣除 ${predictionCost} 预测积分，本次按 ${favoriteMatches.length} 场比赛生成推荐。`
+      `已扣除 ${predictionCost} 预测积分，本次按预测池 ${predictionPoolMatches.length} 场比赛生成推荐。`
     );
     setSelectionTouched(false);
     setSelectedIds(recommendedIds);
@@ -1263,9 +1311,9 @@ export default function FavoritesPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">收藏</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">收藏与预测池</h1>
           <p className="mt-2 text-sm text-white/60">
-            先在热门赛事里点“加入组合池”，再点击“开始预测推荐”。系统会按收藏场次扣预测积分，并给出投注占比建议。
+            收藏用于实时数据和异常提醒；预测池才会扣预测积分并生成推荐。你可以只收藏比赛，也可以把其中一部分加入预测池。
           </p>
         </div>
         <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/60">
@@ -1281,9 +1329,9 @@ export default function FavoritesPage() {
         </div>
       ) : isEmpty ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-6 text-sm text-white/60">
-          <div className="mb-3 text-base text-white/75">暂无收藏比赛</div>
+          <div className="mb-3 text-base text-white/75">暂无收藏或预测比赛</div>
             <p className="mb-4 max-w-xl text-xs leading-5 text-white/55">
-            去热门赛事页，把你想重点观察的比赛点“加入组合池”。收藏后点击开始预测，系统会生成单场优先、常规串关和高倍率串关参考。
+            去热门赛事页，想跟踪实时数据的点“收藏”，想消耗积分预测的点“加入预测”。两个动作互不影响。
           </p>
           <Link
             href="/"
@@ -1298,20 +1346,20 @@ export default function FavoritesPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
                 <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
-                  Pro 预测推荐
+                  Pro 预测池
                 </div>
-                <h2 className="text-lg font-semibold">收藏预测推荐</h2>
+                <h2 className="text-lg font-semibold">预测池推荐</h2>
                 <p className="mt-1 max-w-2xl text-xs leading-5 text-white/55">
-                  模型回测用于复盘历史表现；收藏预测推荐用于你已收藏的未来比赛。系统读取设置页偏好，再逐场计算玩法、占比和组合方向。
+                  只有加入预测池的比赛会扣积分。系统读取设置页偏好，再逐场计算玩法、占比和组合方向。
                 </p>
                 {detailLoading && (
                   <p className="mt-2 text-[11px] text-amber-200/80">
-                    正在读取收藏比赛的盘口和模型数据...
+                    正在读取预测池比赛的盘口和模型数据...
                   </p>
                 )}
               </div>
 
-              {!isPro && firstFavoriteMatchId && (
+              {!isPro && firstPredictionMatchId && (
                 <button
                   type="button"
                   onClick={openUpgrade}
@@ -1327,17 +1375,22 @@ export default function FavoritesPage() {
                 <div>
                   <div className="text-xs font-semibold text-white">开始本次预测</div>
                   <p className="mt-1 text-[11px] leading-5 text-white/50">
-                    本次收藏 {favoriteMatches.length} 场，每场扣 {PREDICTION_CREDITS_PER_MATCH} 预测积分，合计扣 {predictionCost} 分。
+                    当前预测池 {predictionPoolMatches.length} 场，每场扣 {PREDICTION_CREDITS_PER_MATCH} 预测积分，合计扣 {predictionCost} 分。
                     预测完成后，系统会直接给出每场建议占比。
                   </p>
+                  {isPro && missingPredictionCredits > 0 && predictionPoolMatches.length > 0 && (
+                    <p className="mt-1 text-[11px] font-semibold text-amber-200">
+                      还需要 {missingPredictionCredits} 预测积分，可预测当前预测池 {predictionPoolMatches.length} 场比赛。
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
                   onClick={handleStartPrediction}
-                  disabled={isPro && !canStartPrediction}
+                  disabled={predictionPoolMatches.length === 0}
                   className="rounded-full bg-[color:var(--accent)] px-5 py-2 text-xs font-black text-black shadow-[0_0_28px_rgba(0,255,135,0.45)] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  {isPro ? "开始预测推荐" : "开通 Pro 后预测"}
+                  {startPredictionButtonLabel}
                 </button>
               </div>
               {predictionMessage && (
@@ -1345,9 +1398,14 @@ export default function FavoritesPage() {
                   {predictionMessage}
                 </div>
               )}
-              {!predictionStarted && isPro && (
+              {!predictionStarted && isPro && predictionPoolMatches.length > 0 && (
                 <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/20 px-3 py-2 text-xs text-white/45">
                   还没有开始本次预测。点击按钮后才会扣积分，并展开单场、常规串关和高倍率串关推荐。
+                </div>
+              )}
+              {isPro && predictionPoolMatches.length === 0 && (
+                <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/20 px-3 py-2 text-xs text-white/45">
+                  预测池暂时为空。先从下方收藏列表或热门赛事里选择“加入预测池”。
                 </div>
               )}
             </div>
@@ -1514,7 +1572,7 @@ export default function FavoritesPage() {
             <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3 text-xs leading-6 text-white/55">
               <span className="font-semibold text-[color:var(--accent)]">组合建议：</span>
               {selectedPicks.length === 0
-                ? "收藏里暂时没有足够强的信号，建议先观察，不强行组合。"
+                ? "预测池里暂时没有足够强的信号，建议先观察，不强行组合。"
                 : `${activePlan.headline}：稳定主选会给更高占比，爆冷或高赔率方向只保留小比例观察。已选 ${selectedPicks.length} 场，优先分散到不同比赛，不把占比集中在单一场次。`}
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
@@ -1552,6 +1610,13 @@ export default function FavoritesPage() {
                           <span className="text-[11px] text-white/45">
                             {statusLabel[pick.match.status]} · {pick.match.kickOff}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFromPredictionPool(pick.match.id)}
+                            className="rounded-full border border-red-400/25 bg-red-500/8 px-2 py-0.5 text-[11px] text-red-200 hover:bg-red-500/14"
+                          >
+                            移出预测池
+                          </button>
                         </div>
                         <div className="mt-2 text-sm font-semibold text-white">
                           {translateTeam(pick.match.homeTeam)}{" "}
@@ -1621,7 +1686,18 @@ export default function FavoritesPage() {
             </div>
           </section>
 
-          <div className="space-y-3">
+          <section className="space-y-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">收藏监控</h2>
+                <p className="mt-1 text-xs text-white/50">
+                  这里的比赛只用于快速查看实时数据和异常提醒；需要预测时再单独加入预测池。
+                </p>
+              </div>
+              <div className="rounded-full border border-white/10 bg-black/30 px-3 py-1.5 text-[11px] text-white/55">
+                收藏 {favoriteMatches.length} 场 · 预测池 {predictionPoolMatches.length} 场
+              </div>
+            </div>
             {favoriteMatches.map((match) => (
               <div
                 key={match.id}
@@ -1653,16 +1729,34 @@ export default function FavoritesPage() {
                     {match.awayScore}
                   </div>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => handleUnfavorite(match.id)}
-                  className="shrink-0 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[11px] text-white/70 hover:border-red-400/60 hover:text-red-300"
-                >
-                  取消收藏
-                </button>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleTogglePredictionPool(match)}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                      predictionPoolIds.includes(match.id)
+                        ? "border-[color:var(--accent)]/45 bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
+                        : "border-white/15 bg-black/40 text-white/70 hover:border-[color:var(--accent)]/55 hover:text-[color:var(--accent)]"
+                    }`}
+                  >
+                    {predictionPoolIds.includes(match.id) ? "已加入预测池" : "加入预测池"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUnfavorite(match.id)}
+                    className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[11px] text-white/70 hover:border-red-400/60 hover:text-red-300"
+                  >
+                    取消收藏
+                  </button>
+                </div>
               </div>
             ))}
-          </div>
+            {favoriteMatches.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-white/12 bg-black/20 p-5 text-xs text-white/50">
+                暂无收藏比赛。收藏后可用于实时提醒，不会自动扣预测积分。
+              </div>
+            )}
+          </section>
         </>
       )}
       <ProPurchaseDialog

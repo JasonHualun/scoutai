@@ -15,7 +15,18 @@ const routes = [
 const mojibakePattern = /[鑻鐧璧鍏鍗鈿馃�]/;
 const supabaseAuthStorageKey = "sb-potcjehpqcowpugckukt-auth-token";
 
-async function mockLoggedInUser(page: Page, email = "header-user@example.com") {
+type MockMembership = {
+  plan?: "free" | "pro";
+  status?: "free" | "active";
+  proUntil?: string | null;
+  predictionCredits?: number;
+};
+
+async function mockLoggedInUser(
+  page: Page,
+  email = "header-user@example.com",
+  membershipOverride: MockMembership = {}
+) {
   await page.addInitScript(
     ({ storageKey, userEmail }) => {
       const now = new Date().toISOString();
@@ -55,6 +66,7 @@ async function mockLoggedInUser(page: Page, email = "header-user@example.com") {
           proUntil: null,
           email,
           predictionCredits: 20,
+          ...membershipOverride,
         },
       }),
     });
@@ -525,13 +537,17 @@ test("favorites page shows portfolio recommendations for saved matches", async (
   await mockFavoriteMatches(page);
   await page.addInitScript(() => {
     window.localStorage.setItem("scoutai_favorites", JSON.stringify([91001, 91002, 91003]));
+    window.localStorage.setItem("scoutai_prediction_pool", JSON.stringify([91001, 91002, 91003]));
   });
 
   await page.goto("/favorites", { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { name: "收藏预测推荐" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "收藏与预测池" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "预测池推荐" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "收藏监控" })).toBeVisible();
   await expect(page.getByText("开始本次预测")).toBeVisible();
   await expect(page.getByText("开通 Pro 后预测")).toBeVisible();
+  await expect(page.getByText("当前预测池 3 场，每场扣 5 预测积分，合计扣 15 分。")).toBeVisible();
   await expect(page.getByText("按设置页自动匹配")).toBeVisible();
   await expect(page.getByRole("link", { name: "去设置修改" })).toBeVisible();
   await expect(page.getByRole("button", { name: /稳健组合/ })).toHaveCount(0);
@@ -539,10 +555,46 @@ test("favorites page shows portfolio recommendations for saved matches", async (
   await expect(page.getByText("剩余预测积分")).toBeVisible();
   await expect(page.getByText("分析口径")).toBeVisible();
   await expect(page.getByText("信号强度").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "移出预测池" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "已加入预测池" }).first()).toBeVisible();
   await page.getByRole("button", { name: "开通 Pro", exact: true }).click();
   await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
   await expect(page.getByText("用户专属优惠倒计时")).toBeVisible();
   await expect(page.getByText("¥299")).toBeVisible();
   await expect(page.getByText("¥699")).toBeVisible();
   await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
+});
+
+test("prediction pool prompts credit purchase when balance is too low", async ({ page }) => {
+  await mockLoggedInUser(page, "low-credit@example.com", {
+    plan: "pro",
+    status: "active",
+    proUntil: "2027-05-20T00:00:00.000Z",
+    predictionCredits: 5,
+  });
+  await page.route("**/rest/v1/user_preferences**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "pref-1",
+        risk_level: "balanced",
+        capital: 1000,
+        preferred_markets: ["胜平负", "让球", "大小球", "双方进球"],
+        preferred_models: ["xG-Dixon-Coles", "赔率去水", "近期状态评分"],
+      }),
+    });
+  });
+  await mockFavoriteMatches(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem("scoutai_favorites", JSON.stringify([91001, 91002, 91003]));
+    window.localStorage.setItem("scoutai_prediction_pool", JSON.stringify([91001, 91002, 91003]));
+  });
+
+  await page.goto("/favorites", { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("button", { name: "购买积分增加场次" })).toBeVisible();
+  await expect(page.getByText("还需要 10 预测积分，可预测当前预测池 3 场比赛。")).toBeVisible();
+  await page.getByRole("button", { name: "购买积分增加场次" }).click();
+  await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
 });

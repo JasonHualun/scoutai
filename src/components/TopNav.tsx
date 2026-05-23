@@ -6,7 +6,7 @@ import { AuthStatus } from "@/components/AuthStatus";
 
 const navItems = [
   { href: "/", label: "热门赛事" },
-  { href: "/favorites", label: "收藏" },
+  { href: "/favorites", label: "收藏/预测" },
   { href: "/backtest", label: "模型回测" },
   { href: "/alerts", label: "异常提醒" },
   { href: "/settings", label: "设置" },
