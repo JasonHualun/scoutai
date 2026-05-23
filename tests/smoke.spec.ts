@@ -272,15 +272,17 @@ test("top nav upgrade opens payment dialog above page content", async ({ page })
 test("backtest page renders model validation metrics", async ({ page }) => {
   await page.goto("/backtest", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByRole("heading", { name: "历史预测" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "历史预测", exact: true })).toBeVisible();
   await expect(page.getByText("历史复盘口径").first()).toBeVisible();
-  await expect(page.getByText("净增表现")).toBeVisible();
+  await expect(page.getByText("净增表现", { exact: true })).toBeVisible();
   await expect(page.getByText("起始 1000 分 · 结束 1286 分")).toBeVisible();
   await expect(page.getByText("命中率").first()).toBeVisible();
   await expect(page.getByText("最大回撤").first()).toBeVisible();
   await expect(page.getByText("Brier 分数").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "精选入场明细" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "模型和术语说明" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "历史预测怎么看" })).toBeVisible();
+  await expect(page.getByText("不是实时推荐入口")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "历史预测和预测池的区别" })).toBeVisible();
   await expect(page.getByText("ROI：")).toBeVisible();
   await expect(page.getByText("最大回撤：")).toBeVisible();
   await expect(page.getByText("价值差：")).toBeVisible();

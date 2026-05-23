@@ -303,7 +303,7 @@ export default function BacktestPage() {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[color:var(--accent)]">
-              Model Case Study
+              历史表现
             </div>
             <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">历史预测</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
@@ -336,7 +336,7 @@ export default function BacktestPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/35">
-              Equity Curve
+              资金变化
             </div>
             <h2 className="mt-2 text-xl font-semibold">稳健型资金曲线</h2>
             <p className="mt-2 text-sm leading-6 text-white/55">
@@ -412,51 +412,97 @@ export default function BacktestPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5">
-          <h2 className="text-lg font-semibold">模型和术语说明</h2>
-          <p className="mt-2 text-sm leading-6 text-white/55">
-            历史复盘用来解释 ScoutAI 的筛选逻辑、风控方式和关键指标。
-          </p>
-          <div className="mt-4 grid gap-2 text-sm text-white/62">
-            <div className="rounded-xl bg-black/25 p-3">
-              <span className="font-semibold text-white">模型筛选：</span>
-              不是每场都推荐。模型会先看赔率、概率、价值差和风险，信号不够强时会选择跳过。
-            </div>
-            <div className="rounded-xl bg-black/25 p-3">
-              <span className="font-semibold text-white">ROI：</span>
-              可以理解为回报率。正数代表这组回测整体有收益，负数代表整体亏损。
-            </div>
-            <div className="rounded-xl bg-black/25 p-3">
-              <span className="font-semibold text-white">最大回撤：</span>
-              表示过程中最多曾经亏下去多少，用来观察策略会不会让资金波动太大。
-            </div>
-            <div className="rounded-xl bg-black/25 p-3">
-              <span className="font-semibold text-white">命中率：</span>
-              只看猜中多少场还不够，还要结合赔率和 ROI；低赔率命中高，也可能赚得不多。
-            </div>
-            <div className="rounded-xl bg-black/25 p-3">
-              <span className="font-semibold text-white">价值差：</span>
-              模型概率和市场赔率之间的差距。差距越明显，才越值得进一步观察。
-            </div>
+      <section className="rounded-2xl border border-white/8 bg-[color:var(--card)]/92 p-5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">历史预测怎么看</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/56">
+              这一页不是实时推荐入口，而是把过去的比赛按同一套模型规则重新跑一遍：
+              看模型会选哪些、会跳过哪些、收益曲线是否平稳，帮助你判断 ScoutAI 的风格和风险。
+            </p>
+          </div>
+          <div className="rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)]">
+            看懂模型，再做选择
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/7 p-5">
-          <h2 className="text-lg font-semibold">回测数据口径</h2>
-          <p className="mt-3 text-sm leading-6 text-white/58">
-            回测综合历史赛果、赛前赔率快照、球队近况、伤停、xG/射门和盘口变化，用统一规则对比不同联赛、
-            不同月份、不同市场和不同风险偏好的表现。
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs">
-            {["历史赛果", "赛前欧赔", "亚洲让球", "大小球盘口", "xG/射门", "伤停名单"].map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-[color:var(--accent)]/25 bg-black/24 px-3 py-1.5 text-[color:var(--accent)]"
-              >
-                {item}
-              </span>
-            ))}
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-[color:var(--accent)]/22 bg-[color:var(--accent)]/8 p-4">
+            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[color:var(--accent)]">
+              用途
+            </div>
+            <h3 className="mt-2 text-base font-semibold text-white">它用来证明什么</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">
+              不是展示每场都能猜中，而是看模型是否能避开弱信号，只在概率、赔率和风险更匹配的时候入场。
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-black/24 p-4">
+            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/35">
+              看法
+            </div>
+            <h3 className="mt-2 text-base font-semibold text-white">你重点看什么</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">
+              先看净增表现和最大回撤，再看命中率。命中率高但回撤大，说明波动也大；曲线稳，才更适合长期使用。
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-black/24 p-4">
+            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/35">
+              数据
+            </div>
+            <h3 className="mt-2 text-base font-semibold text-white">数据怎么进入模型</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">
+              后续接入真实数据后，会用历史赛果、赛前赔率、亚洲让球、大小球、xG、伤停和盘口变化来校准。
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1.08fr_0.92fr]">
+          <div className="rounded-2xl border border-white/8 bg-black/22 p-4">
+            <h3 className="text-sm font-semibold text-white">关键术语</h3>
+            <div className="mt-3 grid gap-2 text-xs text-white/60 sm:grid-cols-2">
+              <div className="rounded-xl bg-black/28 p-3">
+                <span className="font-semibold text-white">ROI：</span>
+                回报率，正数代表这组历史预测整体有收益。
+              </div>
+              <div className="rounded-xl bg-black/28 p-3">
+                <span className="font-semibold text-white">最大回撤：</span>
+                过程里最大的一段资金回落，用来看策略抗波动能力。
+              </div>
+              <div className="rounded-xl bg-black/28 p-3">
+                <span className="font-semibold text-white">价值差：</span>
+                模型概率和市场赔率之间的差距，差距越明显越值得观察。
+              </div>
+              <div className="rounded-xl bg-black/28 p-3">
+                <span className="font-semibold text-white">跳过场次：</span>
+                信号不够强就不选，减少为了预测而预测。
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[color:var(--accent)]/18 bg-[color:var(--accent)]/7 p-4">
+            <h3 className="text-sm font-semibold text-white">历史预测和预测池的区别</h3>
+            <div className="mt-3 grid gap-2 text-xs leading-5 text-white/56">
+              <div className="rounded-xl bg-black/24 p-3">
+                <span className="font-semibold text-[color:var(--accent)]">历史预测：</span>
+                用过去比赛解释模型表现，帮助用户理解命中率、回撤和筛选逻辑。
+              </div>
+              <div className="rounded-xl bg-black/24 p-3">
+                <span className="font-semibold text-[color:var(--accent)]">预测池：</span>
+                用户选择未来比赛后消耗积分，生成单场建议、常规组合和高倍率机会。
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+              {["历史赛果", "赛前赔率", "亚洲让球", "大小球", "xG/射门", "伤停名单"].map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full border border-[color:var(--accent)]/20 bg-black/22 px-2.5 py-1 text-[color:var(--accent)]/86"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </section>
