@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "模型回测 - ScoutAI",
-  description: "ScoutAI 足球预测模型回测与资金曲线",
+  title: "历史预测 - ScoutAI",
+  description: "ScoutAI 足球历史预测与资金曲线",
 };
 
 type Tone = "green" | "amber" | "red" | "neutral";
@@ -305,7 +305,7 @@ export default function BacktestPage() {
             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[color:var(--accent)]">
               Model Case Study
             </div>
-            <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">模型回测</h1>
+            <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">历史预测</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
               基于历史赛事复盘模型筛选逻辑：先过滤低价值比赛，再比较概率、赔率、价值差和回撤，集中保留优势更明确的场次。
               你可以用它了解不同风险偏好在命中率、收益波动和最大回撤上的差异。

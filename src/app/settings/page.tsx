@@ -323,7 +323,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
         <p className="mt-2 text-sm text-white/60">
-          设置风险偏好、关注联赛和模型市场，ScoutAI 会据此调整首页推荐、收藏预测和 AI 风控建议。
+          设置风险偏好、关注联赛和模型市场，ScoutAI 会据此调整首页推荐、预测池推荐和 AI 风控建议。
         </p>
       </div>
 
@@ -376,7 +376,7 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-sm font-semibold">风险偏好</h2>
             <p className="mt-1 text-xs text-white/50">
-              风险偏好会自动调整下面的模型、市场和策略模式；收藏推荐会直接给出每场建议占比。
+              风险偏好会自动调整下面的模型、市场和策略模式；预测池推荐会直接给出每场建议占比。
             </p>
           </div>
         </div>
@@ -664,7 +664,7 @@ export default function SettingsPage() {
           </div>
           <p className="mt-2 text-xs text-white/52">
             {settingsDirty
-              ? "保存后会同步到账号，并更新收藏推荐的模型和市场偏好。"
+              ? "保存后会同步到账号，并更新预测池推荐的模型和市场偏好。"
               : "设置已同步，提示会自动收起。"}
           </p>
         </div>

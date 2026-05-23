@@ -45,7 +45,7 @@ export const creditPlans: CreditPlan[] = [
     credits: PRO_TRIAL_CREDITS,
     estimate: "预计预测 10 场比赛结果",
     badge: "首单优惠",
-    description: "适合先体验 Pro 预测和收藏推荐。",
+    description: "适合先体验 Pro 预测池推荐。",
   },
   {
     id: "renewal",

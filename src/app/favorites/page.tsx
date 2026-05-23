@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { calculateHotScore } from "@/lib/hot-score";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
@@ -933,6 +934,7 @@ function writeLocalPredictionCredits(value: number) {
 }
 
 export default function FavoritesPage() {
+  const pathname = usePathname();
   const user = useAuthStore((state) => state.user);
   const session = useAuthStore((state) => state.session);
 
@@ -953,6 +955,7 @@ export default function FavoritesPage() {
   const [predictionMessage, setPredictionMessage] = useState<string | null>(null);
 
   const isPro = membership.plan === "pro" && membership.status === "active";
+  const isPredictionPage = pathname.startsWith("/predict");
   const activePrefs = isPro && userPrefs ? userPrefs : defaultPrefs;
 
   useEffect(() => {
@@ -1171,7 +1174,9 @@ export default function FavoritesPage() {
   const predictionPoolIdsKey = predictionPoolIds.join(",");
   const corePicks = activePlan.coreCount;
   const firstPredictionMatchId = predictionPoolMatches[0]?.id;
-  const isEmpty = !loading && favoriteMatches.length === 0 && predictionPoolMatches.length === 0;
+  const isEmpty =
+    !loading &&
+    (isPredictionPage ? predictionPoolMatches.length === 0 : favoriteMatches.length === 0);
   const activeProfile = riskProfiles[activePrefs.risk_level];
   const visibleModels = activePrefs.preferred_models.slice(0, 3);
   const visibleMarkets = activePrefs.preferred_markets.slice(0, 4);
@@ -1311,9 +1316,13 @@ export default function FavoritesPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">收藏与预测池</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {isPredictionPage ? "预测" : "收藏"}
+          </h1>
           <p className="mt-2 text-sm text-white/60">
-            收藏用于实时数据和异常提醒；预测池才会扣预测积分并生成推荐。你可以只收藏比赛，也可以把其中一部分加入预测池。
+            {isPredictionPage
+              ? "预测池用于大模型预测和组合推荐。只有加入预测池的比赛会扣预测积分并生成推荐。"
+              : "收藏用于快速查看实时数据和异常提醒，不会扣预测积分。需要预测时，再把比赛加入预测池。"}
           </p>
         </div>
         <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/60">
@@ -1329,9 +1338,13 @@ export default function FavoritesPage() {
         </div>
       ) : isEmpty ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-6 text-sm text-white/60">
-          <div className="mb-3 text-base text-white/75">暂无收藏或预测比赛</div>
+          <div className="mb-3 text-base text-white/75">
+            {isPredictionPage ? "预测池暂无比赛" : "暂无收藏比赛"}
+          </div>
             <p className="mb-4 max-w-xl text-xs leading-5 text-white/55">
-            去热门赛事页，想跟踪实时数据的点“收藏”，想消耗积分预测的点“加入预测”。两个动作互不影响。
+            {isPredictionPage
+              ? "去热门赛事页，把需要大模型预测的比赛点“加入预测”。预测池里的比赛才会扣积分。"
+              : "去热门赛事页，把想跟踪实时数据和异常提醒的比赛点“收藏”。收藏不会自动进入预测池。"}
           </p>
           <Link
             href="/"
@@ -1342,6 +1355,7 @@ export default function FavoritesPage() {
         </div>
       ) : (
         <>
+          {isPredictionPage && (
           <section className="rounded-2xl border border-[color:var(--accent)]/25 bg-[linear-gradient(180deg,rgba(0,255,135,0.08),rgba(0,0,0,0.2))] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.65)]">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
@@ -1685,7 +1699,9 @@ export default function FavoritesPage() {
               })}
             </div>
           </section>
+          )}
 
+          {!isPredictionPage && (
           <section className="space-y-3">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
@@ -1757,6 +1773,7 @@ export default function FavoritesPage() {
               </div>
             )}
           </section>
+          )}
         </>
       )}
       <ProPurchaseDialog

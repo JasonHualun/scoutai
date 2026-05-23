@@ -9,6 +9,7 @@ const routes = [
   "/settings",
   "/alerts",
   "/favorites",
+  "/predict",
   "/backtest",
   "/support",
 ];
@@ -271,7 +272,7 @@ test("top nav upgrade opens payment dialog above page content", async ({ page })
 test("backtest page renders model validation metrics", async ({ page }) => {
   await page.goto("/backtest", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByRole("heading", { name: "模型回测" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "历史预测" })).toBeVisible();
   await expect(page.getByText("历史复盘口径").first()).toBeVisible();
   await expect(page.getByText("净增表现")).toBeVisible();
   await expect(page.getByText("起始 1000 分 · 结束 1286 分")).toBeVisible();
@@ -533,18 +534,35 @@ test("alerts only monitor favorite matches and surface live data changes", async
   await expect(page.locator("body")).not.toContainText("曼城 vs 热刺");
 });
 
-test("favorites page shows portfolio recommendations for saved matches", async ({ page }) => {
+test("favorites page only explains monitoring logic", async ({ page }) => {
+  await mockFavoriteMatches(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem("scoutai_favorites", JSON.stringify([91001, 91002, 91003]));
+    window.localStorage.setItem("scoutai_prediction_pool", JSON.stringify([91001]));
+  });
+
+  await page.goto("/favorites", { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "收藏", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "收藏监控" })).toBeVisible();
+  await expect(page.getByText("收藏用于快速查看实时数据和异常提醒")).toBeVisible();
+  await expect(page.getByText("收藏 3 场 · 预测池 1 场")).toBeVisible();
+  await expect(page.getByRole("button", { name: "已加入预测池" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "预测池推荐" })).toHaveCount(0);
+});
+
+test("prediction page shows portfolio recommendations for prediction pool matches", async ({ page }) => {
   await mockFavoriteMatches(page);
   await page.addInitScript(() => {
     window.localStorage.setItem("scoutai_favorites", JSON.stringify([91001, 91002, 91003]));
     window.localStorage.setItem("scoutai_prediction_pool", JSON.stringify([91001, 91002, 91003]));
   });
 
-  await page.goto("/favorites", { waitUntil: "networkidle" });
+  await page.goto("/predict", { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { name: "收藏与预测池" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "预测", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "预测池推荐" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "收藏监控" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "收藏监控" })).toHaveCount(0);
   await expect(page.getByText("开始本次预测")).toBeVisible();
   await expect(page.getByText("开通 Pro 后预测")).toBeVisible();
   await expect(page.getByText("当前预测池 3 场，每场扣 5 预测积分，合计扣 15 分。")).toBeVisible();
@@ -556,7 +574,6 @@ test("favorites page shows portfolio recommendations for saved matches", async (
   await expect(page.getByText("分析口径")).toBeVisible();
   await expect(page.getByText("信号强度").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "移出预测池" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "已加入预测池" }).first()).toBeVisible();
   await page.getByRole("button", { name: "开通 Pro", exact: true }).click();
   await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
   await expect(page.getByText("用户专属优惠倒计时")).toBeVisible();
@@ -591,7 +608,7 @@ test("prediction pool prompts credit purchase when balance is too low", async ({
     window.localStorage.setItem("scoutai_prediction_pool", JSON.stringify([91001, 91002, 91003]));
   });
 
-  await page.goto("/favorites", { waitUntil: "networkidle" });
+  await page.goto("/predict", { waitUntil: "networkidle" });
 
   await expect(page.getByRole("button", { name: "购买积分增加场次" })).toBeVisible();
   await expect(page.getByText("还需要 10 预测积分，可预测当前预测池 3 场比赛。")).toBeVisible();
