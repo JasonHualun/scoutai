@@ -952,6 +952,7 @@ export default function FavoritesPage() {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [predictionCredits, setPredictionCredits] = useState<number | null>(null);
   const [predictionStarted, setPredictionStarted] = useState(false);
+  const [predictionSubmitting, setPredictionSubmitting] = useState(false);
   const [predictionMessage, setPredictionMessage] = useState<string | null>(null);
 
   const isPro = membership.plan === "pro" && membership.status === "active";
@@ -1182,16 +1183,21 @@ export default function FavoritesPage() {
   const visibleMarkets = activePrefs.preferred_markets.slice(0, 4);
   const predictionCost = predictionPoolMatches.length * PREDICTION_CREDITS_PER_MATCH;
   const missingPredictionCredits = Math.max(0, predictionCost - (predictionCredits ?? 0));
-  const startPredictionButtonLabel = predictionPoolMatches.length === 0
-    ? "先加入预测池"
-    : !isPro
-      ? "开通 Pro 后预测"
-      : missingPredictionCredits > 0
-        ? "购买积分增加场次"
-        : "开始预测推荐";
+  const startPredictionButtonLabel = predictionSubmitting
+    ? "正在生成推荐..."
+    : predictionStarted
+      ? "已生成本次推荐"
+      : predictionPoolMatches.length === 0
+        ? "先加入预测池"
+        : !isPro
+          ? "开通 Pro 后预测"
+          : missingPredictionCredits > 0
+            ? "购买积分增加场次"
+            : "开始预测推荐";
 
   useEffect(() => {
     setPredictionStarted(false);
+    setPredictionSubmitting(false);
     setPredictionMessage(null);
   }, [predictionPoolIdsKey, predictionPoolMatches.length]);
 
@@ -1234,8 +1240,15 @@ export default function FavoritesPage() {
   }
 
   async function handleStartPrediction() {
+    if (predictionSubmitting) return;
+
     if (!isPro) {
       openUpgrade();
+      return;
+    }
+
+    if (predictionStarted) {
+      setPredictionMessage("本次预测已经生成。修改预测池后，可重新扣分生成新的推荐。");
       return;
     }
 
@@ -1257,9 +1270,11 @@ export default function FavoritesPage() {
       return;
     }
 
-    let nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
-    if (session?.access_token) {
-      try {
+    setPredictionSubmitting(true);
+
+    try {
+      let nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
+      if (session?.access_token) {
         const res = await fetch("/api/prediction-credits", {
           method: "POST",
           headers: {
@@ -1269,6 +1284,7 @@ export default function FavoritesPage() {
           body: JSON.stringify({ cost: predictionCost }),
         });
         const json = (await res.json()) as {
+          ok?: boolean;
           credits?: number;
           error?: string;
         };
@@ -1278,20 +1294,25 @@ export default function FavoritesPage() {
           setPredictionMessage(json.error ?? "预测积分不足，请先购买积分。");
           openUpgrade();
           return;
+        } else {
+          setPredictionMessage(json.error ?? "扣除预测积分失败，请稍后再试。");
+          return;
         }
-      } catch {
-        nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
       }
-    }
 
-    writeLocalPredictionCredits(nextCredits);
-    setPredictionCredits(nextCredits);
-    setPredictionStarted(true);
-    setPredictionMessage(
-      `已扣除 ${predictionCost} 预测积分，本次按预测池 ${predictionPoolMatches.length} 场比赛生成推荐。`
-    );
-    setSelectionTouched(false);
-    setSelectedIds(recommendedIds);
+      writeLocalPredictionCredits(nextCredits);
+      setPredictionCredits(nextCredits);
+      setPredictionStarted(true);
+      setPredictionMessage(
+        `已扣除 ${predictionCost} 预测积分，本次按预测池 ${predictionPoolMatches.length} 场比赛生成推荐。`
+      );
+      setSelectionTouched(false);
+      setSelectedIds(recommendedIds);
+    } catch {
+      setPredictionMessage("扣分接口连接失败，本次没有生成推荐，请稍后重试。");
+    } finally {
+      setPredictionSubmitting(false);
+    }
   }
 
   function togglePortfolioMatch(id: number) {
@@ -1401,15 +1422,31 @@ export default function FavoritesPage() {
                 <button
                   type="button"
                   onClick={handleStartPrediction}
-                  disabled={predictionPoolMatches.length === 0}
+                  disabled={
+                    predictionPoolMatches.length === 0 || predictionSubmitting || predictionStarted
+                  }
                   className="rounded-full bg-[color:var(--accent)] px-5 py-2 text-xs font-black text-black shadow-[0_0_28px_rgba(0,255,135,0.45)] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {startPredictionButtonLabel}
                 </button>
               </div>
               {predictionMessage && (
-                <div className="mt-3 rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-xs text-[color:var(--accent)]">
+                <div
+                  aria-live="polite"
+                  className="mt-3 rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 px-3 py-2 text-xs text-[color:var(--accent)]"
+                >
                   {predictionMessage}
+                </div>
+              )}
+              {predictionStarted && (
+                <div className="mt-3 rounded-xl border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/12 px-3 py-3">
+                  <div className="text-sm font-semibold text-[color:var(--accent)]">
+                    本次推荐已生成
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-white/58">
+                    下方已经按预测池比赛生成单场优先、常规串关和高倍率机会。盘口、阵容或实时数据不完整时，
+                    系统会先按基础模型给出观察建议，并标记“待盘口确认”，后续接入完整实时数据后会自动校准。
+                  </p>
                 </div>
               )}
               {!predictionStarted && isPro && predictionPoolMatches.length > 0 && (

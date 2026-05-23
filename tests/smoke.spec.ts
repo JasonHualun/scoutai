@@ -582,6 +582,49 @@ test("prediction page shows portfolio recommendations for prediction pool matche
   await expect(page.getByText("阿森纳 vs 切尔西").first()).toBeVisible();
 });
 
+test("prediction start shows generated result and prevents duplicate deduction", async ({ page }) => {
+  await mockLoggedInUser(page, "pro-credit@example.com", {
+    plan: "pro",
+    status: "active",
+    proUntil: "2027-05-20T00:00:00.000Z",
+    predictionCredits: 100,
+  });
+  await page.route("**/rest/v1/user_preferences**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "pref-1",
+        risk_level: "balanced",
+        capital: 1000,
+        preferred_markets: ["胜平负", "让球", "大小球", "双方进球"],
+        preferred_models: ["xG-Dixon-Coles", "赔率去水", "近期状态评分"],
+      }),
+    });
+  });
+  await page.route("**/api/prediction-credits", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ cost: 15 });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, credits: 85 }),
+    });
+  });
+  await mockFavoriteMatches(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem("scoutai_favorites", JSON.stringify([91001, 91002, 91003]));
+    window.localStorage.setItem("scoutai_prediction_pool", JSON.stringify([91001, 91002, 91003]));
+  });
+
+  await page.goto("/predict", { waitUntil: "networkidle" });
+
+  await expect(page.getByText("信号强度").first()).toBeVisible();
+  await page.getByRole("button", { name: "开始预测推荐" }).click();
+  await expect(page.getByText("已扣除 15 预测积分，本次按预测池 3 场比赛生成推荐。")).toBeVisible();
+  await expect(page.getByText("本次推荐已生成")).toBeVisible();
+  await expect(page.getByRole("button", { name: "已生成本次推荐" })).toBeDisabled();
+});
+
 test("prediction pool prompts credit purchase when balance is too low", async ({ page }) => {
   await mockLoggedInUser(page, "low-credit@example.com", {
     plan: "pro",
