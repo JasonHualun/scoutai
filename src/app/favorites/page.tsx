@@ -18,6 +18,7 @@ import {
   PRO_TRIAL_CREDITS,
   freeMembership,
 } from "@/lib/membership";
+import { PREDICTION_MODEL_VERSION, PredictionOrderInput } from "@/lib/prediction-orders";
 import { defaultPreferenceValues, RiskLevel, riskProfiles } from "@/lib/preference-options";
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime } from "@/lib/time-format";
@@ -1275,16 +1276,78 @@ export default function FavoritesPage() {
     try {
       let nextCredits = Math.max(0, (predictionCredits ?? 0) - predictionCost);
       if (session?.access_token) {
-        const res = await fetch("/api/prediction-credits", {
+        const selectedPickIds = new Set(recommendedIds);
+        const recommendedPicks = portfolioPicks.filter((pick) => selectedPickIds.has(pick.match.id));
+        const recommendedWeightTotal = recommendedPicks.reduce(
+          (sum, pick) => sum + Math.max(1, pick.exposurePercent),
+          0
+        );
+        const recommendedAllocation = recommendedPicks.reduce<Record<number, number>>((map, pick) => {
+          map[pick.match.id] =
+            recommendedWeightTotal > 0
+              ? (Math.max(1, pick.exposurePercent) / recommendedWeightTotal) * 100
+              : 0;
+          return map;
+        }, {});
+        const orderPayload: PredictionOrderInput = {
+          cost: predictionCost,
+          modelVersion: PREDICTION_MODEL_VERSION,
+          riskLevel: activePrefs.risk_level,
+          summary: `${activePlan.headline} · 预测池 ${predictionPoolMatches.length} 场`,
+          predictionCount: predictionPoolMatches.length,
+          selectedCount: recommendedIds.length,
+          totalSuggestedPercent: 100,
+          preferencesSnapshot: {
+            riskLevel: activePrefs.risk_level,
+            preferredModels: activePrefs.preferred_models,
+            preferredMarkets: activePrefs.preferred_markets,
+            capital: activePrefs.capital,
+          },
+          portfolioSnapshot: {
+            mode: activePlan.mode,
+            label: activePlan.label,
+            headline: activePlan.headline,
+            selectedIds: recommendedIds,
+            generatedAt: new Date().toISOString(),
+          },
+          items: portfolioPicks.map((pick) => ({
+            fixtureId: pick.match.id,
+            league: translateLeague(pick.match.league),
+            homeTeam: translateTeam(pick.match.homeTeam),
+            awayTeam: translateTeam(pick.match.awayTeam),
+            kickoffAt: pick.match.date ?? null,
+            statusAtPrediction: pick.match.status,
+            market: pick.market,
+            direction: pick.direction,
+            recommendation: selectedPickIds.has(pick.match.id) ? "selected" : "observe",
+            confidence: pick.confidence,
+            score: pick.score,
+            grade: pick.grade,
+            riskLabel: pick.riskLabel,
+            suggestedPercent: selectedPickIds.has(pick.match.id)
+              ? recommendedAllocation[pick.match.id] ?? 0
+              : 0,
+            fairOdds: pick.fairOdds,
+            offeredOdds: pick.offeredOdds,
+            valueEdge: pick.valueEdge,
+            oddsLabel: pick.oddsLabel,
+            valueLabel: pick.valueLabel,
+            reason: pick.reason,
+            dataBasis: pick.dataBasis,
+          })),
+        };
+
+        const res = await fetch("/api/prediction-orders", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ cost: predictionCost }),
+          body: JSON.stringify(orderPayload),
         });
         const json = (await res.json()) as {
           ok?: boolean;
+          orderId?: string;
           credits?: number;
           error?: string;
         };

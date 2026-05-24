@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { HistoryPredictionClient } from "./HistoryPredictionClient";
 
 export const metadata: Metadata = {
   title: "历史预测 - ScoutAI",
@@ -325,6 +326,8 @@ export default function BacktestPage() {
           ))}
         </div>
       </section>
+
+      <HistoryPredictionClient />
 
       <section className="grid gap-4 lg:grid-cols-3">
         {profileCases.map((profile) => (

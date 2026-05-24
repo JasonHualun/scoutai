@@ -288,6 +288,90 @@ test("backtest page renders model validation metrics", async ({ page }) => {
   await expect(page.getByText("价值差：")).toBeVisible();
 });
 
+test("backtest page shows logged-in user's real prediction history", async ({ page }) => {
+  await mockLoggedInUser(page, "history-user@example.com", {
+    plan: "pro",
+    status: "active",
+    proUntil: "2027-05-20T00:00:00.000Z",
+    predictionCredits: 85,
+  });
+  await page.route("**/rest/v1/user_preferences**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "pref-1",
+        risk_level: "balanced",
+        capital: 1000,
+        preferred_markets: ["胜平负", "让球", "大小球", "双方进球"],
+        preferred_models: ["xG-Dixon-Coles", "赔率去水", "近期状态评分"],
+      }),
+    });
+  });
+  await page.route("**/api/prediction-orders", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        orders: [
+          {
+            id: "order-1",
+            status: "generated",
+            modelVersion: "scoutai-local-v1",
+            riskLevel: "balanced",
+            cost: 15,
+            creditsBefore: 100,
+            creditsAfter: 85,
+            predictionCount: 3,
+            selectedCount: 2,
+            totalSuggestedPercent: 100,
+            summary: "常规串关 · 预测池 3 场",
+            createdAt: "2026-05-24T08:00:00.000Z",
+            settledAt: null,
+            items: [
+              {
+                id: "item-1",
+                orderId: "order-1",
+                fixtureId: 91001,
+                league: "英超",
+                homeTeam: "曼城",
+                awayTeam: "热刺",
+                kickoffAt: "2026-05-24T15:00:00.000Z",
+                statusAtPrediction: "upcoming",
+                market: "胜平负",
+                direction: "主胜方向",
+                recommendation: "selected",
+                confidence: 76,
+                score: 82,
+                grade: "A",
+                riskLabel: "中等波动",
+                suggestedPercent: 54.2,
+                fairOdds: 1.62,
+                offeredOdds: 1.8,
+                valueEdge: 8.4,
+                oddsLabel: "市场 1.80 / 公平 1.62",
+                valueLabel: "模型高于市场 8.4%",
+                reason: "信号较强。",
+                dataBasis: ["预测池", "盘口赔率"],
+                resultStatus: "pending",
+                finalScore: null,
+                settledAt: null,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/backtest", { waitUntil: "networkidle" });
+
+  await expect(page.getByRole("heading", { name: "我的真实预测记录" })).toBeVisible();
+  await expect(page.getByText("扣 15 积分 · 预测 3 场 · 推荐 2 场")).toBeVisible();
+  await expect(page.getByText("曼城 vs 热刺").first()).toBeVisible();
+  await expect(page.getByText("待赛果").first()).toBeVisible();
+});
+
 test("match detail flow can generate a local analysis", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "五大联赛 + 世界杯" })).toHaveCount(0);
@@ -604,12 +688,15 @@ test("prediction start shows generated result and prevents duplicate deduction",
       }),
     });
   });
-  await page.route("**/api/prediction-credits", async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ cost: 15 });
+  await page.route("**/api/prediction-orders", async (route) => {
+    const payload = route.request().postDataJSON();
+    expect(payload.cost).toBe(15);
+    expect(payload.predictionCount).toBe(3);
+    expect(payload.items.length).toBeGreaterThan(0);
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ ok: true, credits: 85 }),
+      body: JSON.stringify({ ok: true, orderId: "order-1", credits: 85 }),
     });
   });
   await mockFavoriteMatches(page);
