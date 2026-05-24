@@ -19,7 +19,12 @@ import {
   freeMembership,
 } from "@/lib/membership";
 import { PREDICTION_MODEL_VERSION, PredictionOrderInput } from "@/lib/prediction-orders";
-import { defaultPreferenceValues, RiskLevel, riskProfiles } from "@/lib/preference-options";
+import {
+  defaultPreferenceValues,
+  displayPreferenceLabel,
+  RiskLevel,
+  riskProfiles,
+} from "@/lib/preference-options";
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime } from "@/lib/time-format";
 import { useAuthStore } from "@/lib/authStore";
@@ -130,7 +135,7 @@ type PortfolioPick = {
   offeredOdds: number | null;
   fairOdds: number;
   hasRealOdds: boolean;
-  portfolioBucket: "稳定主选" | "价值候选" | "爆冷小注" | "观察";
+  portfolioBucket: "稳定主选" | "价值候选" | "冷门观察" | "观察";
   dataBasis: string[];
   exposurePercent: number;
   exposurePoints: number;
@@ -185,8 +190,8 @@ const portfolioModes: Array<{
   },
   {
     id: "balanced",
-    label: "常规串关",
-    description: "从预测池里挑赔率 2 以上的正常组合，兼顾强度和分散度。",
+    label: "常规组合",
+    description: "从预测池里挑综合指数 2 以上的常规组合，兼顾强度和分散度。",
     size: 3,
     multiplier: 0.9,
     minScore: 60,
@@ -194,7 +199,7 @@ const portfolioModes: Array<{
   },
   {
     id: "opportunity",
-    label: "高倍率串关",
+    label: "高倍率组合",
     description: "寻找预计组合倍率 5 以上的机会方向，只适合小比例观察。",
     size: 3,
     multiplier: 1.08,
@@ -468,7 +473,7 @@ function buildOutcomeBucket(
   offeredOdds: number | null,
   edge: number | null
 ): PortfolioPick["portfolioBucket"] {
-  if ((offeredOdds ?? fairOdds) >= 3.2 && (edge ?? 0) >= 2) return "爆冷小注";
+  if ((offeredOdds ?? fairOdds) >= 3.2 && (edge ?? 0) >= 2) return "冷门观察";
   if (probability >= 58 && fairOdds <= 1.85) return "稳定主选";
   if (edge != null && edge >= 3) return "价值候选";
   if (probability >= 52 && fairOdds <= 2.1) return "价值候选";
@@ -477,7 +482,7 @@ function buildOutcomeBucket(
 
 function valueLabel(edge: number | null, hasRealOdds: boolean) {
   if (edge == null) {
-    return hasRealOdds ? "盘口数据不足" : "待盘口确认";
+    return hasRealOdds ? "市场数据不足" : "待市场确认";
   }
   if (edge >= 3) return `模型高于市场 ${edge.toFixed(1)}%`;
   if (edge <= -3) return `市场偏热 ${Math.abs(edge).toFixed(1)}%`;
@@ -512,7 +517,7 @@ function buildPreferredOpportunities(
         valueLabel: valueLabel(signal.edge, snapshot.hasRealOdds),
         oddsLabel: signal.offeredOdds
           ? `市场 ${signal.offeredOdds.toFixed(2)} / 公平 ${signal.fairOdds.toFixed(2)}`
-          : `公平 ${signal.fairOdds.toFixed(2)} / 待盘口`,
+          : `公平 ${signal.fairOdds.toFixed(2)} / 待市场`,
       });
     });
   }
@@ -531,8 +536,8 @@ function buildPreferredOpportunities(
       offeredOdds: null,
       edge: null,
       bucket: probability >= 58 ? "价值候选" : "观察",
-      valueLabel: snapshot.hasRealOdds ? "缺少大小球赔率" : "待盘口确认",
-      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待盘口`,
+      valueLabel: snapshot.hasRealOdds ? "缺少大小球市场指数" : "待市场确认",
+      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待市场`,
     });
   }
 
@@ -546,8 +551,8 @@ function buildPreferredOpportunities(
       offeredOdds: null,
       edge: null,
       bucket: probability >= 57 ? "价值候选" : "观察",
-      valueLabel: snapshot.hasRealOdds ? "缺少双方进球赔率" : "待盘口确认",
-      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待盘口`,
+      valueLabel: snapshot.hasRealOdds ? "缺少双方进球市场指数" : "待市场确认",
+      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待市场`,
     });
   }
 
@@ -570,7 +575,7 @@ function buildPreferredOpportunities(
       edge: null,
       bucket: "稳定主选",
       valueLabel: "低波动保护",
-      oddsLabel: `公平 ${fairOddsFromProbability(best.probability).toFixed(2)} / 待盘口`,
+      oddsLabel: `公平 ${fairOddsFromProbability(best.probability).toFixed(2)} / 待市场`,
     });
   }
 
@@ -589,7 +594,7 @@ function buildPreferredOpportunities(
       edge: null,
       bucket: probability >= 55 ? "稳定主选" : "价值候选",
       valueLabel: "平局保护",
-      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待盘口`,
+      oddsLabel: `公平 ${fairOddsFromProbability(probability).toFixed(2)} / 待市场`,
     });
   }
 
@@ -607,7 +612,7 @@ function buildPreferredOpportunities(
         valueLabel: valueLabel(top.edge, snapshot.hasRealOdds),
         oddsLabel: top.offeredOdds
           ? `市场 ${top.offeredOdds.toFixed(2)} / 公平 ${top.fairOdds.toFixed(2)}`
-          : `公平 ${top.fairOdds.toFixed(2)} / 待盘口`,
+          : `公平 ${top.fairOdds.toFixed(2)} / 待市场`,
       });
     }
   }
@@ -620,9 +625,9 @@ function buildPreferredOpportunities(
       fairOdds: 100 / Math.max(8, prediction.confidence * 0.18),
       offeredOdds: null,
       edge: null,
-      bucket: "爆冷小注",
-      valueLabel: "高赔率小注",
-      oddsLabel: "需真实比分赔率",
+      bucket: "冷门观察",
+      valueLabel: "高波动观察",
+      oddsLabel: "需真实比分市场指数",
     });
   }
 
@@ -646,7 +651,7 @@ function buildPreferredOpportunities(
       valueLabel: valueLabel(fallback.edge, snapshot.hasRealOdds),
       oddsLabel: fallback.offeredOdds
         ? `市场 ${fallback.offeredOdds.toFixed(2)} / 公平 ${fallback.fairOdds.toFixed(2)}`
-        : `公平 ${fallback.fairOdds.toFixed(2)} / 待盘口`,
+        : `公平 ${fallback.fairOdds.toFixed(2)} / 待市场`,
     },
   ];
 }
@@ -659,7 +664,7 @@ function chooseOpportunity(
     const edgeScore = item.edge ?? (item.bucket === "稳定主选" ? 1 : 0);
     const oddsScore = item.offeredOdds ?? item.fairOdds;
     const bucketScore =
-      item.bucket === "稳定主选" ? 8 : item.bucket === "价值候选" ? 5 : item.bucket === "爆冷小注" ? 3 : 0;
+      item.bucket === "稳定主选" ? 8 : item.bucket === "价值候选" ? 5 : item.bucket === "冷门观察" ? 3 : 0;
 
     const score =
       mode === "stable"
@@ -686,8 +691,8 @@ function combinedOdds(picks: PortfolioPick[]) {
 function buildDataBasis(match: MatchCard, prefs: UserPrefs, snapshot: ModelSnapshot) {
   const basis = ["预测池", "赛程时间", "联赛权重", "球队关注度"];
   if (match.status === "live") basis.push("实时比分");
-  if (snapshot.hasRealOdds) basis.push("盘口赔率");
-  else basis.push("待盘口");
+  if (snapshot.hasRealOdds) basis.push("市场指数");
+  else basis.push("待市场确认");
   if (snapshot.hasStats) basis.push("实时统计");
   if (snapshot.hasRecentForm) basis.push("近况");
   if (prefs.preferred_models.includes("凯利风控")) basis.push("模拟风控");
@@ -710,10 +715,10 @@ function buildReason(
       : "比分差距已经拉开，模型会降低组合权重，避免追高。";
   }
   if (!snapshot.hasRealOdds) {
-    return `盘口赔率暂未更新，先按模型公平赔率筛选：${opportunity.direction}，${opportunity.valueLabel}。盘口确认后会重新计算价值差和占比建议。`;
+    return `市场指数暂未更新，先按模型公平指数筛选：${opportunity.direction}，${opportunity.valueLabel}。市场确认后会重新计算价值差和占比建议。`;
   }
-  if (opportunity.bucket === "爆冷小注") {
-    return `${opportunity.direction} 属于高赔率机会，${opportunity.valueLabel}；只适合小比例放进机会组合，不适合重仓。`;
+  if (opportunity.bucket === "冷门观察") {
+    return `${opportunity.direction} 属于高波动机会，${opportunity.valueLabel}；只适合小比例放进机会组合，不适合过度集中。`;
   }
   if (opportunity.bucket === "稳定主选") {
     return `${opportunity.direction} 的模型概率更稳，${opportunity.valueLabel}；适合作为稳定组合的主选之一。`;
@@ -725,7 +730,7 @@ function buildReason(
     return `${opportunity.direction} 信息量够用，适合作为分散场次；不建议把本次比例集中在这一场。`;
   }
   return mode === "opportunity"
-    ? "信号偏弱，只能作为小比例机会观察，等盘口和阵容数据确认。"
+    ? "信号偏弱，只能作为小比例机会观察，等市场线和阵容数据确认。"
     : "当前信号不够强，优先放在观察区，不强行纳入组合。";
 }
 
@@ -798,7 +803,7 @@ function buildPortfolioPick(
   const bucketMultiplier =
     opportunity.bucket === "稳定主选"
       ? 1.15
-      : opportunity.bucket === "爆冷小注"
+      : opportunity.bucket === "冷门观察"
         ? 0.42
         : opportunity.bucket === "价值候选"
           ? 0.82
@@ -807,7 +812,7 @@ function buildPortfolioPick(
   const rawPercent =
     ((score - 48) / 52) * cap * modeConfig.multiplier * bucketMultiplier * oddsConfidenceMultiplier;
   const maxSinglePercent =
-    opportunity.bucket === "爆冷小注"
+    opportunity.bucket === "冷门观察"
       ? cap * 0.22
       : opportunity.bucket === "稳定主选"
         ? cap * 0.58
@@ -816,12 +821,12 @@ function buildPortfolioPick(
           : cap * 0.38;
   const exposurePercent = worthWatching ? clamp(rawPercent, 0.6, maxSinglePercent) : 0;
   const riskLabel =
-    opportunity.bucket === "爆冷小注"
+    opportunity.bucket === "冷门观察"
       ? "波动偏高"
       : buildPortfolioRiskLabel(mode, score, hoursUntil, match.status);
   const role = !worthWatching
     ? "观察"
-    : opportunity.bucket === "爆冷小注"
+    : opportunity.bucket === "冷门观察"
       ? "机会"
       : opportunity.bucket === "稳定主选" || score >= 74
       ? "核心"
@@ -902,7 +907,7 @@ function buildPortfolioPlan(
         ? "稳单优先"
         : mode === "opportunity"
           ? "高倍率机会"
-          : "常规串关";
+        : "常规组合";
   const summary =
     selected.length <= 1
       ? "以单场为主，不为了组合而组合。"
@@ -1180,8 +1185,8 @@ export default function FavoritesPage() {
     !loading &&
     (isPredictionPage ? predictionPoolMatches.length === 0 : favoriteMatches.length === 0);
   const activeProfile = riskProfiles[activePrefs.risk_level];
-  const visibleModels = activePrefs.preferred_models.slice(0, 3);
-  const visibleMarkets = activePrefs.preferred_markets.slice(0, 4);
+  const visibleModels = activePrefs.preferred_models.slice(0, 3).map(displayPreferenceLabel);
+  const visibleMarkets = activePrefs.preferred_markets.slice(0, 4).map(displayPreferenceLabel);
   const predictionCost = predictionPoolMatches.length * PREDICTION_CREDITS_PER_MATCH;
   const missingPredictionCredits = Math.max(0, predictionCost - (predictionCredits ?? 0));
   const startPredictionButtonLabel = predictionSubmitting
@@ -1254,7 +1259,7 @@ export default function FavoritesPage() {
     }
 
     if (detailLoading) {
-      setPredictionMessage("正在读取盘口和近况数据，请稍等几秒再开始预测。");
+      setPredictionMessage("正在读取市场线和近况数据，请稍等几秒再开始预测。");
       return;
     }
 
@@ -1452,7 +1457,7 @@ export default function FavoritesPage() {
                 </p>
                 {detailLoading && (
                   <p className="mt-2 text-[11px] text-amber-200/80">
-                    正在读取预测池比赛的盘口和模型数据...
+                    正在读取预测池比赛的市场线和模型数据...
                   </p>
                 )}
               </div>
@@ -1507,14 +1512,14 @@ export default function FavoritesPage() {
                     本次推荐已生成
                   </div>
                   <p className="mt-1 text-xs leading-5 text-white/58">
-                    下方已经按预测池比赛生成单场优先、常规串关和高倍率机会。盘口、阵容或实时数据不完整时，
-                    系统会先按基础模型给出观察建议，并标记“待盘口确认”，后续接入完整实时数据后会自动校准。
+                    下方已经按预测池比赛生成单场优先、常规组合和高倍率机会。市场线、阵容或实时数据不完整时，
+                    系统会先按基础模型给出观察建议，并标记“待市场确认”，后续接入完整实时数据后会自动校准。
                   </p>
                 </div>
               )}
               {!predictionStarted && isPro && predictionPoolMatches.length > 0 && (
                 <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/20 px-3 py-2 text-xs text-white/45">
-                  还没有开始本次预测。点击按钮后才会扣积分，并展开单场、常规串关和高倍率串关推荐。
+                  还没有开始本次预测。点击按钮后才会扣积分，并展开单场、常规组合和高倍率组合推荐。
                 </div>
               )}
               {isPro && predictionPoolMatches.length === 0 && (
@@ -1687,11 +1692,11 @@ export default function FavoritesPage() {
               <span className="font-semibold text-[color:var(--accent)]">组合建议：</span>
               {selectedPicks.length === 0
                 ? "预测池里暂时没有足够强的信号，建议先观察，不强行组合。"
-                : `${activePlan.headline}：稳定主选会给更高占比，爆冷或高赔率方向只保留小比例观察。已选 ${selectedPicks.length} 场，优先分散到不同比赛，不把占比集中在单一场次。`}
+                : `${activePlan.headline}：稳定主选会给更高占比，冷门或高波动方向只保留小比例观察。已选 ${selectedPicks.length} 场，优先分散到不同比赛，不把占比集中在单一场次。`}
             </div>
             <div className="mt-3 rounded-xl border border-white/8 bg-black/20 p-3 text-xs leading-6 text-white/50">
               <span className="font-semibold text-white/75">分析口径：</span>
-              组合先读取设置页的风险偏好、模型和关注市场，再逐场计算模型公平赔率、市场赔率去水概率和价值差。盘口赔率更新后才按“模型高于市场”给价值分；没有盘口时只显示待盘口确认，避免把基础估算当成正式建议。
+              组合先读取设置页的风险偏好、模型和关注口径，再逐场计算模型公平指数、市场隐含概率和价值差。市场指数更新后才按“模型高于市场”给价值分；没有市场数据时只显示待市场确认，避免把基础估算当成正式建议。
             </div>
 
             <div className={`mt-4 grid gap-3 ${isPro ? "" : "opacity-70"}`}>
@@ -1752,7 +1757,7 @@ export default function FavoritesPage() {
                           <div className="mt-1 font-semibold text-white">{pick.direction}</div>
                         </div>
                         <div className="rounded-xl bg-black/25 p-2">
-                          <div className="text-white/42">赔率参考</div>
+                          <div className="text-white/42">市场参考</div>
                           <div className="mt-1 font-semibold text-white">{pick.oddsLabel}</div>
                         </div>
                         <div className="rounded-xl bg-black/25 p-2">

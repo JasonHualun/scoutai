@@ -48,12 +48,12 @@ const headlineMetrics: CaseMetric[] = [
   {
     label: "回测样本",
     value: "96",
-    hint: "覆盖五大联赛核心盘口",
+    hint: "覆盖五大联赛核心市场线",
   },
   {
     label: "精选入场",
     value: "31",
-    hint: "只保留信号强、赔率合适的比赛",
+    hint: "只保留信号强、市场指数合适的比赛",
     tone: "green",
   },
   {
@@ -63,7 +63,7 @@ const headlineMetrics: CaseMetric[] = [
     tone: "green",
   },
   {
-    label: "最大回撤",
+    label: "最大回落",
     value: "72",
     hint: "区间内最大资金回落",
     tone: "amber",
@@ -96,12 +96,12 @@ const profileCases: ProfileCase[] = [
     brier: "0.198",
     edge: "21.4%",
     pass: "65",
-    description: "兼顾命中率、赔率和回撤，作为默认均衡策略口径。",
+    description: "兼顾判断准确率、市场指数和最大回落，作为默认均衡策略口径。",
     tone: "green",
   },
   {
     label: "进取型",
-    headline: "高赔率机会",
+    headline: "高波动机会",
     profit: "+418 分",
     hitRate: "64.7%",
     roi: "+41.8%",
@@ -110,7 +110,7 @@ const profileCases: ProfileCase[] = [
     brier: "0.226",
     edge: "24.9%",
     pass: "62",
-    description: "加入更多高赔率机会，潜在收益更高，同时波动和回撤也会明显变大。",
+    description: "加入更多高波动机会，潜在净增更高，同时波动和回落也会明显变大。",
     tone: "amber",
   },
 ];
@@ -163,7 +163,7 @@ const detailRows: DetailRow[] = [
     edge: "16.3%",
     stake: "8%",
     result: "+35 分",
-    note: "降低赔率换稳定性，用于组合里的防守位。",
+    note: "降低市场指数换稳定性，用于组合里的防守位。",
     win: true,
   },
   {
@@ -175,7 +175,7 @@ const detailRows: DetailRow[] = [
     edge: "19.1%",
     stake: "6%",
     result: "-60 分",
-    note: "节奏判断正确但临场转化偏低，计入回撤控制。",
+    note: "节奏判断正确但临场转化偏低，计入回落控制。",
     win: false,
   },
   {
@@ -187,7 +187,7 @@ const detailRows: DetailRow[] = [
     edge: "27.4%",
     stake: "8%",
     result: "+42 分",
-    note: "强队主场优势明确，盘口水位稳定。",
+    note: "强队主场优势明确，市场线稳定。",
     win: true,
   },
   {
@@ -258,11 +258,11 @@ function ProfileCard({ profile }: { profile: ProfileCase }) {
 
       <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">命中率</div>
+          <div className="text-white/45">判断准确率</div>
           <div className="mt-1 text-2xl font-bold">{profile.hitRate}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">ROI</div>
+          <div className="text-white/45">净增率</div>
           <div className="mt-1 text-2xl font-bold text-[color:var(--accent)]">{profile.roi}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
@@ -270,7 +270,7 @@ function ProfileCard({ profile }: { profile: ProfileCase }) {
           <div className="mt-1 text-2xl font-bold">{profile.entries}</div>
         </div>
         <div className="rounded-xl bg-black/30 p-3">
-          <div className="text-white/45">最大回撤</div>
+          <div className="text-white/45">最大回落</div>
           <div className="mt-1 text-2xl font-bold text-amber-200">{profile.drawdown}</div>
         </div>
       </div>
@@ -308,8 +308,8 @@ export default function BacktestPage() {
             </div>
             <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">历史预测</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-              基于历史赛事复盘模型筛选逻辑：先过滤低价值比赛，再比较概率、赔率、价值差和回撤，集中保留优势更明确的场次。
-              你可以用它了解不同风险偏好在命中率、收益波动和最大回撤上的差异。
+              基于历史赛事校验模型筛选逻辑：先过滤低价值比赛，再比较概率、市场指数、价值差和最大回落，集中保留优势更明确的场次。
+              你可以用它了解不同风险偏好在判断准确率、曲线波动和最大回落上的差异。
             </p>
           </div>
           <Link
@@ -341,9 +341,9 @@ export default function BacktestPage() {
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/35">
               资金变化
             </div>
-            <h2 className="mt-2 text-xl font-semibold">稳健型资金曲线</h2>
+          <h2 className="mt-2 text-xl font-semibold">稳健型模拟曲线</h2>
             <p className="mt-2 text-sm leading-6 text-white/55">
-              资金曲线记录稳健型策略的波动过程：模型先过滤弱信号，再把建议集中在概率、赔率和风险更匹配的场次。
+              模拟曲线记录稳健型策略的波动过程：模型先过滤弱信号，再把建议集中在概率、市场指数和风险更匹配的场次。
             </p>
           </div>
           <div className="rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)]">
@@ -374,11 +374,11 @@ export default function BacktestPage() {
           <div>
             <h2 className="text-xl font-semibold">精选入场明细</h2>
             <p className="mt-2 text-sm text-white/55">
-              重点不在每场都预测，而在筛出值得观察的场次，并跳过赔率、概率或风险不匹配的比赛。
+              重点不在每场都预测，而在筛出值得观察的场次，并跳过市场指数、概率或风险不匹配的比赛。
             </p>
           </div>
           <div className="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
-            历史复盘口径
+            历史校验口径
           </div>
         </div>
 
@@ -387,7 +387,7 @@ export default function BacktestPage() {
             <span>日期</span>
             <span>比赛</span>
             <span className="hidden md:block">选择</span>
-            <span className="hidden md:block">赔率</span>
+            <span className="hidden md:block">市场指数</span>
             <span>价值差</span>
             <span>建议</span>
             <span>结果</span>
@@ -421,7 +421,7 @@ export default function BacktestPage() {
             <h2 className="text-xl font-semibold">历史预测怎么看</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-white/56">
               这一页不是实时推荐入口，而是把过去的比赛按同一套模型规则重新跑一遍：
-              看模型会选哪些、会跳过哪些、收益曲线是否平稳，帮助你判断 ScoutAI 的风格和风险。
+              看模型会选哪些、会跳过哪些、模拟曲线是否平稳，帮助你判断 ScoutAI 的风格和风险。
             </p>
           </div>
           <div className="rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)]">
@@ -436,7 +436,7 @@ export default function BacktestPage() {
             </div>
             <h3 className="mt-2 text-base font-semibold text-white">它用来证明什么</h3>
             <p className="mt-2 text-xs leading-5 text-white/55">
-              不是展示每场都能猜中，而是看模型是否能避开弱信号，只在概率、赔率和风险更匹配的时候入场。
+              不是展示每场都能猜中，而是看模型是否能避开弱信号，只在概率、市场指数和风险更匹配的时候纳入分析。
             </p>
           </div>
 
@@ -446,7 +446,7 @@ export default function BacktestPage() {
             </div>
             <h3 className="mt-2 text-base font-semibold text-white">你重点看什么</h3>
             <p className="mt-2 text-xs leading-5 text-white/55">
-              先看净增表现和最大回撤，再看命中率。命中率高但回撤大，说明波动也大；曲线稳，才更适合长期使用。
+              先看净增表现和最大回落，再看判断准确率。准确率高但回落大，说明波动也大；曲线稳，才更适合长期使用。
             </p>
           </div>
 
@@ -456,7 +456,7 @@ export default function BacktestPage() {
             </div>
             <h3 className="mt-2 text-base font-semibold text-white">数据怎么进入模型</h3>
             <p className="mt-2 text-xs leading-5 text-white/55">
-              后续接入真实数据后，会用历史赛果、赛前赔率、亚洲让球、大小球、xG、伤停和盘口变化来校准。
+              后续接入真实数据后，会用历史赛果、赛前市场指数、亚洲让球、大小球、xG、伤停和市场线变化来校准。
             </p>
           </div>
         </div>
@@ -466,16 +466,16 @@ export default function BacktestPage() {
             <h3 className="text-sm font-semibold text-white">关键术语</h3>
             <div className="mt-3 grid gap-2 text-xs text-white/60 sm:grid-cols-2">
               <div className="rounded-xl bg-black/28 p-3">
-                <span className="font-semibold text-white">ROI：</span>
-                回报率，正数代表这组历史预测整体有收益。
+                <span className="font-semibold text-white">净增率：</span>
+                净增率，正数代表这组历史预测整体表现为正。
               </div>
               <div className="rounded-xl bg-black/28 p-3">
-                <span className="font-semibold text-white">最大回撤：</span>
-                过程里最大的一段资金回落，用来看策略抗波动能力。
+                <span className="font-semibold text-white">最大回落：</span>
+                过程里最大的一段模拟回落，用来看策略抗波动能力。
               </div>
               <div className="rounded-xl bg-black/28 p-3">
                 <span className="font-semibold text-white">价值差：</span>
-                模型概率和市场赔率之间的差距，差距越明显越值得观察。
+                模型概率和市场隐含概率之间的差距，差距越明显越值得观察。
               </div>
               <div className="rounded-xl bg-black/28 p-3">
                 <span className="font-semibold text-white">跳过场次：</span>
@@ -489,7 +489,7 @@ export default function BacktestPage() {
             <div className="mt-3 grid gap-2 text-xs leading-5 text-white/56">
               <div className="rounded-xl bg-black/24 p-3">
                 <span className="font-semibold text-[color:var(--accent)]">历史预测：</span>
-                用过去比赛解释模型表现，帮助用户理解命中率、回撤和筛选逻辑。
+                用过去比赛解释模型表现，帮助用户理解判断准确率、回落和筛选逻辑。
               </div>
               <div className="rounded-xl bg-black/24 p-3">
                 <span className="font-semibold text-[color:var(--accent)]">预测池：</span>
@@ -497,7 +497,7 @@ export default function BacktestPage() {
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-              {["历史赛果", "赛前赔率", "亚洲让球", "大小球", "xG/射门", "伤停名单"].map((item) => (
+              {["历史赛果", "赛前市场指数", "亚洲让球", "大小球", "xG/射门", "伤停名单"].map((item) => (
                 <span
                   key={item}
                   className="rounded-full border border-[color:var(--accent)]/20 bg-black/22 px-2.5 py-1 text-[color:var(--accent)]/86"

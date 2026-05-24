@@ -5,13 +5,14 @@ import {
   PredictionResult,
   UserPreferences,
 } from "./football-prediction";
+import { displayPreferenceLabel } from "./preference-options";
 
 export type { MatchAnalysisData, PredictionResult, UserPreferences };
 
 type Provider = "openai" | "anthropic" | "minimax" | "local";
 
 const ANALYSIS_SYSTEM_PROMPT =
-  "你是一个严谨的足球量化分析师。你必须尊重输入中的数学概率，不要承诺收益，不要制造事实，只输出中文。";
+  "你是一个严谨的足球量化分析师。你必须尊重输入中的数学概率，不要承诺结果，不要制造事实，只输出中文。";
 
 function preferredProvider(): Provider {
   const configured = process.env.AI_PROVIDER?.toLowerCase();
@@ -80,11 +81,14 @@ function buildPrompt(
   prefs: UserPreferences,
   prediction: PredictionResult
 ) {
-  return `你是 ScoutAI 的足球量化分析引擎。请基于下列确定性模型结果生成中文分析，不能编造不存在的伤停、阵容、赔率或比分。
+  const marketLabels = prefs.preferred_markets.map(displayPreferenceLabel);
+  const modelLabels = prefs.preferred_models.map(displayPreferenceLabel);
+
+  return `你是 ScoutAI 的足球量化分析引擎。请基于下列确定性模型结果生成中文分析，不能编造不存在的伤停、阵容、市场指数或比分。
 
 任务要求：
-1. 以概率和风险为核心，不承诺收益。
-2. 先解释模型判断，再给出主推、备选、投注占比和风险点。
+1. 以概率和风险为核心，不承诺结果。
+2. 先解释模型判断，再给出主方向、备选方向、策略占比和风险点。
 3. 如果市场价值差不明显，要明确提示谨慎或放弃。
 4. 输出控制在 700 字以内，结构清晰。
 
@@ -95,15 +99,15 @@ function buildPrompt(
 - 客队近况：${data.awayForm}
 - 主队数据：控球 ${data.homeStats.possession}%，射门 ${data.homeStats.shots}，射正 ${data.homeStats.shotsOnTarget}，xG ${data.homeStats.xG}，角球 ${data.homeStats.corners}
 - 客队数据：控球 ${data.awayStats.possession}%，射门 ${data.awayStats.shots}，射正 ${data.awayStats.shotsOnTarget}，xG ${data.awayStats.xG}，角球 ${data.awayStats.corners}
-- 欧赔：主胜 ${data.odds.homeWin} / 平 ${data.odds.draw} / 客胜 ${data.odds.awayWin}
-- 盘口：${data.odds.handicap}
+- 胜平负市场指数：主胜 ${data.odds.homeWin} / 平 ${data.odds.draw} / 客胜 ${data.odds.awayWin}
+- 市场线：${data.odds.handicap}
 - 大小球：${data.odds.overUnder}
 
 用户画像：
 - 风险偏好：${translateRiskLevel(prefs.risk_level)}
-- 投注建议：只输出每场建议占比，不展示模拟本金或总基准
-- 关注市场：${prefs.preferred_markets.join("、") || "胜平负、让球、大小球、双方进球"}
-- 偏好模型：${prefs.preferred_models.join(" + ") || "数学模型 + 大模型解释"}
+- 策略输出：只输出每场建议占比，不展示模拟本金或总基准
+- 关注口径：${marketLabels.join("、") || "胜平负、让球、大小球、双方进球"}
+- 偏好模型：${modelLabels.join(" + ") || "数学模型 + 大模型解释"}
 
 确定性模型结果：
 ${formatPredictionSummary(data, prediction)}

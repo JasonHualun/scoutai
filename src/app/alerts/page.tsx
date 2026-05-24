@@ -126,7 +126,7 @@ export default function AlertsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">异常提醒</h1>
           <p className="mt-2 text-sm text-white/60">
-            只监控你收藏里的比赛。进球、牌、角球、赔率异动和冷门概率升高时，站内提醒和 Chrome 通知会同步触发。
+            只监控你收藏里的比赛。进球、牌、角球、市场指数异动和冷门概率升高时，站内提醒和 Chrome 通知会同步触发。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -254,14 +254,14 @@ export default function AlertsPage() {
               2. 黄牌、红牌、角球增加：实时数据 API 返回后会按变化提醒。
             </div>
             <div className="rounded-xl bg-black/25 px-3 py-2">
-              3. 赔率大幅变化或冷门概率升高：提醒重新检查收藏组合风险。
+              3. 市场指数大幅变化或冷门概率升高：提醒重新检查收藏赛事风险。
             </div>
             <div className="rounded-xl bg-black/25 px-3 py-2">
               4. 收藏比赛进入实时监控：从开赛后第一次进入实时接口时会提醒。
             </div>
           </div>
           <p className="mt-3 text-[11px] leading-5 text-white/45">
-            当前只对收藏比赛生效。红黄牌、角球、赔率和冷门概率会在实时数据 API 返回对应字段后进入同一套提醒。
+            当前只对收藏比赛生效。红黄牌、角球、市场指数和冷门概率会在实时数据 API 返回对应字段后进入同一套提醒。
           </p>
         </div>
       </section>
@@ -269,7 +269,7 @@ export default function AlertsPage() {
       {visibleAlerts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/70 p-6 text-sm leading-6 text-white/60">
           {favoriteCount > 0
-            ? "暂无收藏比赛异常提醒。网站会每 60 秒检查收藏池里的实时比赛；发生进球、牌、角球、盘口或冷门概率变化时会自动写入这里。"
+            ? "暂无收藏比赛异常提醒。网站会每 60 秒检查收藏池里的实时比赛；发生进球、牌、角球、市场线或冷门概率变化时会自动写入这里。"
             : "你还没有收藏要监控的比赛。先到热门赛事点星标加入收藏池，开赛后这里才会提醒。"}
         </div>
       ) : (

@@ -248,13 +248,13 @@ export default function HomeClient({ initialMatches }: Props) {
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]/80">
-            Live Market Board
+            Live Data Board
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
             热门赛事
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
-            聚合实时比分、赛程、赔率和热度信号，优先展示更值得跟踪的比赛。
+            聚合实时比分、赛程、市场指数和热度信号，优先展示更值得跟踪的比赛。
           </p>
         </div>
 
@@ -383,7 +383,7 @@ export default function HomeClient({ initialMatches }: Props) {
                       </div>
 
                       <div className="mt-4 flex items-center justify-between text-[11px] text-white/45">
-                        <span>查看概率预测、赔率分析和 AI 解读</span>
+                        <span>查看概率预测、市场分析和 AI 解读</span>
                         <span className="text-[color:var(--accent)]/80 transition group-hover:translate-x-0.5">
                           详情 →
                         </span>
@@ -438,7 +438,7 @@ export default function HomeClient({ initialMatches }: Props) {
             <ul className="mt-3 space-y-2 text-xs leading-5 text-white/60">
               <li>· 热门排序综合联赛权重、豪门球队、开赛时间和实时比分紧张度。</li>
               <li>· 实时优先只看北京时间先后，方便你按今晚赛程顺序查看。</li>
-              <li>· 详情页会用 xG、赔率去水概率和泊松比分分布生成胜平负概率。</li>
+              <li>· 详情页会用 xG、市场隐含概率和泊松比分分布生成胜平负概率。</li>
               <li>· 大模型只负责解释和风控表达，数学概率由本地模型先计算。</li>
             </ul>
           </div>

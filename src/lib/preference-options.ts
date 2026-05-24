@@ -32,22 +32,22 @@ export const modelOptions: PreferenceOption[] = [
     id: "赔率去水",
     label: "市场概率校准",
     badge: "核心",
-    description: "把赔率里的水位剥离出来，用来比较模型判断和市场预期的差距。",
+    description: "把公开市场指数转成隐含概率，用来比较模型判断和市场预期的差距。",
   },
   {
     id: "近期状态评分",
     label: "近期状态评分",
-    description: "结合近况、射正、控球和角球，避免只看赔率导致判断太单薄。",
+    description: "结合近况、射正、控球和角球，避免只看单一市场信号导致判断太单薄。",
   },
   {
     id: "凯利风控",
-    label: "模拟仓位上限",
-    description: "根据风险偏好给出单场占比上限，防止单场波动过大。",
+    label: "策略占比上限",
+    description: "根据风险偏好给出单场观察占比上限，防止单场波动过大。",
   },
   {
     id: "爆冷检测",
-    label: "爆冷风险检测",
-    description: "重点检查平局、客胜和低热度方向，提醒可能被忽略的风险。",
+    label: "冷门风险检测",
+    description: "重点检查平局、客胜和低热度方向，提醒可能被忽略的异常风险。",
   },
 ];
 
@@ -56,19 +56,19 @@ export const marketOptions: PreferenceOption[] = [
     id: "胜平负",
     label: "胜平负",
     badge: "核心",
-    description: "判断主胜、平局、客胜，是所有赛前分析的基础市场。",
+    description: "判断主胜、平局、客胜，是所有赛前分析的基础口径。",
   },
   {
     id: "让球",
     label: "让球 / 亚洲让球",
     badge: "核心",
-    description: "强弱差明显时更有用，关注热门队是否让得过深。",
+    description: "强弱差明显时更有用，关注热门队的让球线是否偏深。",
   },
   {
     id: "大小球",
     label: "大小球",
     badge: "核心",
-    description: "围绕总进球数做判断，适合结合 xG、节奏和临场盘口变化。",
+    description: "围绕总进球数做判断，适合结合 xG、节奏和临场市场线变化。",
   },
   {
     id: "双方进球",
@@ -93,7 +93,7 @@ export const marketOptions: PreferenceOption[] = [
   {
     id: "半全场",
     label: "半全场",
-    description: "组合半场和全场结果，波动更高，适合进取型用户观察。",
+    description: "组合半场和全场结果，波动更高，适合进取型用户做赛前观察。",
   },
   {
     id: "比分",
@@ -150,7 +150,7 @@ export const riskProfiles: Record<RiskLevel, RiskProfile> = {
     id: "conservative",
     label: "保守型",
     tone: "少动、稳一点",
-    summary: "优先看低波动市场，减少高赔率方向干扰。",
+    summary: "优先看低波动口径，减少高波动方向干扰。",
     recommended: "适合刚开始使用，或者只想看更稳的比赛判断。",
     models: ["xG-Dixon-Coles", "赔率去水", "凯利风控"],
     markets: ["胜平负", "让球", "大小球", "双重机会", "平局退款"],
@@ -160,8 +160,8 @@ export const riskProfiles: Record<RiskLevel, RiskProfile> = {
     id: "balanced",
     label: "稳健型",
     tone: "默认推荐",
-    summary: "兼顾概率、盘口和进球数，适合大多数用户。",
-    recommended: "系统默认方案，既看主流市场，也会提醒爆冷风险。",
+    summary: "兼顾概率、市场线和进球数，适合大多数用户。",
+    recommended: "系统默认方案，既看主流口径，也会提醒冷门风险。",
     models: ["xG-Dixon-Coles", "赔率去水", "近期状态评分", "凯利风控", "爆冷检测"],
     markets: ["胜平负", "让球", "大小球", "双方进球", "双重机会", "球队进球数"],
     betTypes: ["单场", "热门场次优先", "爆冷监控"],
@@ -170,7 +170,7 @@ export const riskProfiles: Record<RiskLevel, RiskProfile> = {
     id: "aggressive",
     label: "进取型",
     tone: "机会更多",
-    summary: "会关注更高波动市场，适合愿意看冷门和比分方向的用户。",
+    summary: "会关注更高波动口径，适合愿意看冷门和比分方向的用户。",
     recommended: "适合想多看机会点的人，但结果波动也会明显更大。",
     models: ["xG-Dixon-Coles", "赔率去水", "近期状态评分", "凯利风控", "爆冷检测"],
     markets: ["胜平负", "让球", "大小球", "双方进球", "比分", "半全场", "半场胜平负", "角球"],
@@ -228,4 +228,11 @@ export function normalizeOptionIds(
     (item): item is string => typeof item === "string" && allowed.has(item)
   );
   return normalized.length > 0 ? normalized : fallback;
+}
+
+export function displayPreferenceLabel(value: string) {
+  const option = [...modelOptions, ...marketOptions, ...betTypeOptions].find(
+    (item) => item.id === value
+  );
+  return option?.label ?? value;
 }

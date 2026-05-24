@@ -25,9 +25,9 @@ function formatDate(value: string) {
 function resultLabel(status: string) {
   return {
     pending: "待赛果",
-    won: "命中",
-    lost: "未中",
-    push: "走水",
+    won: "方向正确",
+    lost: "方向未中",
+    push: "走平",
     void: "无效",
   }[status] ?? "待赛果";
 }
@@ -131,8 +131,8 @@ export function HistoryPredictionClient() {
           </div>
           <h2 className="mt-2 text-xl font-semibold">我的真实预测记录</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-white/56">
-            这里记录你每次用积分生成的预测。系统会保存当时的模型版本、玩法方向、置信度和赔率口径；
-            后续比赛结束后，再自动更新命中结果。
+            这里记录你每次用积分生成的预测。系统会保存当时的模型版本、玩法方向、置信度和市场口径；
+            后续比赛结束后，再自动更新赛果验证结果。
           </p>
         </div>
         <Link
@@ -163,7 +163,7 @@ export function HistoryPredictionClient() {
           <div className="mt-1 text-2xl font-bold text-amber-100">{stats.pending}</div>
         </div>
         <div className="rounded-xl bg-[color:var(--accent)]/10 p-3">
-          <div className="text-[11px] text-[color:var(--accent)]/70">已结算命中率</div>
+          <div className="text-[11px] text-[color:var(--accent)]/70">已结算准确率</div>
           <div className="mt-1 text-2xl font-bold text-[color:var(--accent)]">
             {stats.settled > 0 ? `${stats.hitRate}%` : "待赛果"}
           </div>

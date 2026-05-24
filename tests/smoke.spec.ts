@@ -273,18 +273,18 @@ test("backtest page renders model validation metrics", async ({ page }) => {
   await page.goto("/backtest", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "历史预测", exact: true })).toBeVisible();
-  await expect(page.getByText("历史复盘口径").first()).toBeVisible();
+  await expect(page.getByText("历史校验口径").first()).toBeVisible();
   await expect(page.getByText("净增表现", { exact: true })).toBeVisible();
   await expect(page.getByText("起始 1000 分 · 结束 1286 分")).toBeVisible();
-  await expect(page.getByText("命中率").first()).toBeVisible();
-  await expect(page.getByText("最大回撤").first()).toBeVisible();
+  await expect(page.getByText("判断准确率").first()).toBeVisible();
+  await expect(page.getByText("最大回落").first()).toBeVisible();
   await expect(page.getByText("Brier 分数").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "精选入场明细" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "历史预测怎么看" })).toBeVisible();
   await expect(page.getByText("不是实时推荐入口")).toBeVisible();
   await expect(page.getByRole("heading", { name: "历史预测和预测池的区别" })).toBeVisible();
-  await expect(page.getByText("ROI：")).toBeVisible();
-  await expect(page.getByText("最大回撤：")).toBeVisible();
+  await expect(page.getByText("净增率：")).toBeVisible();
+  await expect(page.getByText("最大回落：")).toBeVisible();
   await expect(page.getByText("价值差：")).toBeVisible();
 });
 
@@ -325,7 +325,7 @@ test("backtest page shows logged-in user's real prediction history", async ({ pa
             predictionCount: 3,
             selectedCount: 2,
             totalSuggestedPercent: 100,
-            summary: "常规串关 · 预测池 3 场",
+            summary: "常规组合 · 预测池 3 场",
             createdAt: "2026-05-24T08:00:00.000Z",
             settledAt: null,
             items: [
@@ -352,7 +352,7 @@ test("backtest page shows logged-in user's real prediction history", async ({ pa
                 oddsLabel: "市场 1.80 / 公平 1.62",
                 valueLabel: "模型高于市场 8.4%",
                 reason: "信号较强。",
-                dataBasis: ["预测池", "盘口赔率"],
+                dataBasis: ["预测池", "市场指数"],
                 resultStatus: "pending",
                 finalScore: null,
                 settledAt: null,
@@ -385,14 +385,14 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "模型基准估算" })).toBeVisible();
   await expect(
-    page.getByText("当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在赔率、近况或实时统计更新后重新校准。")
+    page.getByText("当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在市场指数、近况或实时统计更新后重新校准。")
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型委员会深度预测" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "本场购买参考" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "本场策略参考" })).toBeVisible();
   await expect(page.getByText("调整本场占比")).toBeVisible();
 
   await expect(page.getByText("免费版 · 模型基准估算")).toBeVisible();
-  await expect(page.getByText("盘口待确认").first()).toBeVisible();
+  await expect(page.getByText("市场待确认").first()).toBeVisible();
   await expect(page.getByText("Pro 高级版 · 首单 ¥69.9")).toBeVisible();
   await page.getByRole("button", { name: /解锁 Pro|生成 Pro 分析/ }).click();
   await expect(page.getByRole("heading", { name: "首单 Pro 体验：把难懂的比赛先筛掉" })).toBeVisible({
@@ -460,7 +460,7 @@ test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await expect(page.getByText("比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByText("盘口赔率暂未更新，价值差暂不计算。")).toBeVisible();
+  await expect(page.getByText("市场指数暂未更新，价值差暂不计算。")).toBeVisible();
   await expect(page.getByText("暂无近况数据")).toHaveCount(2);
   await expect(page.locator("body")).not.toContainText("50%");
   await expect(page.locator("body")).not.toContainText("1.35");

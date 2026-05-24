@@ -368,9 +368,9 @@ export function calculateFootballPrediction(
       riskCapPercent: round(risk.cap * 100, 1),
     },
     notes: [
-      "该模型用赔率去水概率、近期状态、xG、射正、控球和角球估计双方进球强度。",
+      "该模型用市场隐含概率、近期状态、xG、射正、控球和角球估计双方进球强度。",
       "比分分布采用泊松矩阵，并对低比分相关性做 Dixon-Coles 修正。",
-      "投注占比只是风控上限建议，不代表确定收益；临场阵容和伤停会显著改变概率。",
+      "策略占比只是风控上限参考，不代表确定结果；临场阵容和伤停会显著改变概率。",
     ],
   };
 }
@@ -379,7 +379,7 @@ export function formatPredictionSummary(data: MatchAnalysisData, prediction: Pre
   const top = prediction.valueSignals[0];
   const edgeText =
     top.edge == null
-      ? "当前赔率不足，暂不计算价值差"
+      ? "当前市场数据不足，暂不计算价值差"
       : `${top.edge > 0 ? "模型高于市场" : "模型低于市场"} ${Math.abs(top.edge).toFixed(1)} 个百分点`;
 
   return [
@@ -389,7 +389,7 @@ export function formatPredictionSummary(data: MatchAnalysisData, prediction: Pre
     `预期进球：${prediction.expectedGoals.home.toFixed(2)} - ${prediction.expectedGoals.away.toFixed(2)}，最可能比分 ${prediction.predictedScore.label}`,
     `胜平负概率：主胜 ${prediction.probabilities.homeWin}% / 平局 ${prediction.probabilities.draw}% / 客胜 ${prediction.probabilities.awayWin}%`,
     `大小球：大 2.5 概率 ${prediction.probabilities.over25}%；双方进球概率 ${prediction.probabilities.bothTeamsToScore}%`,
-    `价值信号：${top.label}，${edgeText}，模型公平赔率 ${top.fairOdds.toFixed(2)}`,
+    `价值信号：${top.label}，${edgeText}，模型公平指数 ${top.fairOdds.toFixed(2)}`,
     `风控建议：主推 ${prediction.staking.mainSelection}；备选 ${prediction.staking.backupSelection}；单场风险上限 ${prediction.staking.riskCapPercent}%`,
     "风险提示：足球低比分随机性很强，临场阵容、红牌、天气和赛程轮换会改变结论；只把它当作概率工具。",
   ].join("\n");

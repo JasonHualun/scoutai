@@ -15,6 +15,7 @@ import {
   freeMembership,
 } from "@/lib/membership";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
+import { displayPreferenceLabel } from "@/lib/preference-options";
 import { useAuthStore } from "@/lib/authStore";
 import { supabase } from "@/lib/supabase";
 import { ProPurchaseDialog } from "@/components/ProPurchaseDialog";
@@ -650,15 +651,15 @@ export default function MatchDetailPage() {
     match.status === "upcoming"
       ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
       : "实时统计暂未更新，已隐藏占位数据。";
-  const oddsEmptyText = "盘口赔率暂未更新，价值差暂不计算。";
+  const oddsEmptyText = "市场指数暂未更新，价值差暂不计算。";
   const isBaselineEstimate = !stats && !odds;
   const predictionDataNote =
     isBaselineEstimate
-      ? "当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在赔率、近况或实时统计更新后重新校准。"
+      ? "当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在市场指数、近况或实时统计更新后重新校准。"
       : !stats
         ? "实时统计暂未更新，概率主要来自赛前信息。"
         : !odds
-          ? "盘口赔率暂未更新，价值差暂不计算。"
+          ? "市场指数暂未更新，价值差暂不计算。"
           : "已结合当前可用数据计算。";
   const allocationBase = Math.max(0, Math.round(activePrefs.capital || 0));
   const recommendedExposurePercent =
@@ -676,14 +677,14 @@ export default function MatchDetailPage() {
   const recommendedPercentLabel = recommendedExposurePercent.toFixed(1).replace(".0", "");
   const backupPercentLabel = backupExposurePercent.toFixed(1).replace(".0", "");
   const modelTags = activePrefs.preferred_models.length
-    ? activePrefs.preferred_models
-    : defaultPrefs.preferred_models;
+    ? activePrefs.preferred_models.map(displayPreferenceLabel)
+    : defaultPrefs.preferred_models.map(displayPreferenceLabel);
   const marketTags = activePrefs.preferred_markets.length
-    ? activePrefs.preferred_markets
-    : defaultPrefs.preferred_markets;
+    ? activePrefs.preferred_markets.map(displayPreferenceLabel)
+    : defaultPrefs.preferred_markets.map(displayPreferenceLabel);
   const purchaseRecommendation =
     topSignal.edge == null
-      ? "盘口赔率暂未更新，先作为赛前观察；等待盘口确认后再判断价值差。"
+      ? "市场指数暂未更新，先作为赛前观察；等待市场确认后再判断价值差。"
       : topSignal.edge <= 0
         ? "模型没有明显高于市场，建议观望或等待临场变化。"
         : selectedExposurePercent > riskCapPercent * 0.8
@@ -801,7 +802,7 @@ export default function MatchDetailPage() {
 
           {isBaselineEstimate && (
             <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs leading-5 text-amber-100/75">
-              说明：当前可用数据不足，系统使用中性进球分布和基础风控参数做基准估算；赔率、历史战绩、伤停和球员数据更新后会重新校准。
+              说明：当前可用数据不足，系统使用中性进球分布和基础风控参数做基准估算；市场指数、历史战绩、伤停和球员数据更新后会重新校准。
             </div>
           )}
 
@@ -836,11 +837,11 @@ export default function MatchDetailPage() {
             免费版
           </div>
           <h2 className="text-sm font-semibold">
-            {odds ? "基础价值信号" : "模型公平赔率"}
+            {odds ? "基础价值信号" : "模型公平指数"}
           </h2>
           {!odds && (
             <p className="mt-1 text-[11px] leading-5 text-white/42">
-              这里是模型按概率反推的公平赔率；盘口赔率更新后会同时显示市场差值。
+              这里是模型按概率反推的公平指数；市场指数更新后会同时显示市场差值。
             </p>
           )}
           <div className="mt-3 space-y-2">
@@ -852,7 +853,7 @@ export default function MatchDetailPage() {
                 <div>
                   <div className="font-medium text-white">{signal.label}</div>
                   <div className="mt-0.5 text-[11px] text-white/45">
-                    模型公平赔率 {signal.fairOdds.toFixed(2)}
+                    模型公平指数 {signal.fairOdds.toFixed(2)}
                   </div>
                 </div>
                 <div className="text-right">
@@ -864,7 +865,7 @@ export default function MatchDetailPage() {
                         : "text-white/40"
                     }`}
                   >
-                    {signal.edge == null ? "盘口待确认" : `差值 ${signal.edge}%`}
+                    {signal.edge == null ? "市场待确认" : `差值 ${signal.edge}%`}
                   </div>
                 </div>
               </div>
@@ -894,7 +895,7 @@ export default function MatchDetailPage() {
         </div>
 
         <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
-          <h2 className="text-sm font-semibold">赔率与近况</h2>
+          <h2 className="text-sm font-semibold">市场指数与近况</h2>
           {odds ? (
             <>
               <div className="mt-3 grid gap-3 text-xs md:grid-cols-3">
@@ -967,7 +968,7 @@ export default function MatchDetailPage() {
             </div>
             <h2 className="text-sm font-semibold">模型委员会深度预测</h2>
             <p className="mt-1 text-[11px] text-white/50">
-              盘口、赔率、xG、比分分布和 Claude 深度解释会在这里汇总。
+              市场线、市场指数、xG、比分分布和 Claude 深度解释会在这里汇总。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -992,7 +993,7 @@ export default function MatchDetailPage() {
           <ProMetric
             label="模型分歧指数"
             value={`${modelDisagreement}%`}
-            detail="衡量基础概率、赔率信号和比分分布是否互相打架。"
+            detail="衡量基础概率、市场信号和比分分布是否互相打架。"
           />
           <ProMetric
             label="爆冷风险"
@@ -1000,9 +1001,9 @@ export default function MatchDetailPage() {
             detail="结合平局/客胜尾部概率和市场差值估算。"
           />
           <ProMetric
-            label="盘口监控"
+            label="市场线监控"
             value={isPro ? "已启用" : "待解锁"}
-            detail="临场盘口变化会同步风险升降和监控提醒。"
+            detail="临场市场线变化会同步风险升降和监控提醒。"
           />
         </div>
 
@@ -1014,11 +1015,11 @@ export default function MatchDetailPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
-                会员占比方案
+                会员策略方案
               </div>
-              <h3 className="text-base font-semibold">本场购买参考</h3>
+              <h3 className="text-base font-semibold">本场策略参考</h3>
               <p className="mt-1 text-xs leading-5 text-white/52">
-                按你的风险偏好和模型选择，给出本场主方案、备选方案和投注占比参考。
+                按你的风险偏好和模型选择，给出本场主方案、备选方案和策略占比参考。
               </p>
             </div>
             <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/65">
@@ -1104,7 +1105,7 @@ export default function MatchDetailPage() {
                 {topSignal.label} · {selectedPercentLabel}% 占比
               </div>
               <div className="mt-1 text-[11px] leading-5 text-white/45">
-                模型概率 {topSignal.modelProbability}% · 模型公平赔率 {topSignal.fairOdds.toFixed(2)}
+                模型概率 {topSignal.modelProbability}% · 模型公平指数 {topSignal.fairOdds.toFixed(2)}
                 {topSignal.edge == null ? " · 暂无市场差" : ` · 价值差 ${topSignal.edge}%`}
               </div>
             </div>
@@ -1154,7 +1155,7 @@ export default function MatchDetailPage() {
               <div>
                 <div className="text-sm font-semibold text-white">升级后解锁完整深度报告</div>
                 <p className="mt-1 text-xs leading-5 text-white/55">
-                  包含 Claude 分析、盘口异动、爆冷风险、模型分歧、临场变化和风控上限。
+                  包含 Claude 分析、市场线异动、冷门风险、模型分歧、临场变化和风控上限。
                 </p>
               </div>
               <button
@@ -1194,7 +1195,7 @@ export default function MatchDetailPage() {
         accessToken={session?.access_token}
         defaultPlanId={isPro ? "renewal" : "trial"}
         heading="首单 Pro 体验：把难懂的比赛先筛掉"
-        description="免费版给基础概率；Pro 会把风险、热度、盘口信号和 AI 解读合成一份更容易看的赛前判断。"
+        description="免费版给基础概率；Pro 会把风险、热度、市场信号和 AI 解读合成一份更容易看的赛前判断。"
       />
     </div>
   );

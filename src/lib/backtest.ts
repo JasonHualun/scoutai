@@ -341,7 +341,7 @@ function groupBreakdown(picks: BacktestPick[], group: (pick: BacktestPick) => st
 }
 
 function pickNote(edge: number | null, confidence: number) {
-  if (edge == null) return "盘口缺少完整胜平负赔率，暂不计算价值差。";
+  if (edge == null) return "市场数据缺少完整胜平负指数，暂不计算价值差。";
   if (edge >= 6) return `模型明显高于市场 ${edge.toFixed(1)} 个百分点，置信度 ${confidence}%。`;
   if (edge >= 2) return `模型略高于市场 ${edge.toFixed(1)} 个百分点，置信度 ${confidence}%。`;
   return `价值差只有 ${edge.toFixed(1)} 个百分点，按当前风险偏好小注或跳过。`;
@@ -398,7 +398,7 @@ export function runBacktest(
         profit: 0,
         correct: null,
         confidence: prediction.confidence,
-        note: "价值差、赔率上限或置信度没有达到当前风险偏好的入场线。",
+        note: "价值差、市场指数上限或置信度没有达到当前风险偏好的筛选线。",
       };
     }
 
