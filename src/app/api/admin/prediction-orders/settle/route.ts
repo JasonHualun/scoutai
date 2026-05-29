@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest, unauthorized } from "@/lib/admin-auth";
 import { getFixtureById } from "@/lib/football-api";
 import { createServiceRoleClient } from "@/lib/supabase";
+import { fetchTheStatsJson } from "@/lib/thestats-api";
 
 type PendingItem = {
   id: string;
   order_id: string;
-  fixture_id: number;
+  fixture_id: string;
   market: string;
   direction: string;
   result_status: "pending" | "won" | "lost" | "push" | "void";
@@ -15,6 +16,13 @@ type PendingItem = {
 type FixtureResponseItem = {
   fixture?: { status?: { short?: string } };
   goals?: { home?: number | null; away?: number | null };
+};
+
+type TheStatsMatchResponse = {
+  data?: {
+    status?: string;
+    score?: { home?: number | null; away?: number | null };
+  };
 };
 
 type SettledStatus = "won" | "lost" | "push" | "void" | "pending";
@@ -40,6 +48,18 @@ function parseFixtureResult(data: unknown) {
   if (!isFinished(fixture?.fixture?.status?.short)) return null;
   if (typeof home !== "number" || typeof away !== "number") return null;
 
+  return { home, away, finalScore: `${home}-${away}` };
+}
+
+async function getTheStatsFixtureResult(matchId: string) {
+  const payload = await fetchTheStatsJson<TheStatsMatchResponse>({
+    path: `/football/matches/${matchId}`,
+    revalidate: 300,
+  });
+  const home = payload.data?.score?.home;
+  const away = payload.data?.score?.away;
+  if (payload.data?.status !== "finished") return null;
+  if (typeof home !== "number" || typeof away !== "number") return null;
   return { home, away, finalScore: `${home}-${away}` };
 }
 
@@ -116,8 +136,18 @@ export async function POST(req: NextRequest) {
 
     for (const item of (pendingItems ?? []) as PendingItem[]) {
       try {
-        const fixture = await getFixtureById(Number(item.fixture_id));
-        const result = parseFixtureResult(fixture);
+        let result: { home: number; away: number; finalScore: string } | null = null;
+        if (String(item.fixture_id).startsWith("mt_")) {
+          result = await getTheStatsFixtureResult(String(item.fixture_id));
+        } else {
+          const numericFixtureId = Number(item.fixture_id);
+          if (!Number.isFinite(numericFixtureId) || numericFixtureId <= 0) {
+            skipped.push({ itemId: item.id, reason: "比赛 ID 无法识别" });
+            continue;
+          }
+          const fixture = await getFixtureById(numericFixtureId);
+          result = parseFixtureResult(fixture);
+        }
         if (!result) {
           skipped.push({ itemId: item.id, reason: "比赛未完场或暂未返回比分" });
           continue;

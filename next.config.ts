@@ -4,9 +4,6 @@ const nextConfig: NextConfig = {
   experimental: {
     cpus: 1,
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   turbopack: {
     root: process.cwd(),
   },

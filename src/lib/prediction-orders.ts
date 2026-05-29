@@ -1,7 +1,7 @@
 export const PREDICTION_MODEL_VERSION = "scoutai-local-v1";
 
 export type PredictionOrderItemInput = {
-  fixtureId: number;
+  fixtureId: string | number;
   league: string;
   homeTeam: string;
   awayTeam: string;
@@ -26,6 +26,7 @@ export type PredictionOrderItemInput = {
 
 export type PredictionOrderInput = {
   cost: number;
+  fixtureIds?: Array<string | number>;
   modelVersion: string;
   riskLevel: string;
   summary: string;

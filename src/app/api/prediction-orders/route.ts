@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PREDICTION_CREDITS_PER_MATCH } from "@/lib/membership";
 import {
-  PREDICTION_MODEL_VERSION,
   PredictionOrder,
   PredictionOrderInput,
   PredictionOrderItem,
 } from "@/lib/prediction-orders";
+import { buildServerPredictionOrderInput } from "@/lib/server-predictions";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
+import { UserPreferences } from "@/lib/football-prediction";
 
 type PredictionOrderRow = {
   id: string;
@@ -27,7 +28,7 @@ type PredictionOrderRow = {
 type PredictionOrderItemRow = {
   id: string;
   order_id: string;
-  fixture_id: number;
+  fixture_id: string;
   league: string;
   home_team: string;
   away_team: string;
@@ -100,57 +101,11 @@ function safeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function normalizeBody(body: PredictionOrderInput): PredictionOrderInput {
-  const items = Array.isArray(body.items) ? body.items.slice(0, 20) : [];
-  const predictionCount = items.length;
-
-  return {
-    cost: predictionCount * PREDICTION_CREDITS_PER_MATCH,
-    modelVersion: String(body.modelVersion || PREDICTION_MODEL_VERSION),
-    riskLevel: String(body.riskLevel || "balanced"),
-    summary: String(body.summary || "预测池推荐"),
-    predictionCount,
-    selectedCount: Math.max(0, Math.min(predictionCount, Math.round(safeNumber(body.selectedCount)))),
-    totalSuggestedPercent: Math.max(0, safeNumber(body.totalSuggestedPercent)),
-    preferencesSnapshot:
-      body.preferencesSnapshot && typeof body.preferencesSnapshot === "object"
-        ? body.preferencesSnapshot
-        : {},
-    portfolioSnapshot:
-      body.portfolioSnapshot && typeof body.portfolioSnapshot === "object"
-        ? body.portfolioSnapshot
-        : {},
-    items: items.map((item) => ({
-      fixtureId: Math.max(0, Math.round(safeNumber(item.fixtureId))),
-      league: String(item.league || "未知联赛"),
-      homeTeam: String(item.homeTeam || "主队"),
-      awayTeam: String(item.awayTeam || "客队"),
-      kickoffAt: item.kickoffAt ? String(item.kickoffAt) : null,
-      statusAtPrediction: String(item.statusAtPrediction || "unknown"),
-      market: String(item.market || "观察"),
-      direction: String(item.direction || "观察"),
-      recommendation: String(item.recommendation || "observe"),
-      confidence: Math.max(0, Math.min(100, Math.round(safeNumber(item.confidence)))),
-      score: Math.max(0, Math.min(100, Math.round(safeNumber(item.score)))),
-      grade: String(item.grade || "C"),
-      riskLabel: String(item.riskLabel || "待确认"),
-      suggestedPercent: Math.max(0, safeNumber(item.suggestedPercent)),
-      fairOdds: Math.max(0, safeNumber(item.fairOdds)),
-      offeredOdds: item.offeredOdds == null ? null : Math.max(0, safeNumber(item.offeredOdds)),
-      valueEdge: item.valueEdge == null ? null : safeNumber(item.valueEdge),
-      oddsLabel: String(item.oddsLabel || "待市场确认"),
-      valueLabel: String(item.valueLabel || "待市场确认"),
-      reason: String(item.reason || "等待更多数据确认。"),
-      dataBasis: Array.isArray(item.dataBasis) ? item.dataBasis.map(String) : [],
-    })),
-  };
-}
-
 function mapItem(row: PredictionOrderItemRow): PredictionOrderItem {
   return {
     id: row.id,
     orderId: row.order_id,
-    fixtureId: Number(row.fixture_id),
+    fixtureId: row.fixture_id,
     league: row.league,
     homeTeam: row.home_team,
     awayTeam: row.away_team,
@@ -175,6 +130,22 @@ function mapItem(row: PredictionOrderItemRow): PredictionOrderItem {
     finalScore: row.final_score,
     settledAt: row.settled_at,
   };
+}
+
+function normalizeRiskLevel(value: unknown): UserPreferences["risk_level"] {
+  return value === "conservative" || value === "balanced" || value === "aggressive"
+    ? value
+    : "balanced";
+}
+
+function normalizeStringList(value: unknown) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
+}
+
+function extractFixtureIds(body: PredictionOrderInput) {
+  const fixtureIds = Array.isArray(body.fixtureIds) ? body.fixtureIds : [];
+  const itemIds = Array.isArray(body.items) ? body.items.map((item) => item.fixtureId) : [];
+  return (fixtureIds.length > 0 ? fixtureIds : itemIds).slice(0, 20);
 }
 
 function mapOrder(row: PredictionOrderRow, items: PredictionOrderItem[]): PredictionOrder {
@@ -257,22 +228,58 @@ export async function POST(req: NextRequest) {
   const { user, error } = await currentUser(req);
   if (error || !user) return NextResponse.json({ error }, { status: 401 });
 
-  let body: PredictionOrderInput;
+  let clientBody: PredictionOrderInput;
   try {
-    body = normalizeBody((await req.json()) as PredictionOrderInput);
+    clientBody = (await req.json()) as PredictionOrderInput;
   } catch {
     return NextResponse.json({ error: "请求格式错误" }, { status: 400 });
   }
 
-  if (body.items.length === 0 || body.predictionCount === 0) {
+  const fixtureIds = extractFixtureIds(clientBody);
+  if (fixtureIds.length === 0) {
     return NextResponse.json({ error: "请先把比赛加入预测池" }, { status: 400 });
   }
 
   const supabase = createServiceRoleClient();
 
   try {
+    const { data: prefsRow, error: prefsError } = await supabase
+      .from("user_preferences")
+      .select("risk_level, capital, preferred_markets, preferred_models")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (prefsError) throw prefsError;
+
+    const prefs: UserPreferences = {
+      risk_level: normalizeRiskLevel(prefsRow?.risk_level),
+      capital: Math.max(1, Math.round(safeNumber(prefsRow?.capital, 1000))),
+      preferred_markets: normalizeStringList(prefsRow?.preferred_markets),
+      preferred_models: normalizeStringList(prefsRow?.preferred_models),
+    };
+
+    const body = await buildServerPredictionOrderInput({
+      fixtureIds,
+      prefs,
+      riskLevel: String(clientBody.riskLevel || prefs.risk_level),
+      summary: String(clientBody.summary || `预测池 ${fixtureIds.length} 场`),
+      preferencesSnapshot: {
+        riskLevel: prefs.risk_level,
+        preferredModels: prefs.preferred_models,
+        preferredMarkets: prefs.preferred_markets,
+      },
+      portfolioSnapshot: {
+        ...(clientBody.portfolioSnapshot &&
+        typeof clientBody.portfolioSnapshot === "object"
+          ? clientBody.portfolioSnapshot
+          : {}),
+        serverGeneratedAt: new Date().toISOString(),
+        source: "server-live-prediction",
+      },
+    });
+
     const rpcItems = body.items.map((item) => ({
-      fixture_id: item.fixtureId,
+      fixture_id: String(item.fixtureId),
       league: item.league,
       home_team: item.homeTeam,
       away_team: item.awayTeam,
@@ -319,12 +326,16 @@ export async function POST(req: NextRequest) {
       ok: true,
       orderId: result?.order_id,
       credits: Math.max(0, Math.round(Number(result?.credits_after ?? 0))),
+      items: body.items,
     });
   } catch (err) {
     const message = errorMessage(err, "保存预测记录失败");
     if (message.includes("INSUFFICIENT_CREDITS")) {
       return NextResponse.json(
-        { error: `预测积分不足：本次需要 ${body.cost} 分。`, cost: body.cost },
+        {
+          error: `预测积分不足：本次需要 ${fixtureIds.length * PREDICTION_CREDITS_PER_MATCH} 分。`,
+          cost: fixtureIds.length * PREDICTION_CREDITS_PER_MATCH,
+        },
         { status: 402 }
       );
     }

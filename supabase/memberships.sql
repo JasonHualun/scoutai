@@ -103,7 +103,7 @@ create table if not exists public.prediction_order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.prediction_orders(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  fixture_id bigint not null,
+  fixture_id text not null,
   league text not null,
   home_team text not null,
   away_team text not null,
@@ -130,6 +130,9 @@ create table if not exists public.prediction_order_items (
   updated_at timestamptz not null default now(),
   settled_at timestamptz
 );
+
+alter table public.prediction_order_items
+alter column fixture_id type text using fixture_id::text;
 
 alter table public.prediction_order_items enable row level security;
 
@@ -328,7 +331,7 @@ begin
     item.reason,
     coalesce(item.data_basis, '[]'::jsonb)
   from jsonb_to_recordset(p_items) as item(
-    fixture_id bigint,
+    fixture_id text,
     league text,
     home_team text,
     away_team text,

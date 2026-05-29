@@ -721,12 +721,14 @@ export default function MatchDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify(analysisBody),
+        body: JSON.stringify({ fixtureId }),
       });
 
       const json = (await res.json()) as {
         analysis?: string;
         prediction?: PredictionResult;
+        orderId?: string;
+        credits?: number;
         error?: string;
       };
       if (!res.ok) throw new Error(json.error ?? "分析失败");
