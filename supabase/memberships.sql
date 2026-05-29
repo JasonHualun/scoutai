@@ -147,3 +147,221 @@ on public.prediction_order_items (user_id, fixture_id);
 
 create index if not exists prediction_order_items_result_idx
 on public.prediction_order_items (result_status, kickoff_at);
+
+create table if not exists public.user_preferences (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  risk_level text not null default 'balanced'
+    check (risk_level in ('conservative', 'balanced', 'aggressive')),
+  capital numeric not null default 1000 check (capital >= 0),
+  currency text not null default 'CNY' check (currency in ('USD', 'CNY', 'HKD')),
+  preferred_models jsonb not null default '[]'::jsonb,
+  bet_type jsonb not null default '[]'::jsonb,
+  preferred_markets jsonb not null default '[]'::jsonb,
+  favorite_leagues jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_preferences enable row level security;
+
+drop policy if exists "Users can read own preferences" on public.user_preferences;
+create policy "Users can read own preferences"
+on public.user_preferences
+for select
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own preferences" on public.user_preferences;
+create policy "Users can insert own preferences"
+on public.user_preferences
+for insert
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own preferences" on public.user_preferences;
+create policy "Users can update own preferences"
+on public.user_preferences
+for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create index if not exists user_preferences_user_id_idx
+on public.user_preferences (user_id);
+
+update public.payment_applications
+set months = 1
+where months <> 1;
+
+alter table public.payment_applications
+alter column months set default 1;
+
+alter table public.payment_applications
+drop constraint if exists payment_applications_months_check;
+
+alter table public.payment_applications
+add constraint payment_applications_months_check check (months = 1);
+
+create or replace function public.create_prediction_order(
+  p_user_id uuid,
+  p_email text,
+  p_model_version text,
+  p_risk_level text,
+  p_cost integer,
+  p_prediction_count integer,
+  p_selected_count integer,
+  p_total_suggested_percent numeric,
+  p_summary text,
+  p_preferences_snapshot jsonb,
+  p_portfolio_snapshot jsonb,
+  p_items jsonb
+)
+returns table(order_id uuid, credits_before integer, credits_after integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order_id uuid;
+  v_before integer;
+  v_after integer;
+begin
+  if p_cost <= 0 then
+    raise exception 'INVALID_COST';
+  end if;
+
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'EMPTY_PREDICTION_ITEMS';
+  end if;
+
+  update public.memberships
+  set prediction_credits = prediction_credits - p_cost,
+      updated_at = now()
+  where user_id = p_user_id
+    and prediction_credits >= p_cost
+  returning prediction_credits + p_cost, prediction_credits
+  into v_before, v_after;
+
+  if not found then
+    raise exception 'INSUFFICIENT_CREDITS';
+  end if;
+
+  insert into public.prediction_orders (
+    user_id,
+    email,
+    status,
+    model_version,
+    risk_level,
+    cost,
+    credits_before,
+    credits_after,
+    prediction_count,
+    selected_count,
+    total_suggested_percent,
+    summary,
+    preferences_snapshot,
+    portfolio_snapshot
+  )
+  values (
+    p_user_id,
+    coalesce(p_email, ''),
+    'generated',
+    p_model_version,
+    p_risk_level,
+    p_cost,
+    v_before,
+    v_after,
+    p_prediction_count,
+    p_selected_count,
+    p_total_suggested_percent,
+    p_summary,
+    coalesce(p_preferences_snapshot, '{}'::jsonb),
+    coalesce(p_portfolio_snapshot, '{}'::jsonb)
+  )
+  returning id into v_order_id;
+
+  insert into public.prediction_order_items (
+    order_id,
+    user_id,
+    fixture_id,
+    league,
+    home_team,
+    away_team,
+    kickoff_at,
+    status_at_prediction,
+    market,
+    direction,
+    recommendation,
+    confidence,
+    score,
+    grade,
+    risk_label,
+    suggested_percent,
+    fair_odds,
+    offered_odds,
+    value_edge,
+    odds_label,
+    value_label,
+    reason,
+    data_basis
+  )
+  select
+    v_order_id,
+    p_user_id,
+    item.fixture_id,
+    item.league,
+    item.home_team,
+    item.away_team,
+    item.kickoff_at,
+    item.status_at_prediction,
+    item.market,
+    item.direction,
+    item.recommendation,
+    item.confidence,
+    item.score,
+    item.grade,
+    item.risk_label,
+    item.suggested_percent,
+    item.fair_odds,
+    item.offered_odds,
+    item.value_edge,
+    item.odds_label,
+    item.value_label,
+    item.reason,
+    coalesce(item.data_basis, '[]'::jsonb)
+  from jsonb_to_recordset(p_items) as item(
+    fixture_id bigint,
+    league text,
+    home_team text,
+    away_team text,
+    kickoff_at timestamptz,
+    status_at_prediction text,
+    market text,
+    direction text,
+    recommendation text,
+    confidence integer,
+    score integer,
+    grade text,
+    risk_label text,
+    suggested_percent numeric,
+    fair_odds numeric,
+    offered_odds numeric,
+    value_edge numeric,
+    odds_label text,
+    value_label text,
+    reason text,
+    data_basis jsonb
+  );
+
+  order_id := v_order_id;
+  credits_before := v_before;
+  credits_after := v_after;
+  return next;
+end;
+$$;
+
+revoke all on function public.create_prediction_order(
+  uuid, text, text, text, integer, integer, integer, numeric, text, jsonb, jsonb, jsonb
+) from public, anon, authenticated;
+
+grant execute on function public.create_prediction_order(
+  uuid, text, text, text, integer, integer, integer, numeric, text, jsonb, jsonb, jsonb
+) to service_role;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase";
+import { findAuthUserByEmail } from "@/lib/supabase-admin-users";
 
 type ResetPasswordBody = {
   email?: string;
@@ -54,14 +55,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: users, error: listError } = await supabase.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-
-    if (listError) throw listError;
-
-    const user = users.users.find((item) => item.email?.toLowerCase() === email);
+    const user = await findAuthUserByEmail(supabase, email);
     if (!user) {
       return NextResponse.json({ error: "没有找到这个注册邮箱" }, { status: 404 });
     }

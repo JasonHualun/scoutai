@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest, unauthorized } from "@/lib/admin-auth";
 import { PRO_TRIAL_CREDITS, addMonths, creditPlanByAmount } from "@/lib/membership";
 import { createServiceRoleClient } from "@/lib/supabase";
+import { findAuthUserByEmail } from "@/lib/supabase-admin-users";
 
 type OpenMembershipBody = {
   email?: string;
@@ -35,13 +36,8 @@ function missingCreditsColumn(message: string) {
   return lower.includes("prediction_credits") && (lower.includes("column") || lower.includes("schema cache"));
 }
 
-function creditsFromApplication(amount: unknown, note?: string | null) {
-  const matchedPlan = creditPlanByAmount(Number(amount));
-  if (matchedPlan) return matchedPlan.credits;
-
-  const noteMatch = note?.match(/(\d+)\s*预测积分/);
-  const parsed = noteMatch ? Number(noteMatch[1]) : Number.NaN;
-  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : PRO_TRIAL_CREDITS;
+function creditsFromApplication(amount: unknown) {
+  return creditPlanByAmount(Number(amount))?.credits ?? null;
 }
 
 async function openProForEmail(
@@ -50,14 +46,7 @@ async function openProForEmail(
   months: number,
   creditsToAdd = PRO_TRIAL_CREDITS
 ) {
-  const { data, error: listError } = await supabase.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-
-  if (listError) throw listError;
-
-  const user = data.users.find((item) => item.email?.toLowerCase() === email);
+  const user = await findAuthUserByEmail(supabase, email);
   if (!user) {
     return { error: "没有找到这个注册邮箱", status: 404 as const };
   }
@@ -194,11 +183,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "这笔申请已经处理过了" }, { status: 409 });
       }
 
+      const creditsToAdd = creditsFromApplication(application.amount);
+      if (creditsToAdd == null) {
+        return NextResponse.json({ error: "付款金额和套餐不匹配，请拒绝后让用户重新提交" }, { status: 400 });
+      }
+
       const result = await openProForEmail(
         supabase,
         String(application.email).trim().toLowerCase(),
-        safeMonths(application.months),
-        creditsFromApplication(application.amount, application.note)
+        1,
+        creditsToAdd
       );
 
       if ("error" in result) {

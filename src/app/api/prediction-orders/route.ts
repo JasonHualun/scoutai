@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { PREDICTION_CREDITS_PER_MATCH } from "@/lib/membership";
 import {
   PREDICTION_MODEL_VERSION,
   PredictionOrder,
@@ -46,10 +47,16 @@ type PredictionOrderItemRow = {
   odds_label: string | null;
   value_label: string | null;
   reason: string | null;
-  data_basis: string[] | null;
+  data_basis: unknown;
   result_status: PredictionOrderItem["resultStatus"];
   final_score: string | null;
   settled_at: string | null;
+};
+
+type CreatePredictionOrderRpcRow = {
+  order_id: string;
+  credits_before: number;
+  credits_after: number;
 };
 
 function authToken(req: NextRequest) {
@@ -67,11 +74,13 @@ function errorMessage(error: unknown, fallback: string) {
 function predictionTablesMissing(message: string) {
   const lower = message.toLowerCase();
   return (
-    (lower.includes("prediction_orders") || lower.includes("prediction_order_items")) &&
-    (lower.includes("does not exist") ||
-      lower.includes("schema cache") ||
-      lower.includes("relation") ||
-      lower.includes("table"))
+    lower.includes("create_prediction_order") ||
+    ((lower.includes("prediction_orders") || lower.includes("prediction_order_items")) &&
+      (lower.includes("does not exist") ||
+        lower.includes("schema cache") ||
+        lower.includes("relation") ||
+        lower.includes("table") ||
+        lower.includes("function")))
   );
 }
 
@@ -93,13 +102,15 @@ function safeNumber(value: unknown, fallback = 0) {
 
 function normalizeBody(body: PredictionOrderInput): PredictionOrderInput {
   const items = Array.isArray(body.items) ? body.items.slice(0, 20) : [];
+  const predictionCount = items.length;
+
   return {
-    cost: Math.max(1, Math.round(safeNumber(body.cost))),
+    cost: predictionCount * PREDICTION_CREDITS_PER_MATCH,
     modelVersion: String(body.modelVersion || PREDICTION_MODEL_VERSION),
     riskLevel: String(body.riskLevel || "balanced"),
     summary: String(body.summary || "预测池推荐"),
-    predictionCount: Math.max(0, Math.round(safeNumber(body.predictionCount, items.length))),
-    selectedCount: Math.max(0, Math.round(safeNumber(body.selectedCount))),
+    predictionCount,
+    selectedCount: Math.max(0, Math.min(predictionCount, Math.round(safeNumber(body.selectedCount)))),
     totalSuggestedPercent: Math.max(0, safeNumber(body.totalSuggestedPercent)),
     preferencesSnapshot:
       body.preferencesSnapshot && typeof body.preferencesSnapshot === "object"
@@ -159,7 +170,7 @@ function mapItem(row: PredictionOrderItemRow): PredictionOrderItem {
     oddsLabel: row.odds_label ?? "",
     valueLabel: row.value_label ?? "",
     reason: row.reason ?? "",
-    dataBasis: Array.isArray(row.data_basis) ? row.data_basis : [],
+    dataBasis: Array.isArray(row.data_basis) ? row.data_basis.map(String) : [],
     resultStatus: row.result_status,
     finalScore: row.final_score,
     settledAt: row.settled_at,
@@ -258,94 +269,65 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
-  let insertedOrderId: string | null = null;
 
   try {
-    const { data: current, error: readError } = await supabase
-      .from("memberships")
-      .select("prediction_credits")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const rpcItems = body.items.map((item) => ({
+      fixture_id: item.fixtureId,
+      league: item.league,
+      home_team: item.homeTeam,
+      away_team: item.awayTeam,
+      kickoff_at: item.kickoffAt,
+      status_at_prediction: item.statusAtPrediction,
+      market: item.market,
+      direction: item.direction,
+      recommendation: item.recommendation,
+      confidence: item.confidence,
+      score: item.score,
+      grade: item.grade,
+      risk_label: item.riskLabel,
+      suggested_percent: item.suggestedPercent,
+      fair_odds: item.fairOdds,
+      offered_odds: item.offeredOdds,
+      value_edge: item.valueEdge,
+      odds_label: item.oddsLabel,
+      value_label: item.valueLabel,
+      reason: item.reason,
+      data_basis: item.dataBasis,
+    }));
 
-    if (readError) throw readError;
+    const { data, error: rpcError } = await supabase.rpc("create_prediction_order", {
+      p_user_id: user.id,
+      p_email: user.email ?? "",
+      p_model_version: body.modelVersion,
+      p_risk_level: body.riskLevel,
+      p_cost: body.cost,
+      p_prediction_count: body.predictionCount,
+      p_selected_count: body.selectedCount,
+      p_total_suggested_percent: body.totalSuggestedPercent,
+      p_summary: body.summary,
+      p_preferences_snapshot: body.preferencesSnapshot,
+      p_portfolio_snapshot: body.portfolioSnapshot,
+      p_items: rpcItems,
+    });
 
-    const currentCredits = Math.max(0, Math.round(Number(current?.prediction_credits ?? 0)));
-    if (currentCredits < body.cost) {
+    if (rpcError) throw rpcError;
+
+    const result = (Array.isArray(data) ? data[0] : data) as
+      | CreatePredictionOrderRpcRow
+      | undefined;
+    return NextResponse.json({
+      ok: true,
+      orderId: result?.order_id,
+      credits: Math.max(0, Math.round(Number(result?.credits_after ?? 0))),
+    });
+  } catch (err) {
+    const message = errorMessage(err, "保存预测记录失败");
+    if (message.includes("INSUFFICIENT_CREDITS")) {
       return NextResponse.json(
-        { error: `预测积分不足：本次需要 ${body.cost} 分，当前剩余 ${currentCredits} 分。`, credits: currentCredits },
+        { error: `预测积分不足：本次需要 ${body.cost} 分。`, cost: body.cost },
         { status: 402 }
       );
     }
-
-    const nextCredits = currentCredits - body.cost;
-    const { data: order, error: orderError } = await supabase
-      .from("prediction_orders")
-      .insert({
-        user_id: user.id,
-        email: user.email ?? "",
-        status: "generated",
-        model_version: body.modelVersion,
-        risk_level: body.riskLevel,
-        cost: body.cost,
-        credits_before: currentCredits,
-        credits_after: nextCredits,
-        prediction_count: body.predictionCount,
-        selected_count: body.selectedCount,
-        total_suggested_percent: body.totalSuggestedPercent,
-        summary: body.summary,
-        preferences_snapshot: body.preferencesSnapshot,
-        portfolio_snapshot: body.portfolioSnapshot,
-      })
-      .select("id")
-      .single();
-
-    if (orderError) throw orderError;
-    insertedOrderId = order.id;
-
-    const { error: itemError } = await supabase.from("prediction_order_items").insert(
-      body.items.map((item) => ({
-        order_id: order.id,
-        user_id: user.id,
-        fixture_id: item.fixtureId,
-        league: item.league,
-        home_team: item.homeTeam,
-        away_team: item.awayTeam,
-        kickoff_at: item.kickoffAt,
-        status_at_prediction: item.statusAtPrediction,
-        market: item.market,
-        direction: item.direction,
-        recommendation: item.recommendation,
-        confidence: item.confidence,
-        score: item.score,
-        grade: item.grade,
-        risk_label: item.riskLabel,
-        suggested_percent: item.suggestedPercent,
-        fair_odds: item.fairOdds,
-        offered_odds: item.offeredOdds,
-        value_edge: item.valueEdge,
-        odds_label: item.oddsLabel,
-        value_label: item.valueLabel,
-        reason: item.reason,
-        data_basis: item.dataBasis,
-      }))
-    );
-
-    if (itemError) throw itemError;
-
-    const { error: updateError } = await supabase
-      .from("memberships")
-      .update({ prediction_credits: nextCredits, updated_at: new Date().toISOString() })
-      .eq("user_id", user.id);
-
-    if (updateError) throw updateError;
-
-    return NextResponse.json({ ok: true, orderId: order.id, credits: nextCredits });
-  } catch (err) {
-    if (insertedOrderId) {
-      await supabase.from("prediction_orders").delete().eq("id", insertedOrderId);
-    }
-
-    const message = errorMessage(err, "保存预测记录失败");
     if (predictionTablesMissing(message)) {
       return NextResponse.json(
         {

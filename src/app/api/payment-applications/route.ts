@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     body = {};
   }
 
-  const months = Math.max(1, Math.min(24, Number(body.months) || 1));
+  const months = 1;
   const selectedPlan = creditPlanById(body.planId);
   const submittedOrderNo = body.orderNo?.trim().toUpperCase();
   const orderNo = submittedOrderNo && ORDER_PATTERN.test(submittedOrderNo) ? submittedOrderNo : makeOrderNo();

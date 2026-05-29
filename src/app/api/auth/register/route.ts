@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { CAPTCHA_COOKIE, verifyCaptchaToken } from "@/lib/captcha";
 import { NEW_USER_FREE_CREDITS } from "@/lib/membership";
 import { createServiceRoleClient } from "@/lib/supabase";
+import { findAuthUserByEmail } from "@/lib/supabase-admin-users";
 
 type RegisterBody = {
   email?: string;
@@ -9,8 +10,32 @@ type RegisterBody = {
   captcha?: string;
 };
 
+const registerAttempts = new Map<string, { count: number; resetAt: number }>();
+const REGISTER_WINDOW_MS = 10 * 60 * 1000;
+const REGISTER_MAX_ATTEMPTS = 8;
+
 function validEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function rateLimitKey(req: NextRequest, email: string) {
+  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return `${forwarded || "unknown"}:${email}`;
+}
+
+function registerRateLimited(req: NextRequest, email: string) {
+  const key = rateLimitKey(req, email);
+  const now = Date.now();
+  const current = registerAttempts.get(key);
+
+  if (!current || current.resetAt <= now) {
+    registerAttempts.set(key, { count: 1, resetAt: now + REGISTER_WINDOW_MS });
+    return false;
+  }
+
+  current.count += 1;
+  registerAttempts.set(key, current);
+  return current.count > REGISTER_MAX_ATTEMPTS;
 }
 
 async function hasActiveProMembership(
@@ -79,10 +104,7 @@ export async function POST(req: NextRequest) {
   const captchaToken = req.cookies.get(CAPTCHA_COOKIE)?.value;
 
   if (!verifyCaptchaToken(captchaToken, body.captcha)) {
-    const response = NextResponse.json(
-      { error: "验证码错误，请重新输入" },
-      { status: 400 }
-    );
+    const response = NextResponse.json({ error: "验证码错误，请重新输入" }, { status: 400 });
     response.cookies.delete(CAPTCHA_COOKIE);
     return response;
   }
@@ -95,39 +117,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "密码至少需要 6 个字符" }, { status: 400 });
   }
 
+  if (registerRateLimited(req, email)) {
+    const response = NextResponse.json({ error: "操作太频繁，请稍后再试" }, { status: 429 });
+    response.cookies.delete(CAPTCHA_COOKIE);
+    return response;
+  }
+
   try {
     const supabase = createServiceRoleClient();
-    const { data: users, error: listError } = await supabase.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-
-    if (listError) throw listError;
-
-    const existingUser = users.users.find((user) => user.email?.toLowerCase() === email);
+    const existingUser = await findAuthUserByEmail(supabase, email);
 
     if (existingUser) {
       const isPro = await hasActiveProMembership(supabase, existingUser.id);
-      if (isPro) {
-        return NextResponse.json(
-          { error: "该邮箱是 Pro 账号，请用订单编号找回密码" },
-          { status: 409 }
-        );
-      }
-
-      const { error: updateError } = await supabase.auth.admin.updateUserById(existingUser.id, {
-        password,
-        email_confirm: true,
-      });
-
-      if (updateError) throw updateError;
       await ensureStarterMembership(supabase, existingUser.id, email);
 
-      const response = NextResponse.json({
-        ok: true,
-        user: { id: existingUser.id, email },
-        message: "账号密码已更新，可以直接登录",
-      });
+      const response = NextResponse.json(
+        {
+          error: isPro
+            ? "这个邮箱已经是 Pro 账号，请直接登录；忘记密码请走找回流程"
+            : "这个邮箱已经注册，请直接登录；忘记密码请走找回流程",
+        },
+        { status: 409 }
+      );
       response.cookies.delete(CAPTCHA_COOKIE);
       return response;
     }

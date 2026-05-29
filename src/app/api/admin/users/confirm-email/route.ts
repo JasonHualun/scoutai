@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest, unauthorized } from "@/lib/admin-auth";
 import { createServiceRoleClient } from "@/lib/supabase";
+import { findAuthUserByEmail } from "@/lib/supabase-admin-users";
 
 type ConfirmEmailBody = {
   email?: string;
@@ -23,14 +24,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const supabase = createServiceRoleClient();
-    const { data, error: listError } = await supabase.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-
-    if (listError) throw listError;
-
-    const user = data.users.find((item) => item.email?.toLowerCase() === email);
+    const user = await findAuthUserByEmail(supabase, email);
     if (!user) {
       return NextResponse.json({ error: "没有找到这个注册邮箱" }, { status: 404 });
     }

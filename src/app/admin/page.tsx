@@ -400,7 +400,7 @@ export default function AdminPage() {
       </form>
 
       <div className="rounded-2xl border border-white/5 bg-black/25 p-4 text-xs leading-6 text-white/55">
-        这套流程不会自动扣款：用户付款后提交订单，你在后台核对到账，再点确认开通。你的管理员邮箱是 491666856@qq.com。
+        这套流程不会自动扣款：用户付款后提交订单，你在后台核对到账，再点确认开通。后台入口只认后台口令或服务端管理员身份。
       </div>
     </div>
   );
