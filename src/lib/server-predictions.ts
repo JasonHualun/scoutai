@@ -171,7 +171,13 @@ function uniqueFixtureIds(ids: FixtureId[]) {
 }
 
 export function isTheStatsFixtureId(id: FixtureId) {
-  return String(id).startsWith("mt_");
+  const value = String(id);
+  return value.startsWith("mt_") || (theStatsConfigStatus().configured && /^\d+$/.test(value));
+}
+
+function normalizeTheStatsMatchId(id: FixtureId) {
+  const value = String(id);
+  return value.startsWith("mt_") ? value : `mt_${value}`;
 }
 
 function statusFromLegacy(short?: string): MatchStatus {
@@ -485,8 +491,9 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
     throw new Error("THESTATS_API_KEY 未配置，无法读取 TheStats 实盘数据");
   }
 
+  const matchId = normalizeTheStatsMatchId(fixtureId);
   const matchPayload = await fetchTheStatsJson<{ data?: TheStatsMatch }>({
-    path: `/football/matches/${fixtureId}`,
+    path: `/football/matches/${matchId}`,
     revalidate: 120,
   });
   const match = matchPayload.data;
@@ -494,16 +501,16 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
 
   const [statsRes, oddsRes, liveOddsRes, homeFormRes, awayFormRes] = await Promise.allSettled([
     fetchTheStatsJson<{ data?: TheStatsStats }>({
-      path: `/football/matches/${fixtureId}/stats`,
+      path: `/football/matches/${matchId}/stats`,
       revalidate: 120,
     }),
     fetchTheStatsJson<{ data?: TheStatsOdds }>({
-      path: `/football/matches/${fixtureId}/odds`,
+      path: `/football/matches/${matchId}/odds`,
       revalidate: 300,
     }),
     match.live_odds_available
       ? fetchTheStatsJson<{ data?: TheStatsOdds }>({
-          path: `/football/matches/${fixtureId}/odds/live`,
+          path: `/football/matches/${matchId}/odds/live`,
           revalidate: 30,
         })
       : Promise.resolve(null),
@@ -550,7 +557,7 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
   };
 
   return {
-    fixtureId,
+    fixtureId: match.id ?? matchId,
     provider: "thestats",
     matchData,
     status: statusFromTheStats(match.status),
@@ -574,7 +581,17 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
 
 export async function fetchPredictionMatch(fixtureId: FixtureId, prefs: UserPreferences) {
   const id = String(fixtureId);
-  const built = isTheStatsFixtureId(id) ? await fetchTheStatsMatch(id) : await fetchLegacyMatch(id);
+  let built: BuiltMatch;
+  if (isTheStatsFixtureId(id)) {
+    try {
+      built = await fetchTheStatsMatch(id);
+    } catch (error) {
+      if (id.startsWith("mt_")) throw error;
+      built = await fetchLegacyMatch(id);
+    }
+  } else {
+    built = await fetchLegacyMatch(id);
+  }
   return {
     ...built,
     prediction: calculateFootballPrediction(built.matchData, prefs),
