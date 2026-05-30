@@ -9,7 +9,7 @@ export type TheStatsRequestOptions = {
 };
 
 function apiKey() {
-  return process.env.THESTATS_API_KEY || process.env.THE_STATS_API_KEY || "";
+  return (process.env.THESTATS_API_KEY || process.env.THE_STATS_API_KEY || "").trim();
 }
 
 function baseUrl() {
