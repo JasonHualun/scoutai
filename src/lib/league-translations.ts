@@ -403,6 +403,10 @@ const LEAGUE_MAP: Record<string, string> = {
   "International Friendlies": "国际友谊赛",
   "Friendly International": "国际友谊赛",
   "Friendlies": "国际友谊赛",
+  "V-League 1": "越南联赛",
+  "V-LEAGUE 1": "越南联赛",
+  "V.League 1": "越南联赛",
+  "V.LEAGUE 1": "越南联赛",
   "Vietnam V.League 1": "越南联赛",
   "Uruguay Primera Division": "乌拉圭甲",
   "Morocco Botola Pro": "摩洛哥甲",
@@ -464,13 +468,22 @@ export function translateTeam(name: string): string {
   const normalizedName = name.normalize("NFC");
   const direct = TEAM_MAP[normalizedName];
   if (direct) return direct;
+  const lowerName = normalizedName.toLowerCase();
+  const directIgnoreCase = Object.entries(TEAM_MAP).find(
+    ([source]) => source.toLowerCase() === lowerName
+  )?.[1];
+  if (directIgnoreCase) return directIgnoreCase;
 
   const simplified = normalizedName
     .replace(/\s+(FC|AFC|CF|SC|BC|SCO)$/i, "")
     .replace(/\s+Calcio$/i, "")
     .trim();
 
-  return TEAM_MAP[simplified] ?? normalizedName;
+  const simplifiedIgnoreCase = Object.entries(TEAM_MAP).find(
+    ([source]) => source.toLowerCase() === simplified.toLowerCase()
+  )?.[1];
+
+  return TEAM_MAP[simplified] ?? simplifiedIgnoreCase ?? normalizedName;
 }
 
 export function translateTeamText(text: string): string {
@@ -496,7 +509,10 @@ export function translateLeague(raw: string): string {
   const separator = raw.includes(" · ") ? " · " : raw.includes("路") ? "路" : "";
   const leagueEn = separator ? raw.slice(0, raw.indexOf(separator)).trim() : raw.trim();
   const roundEn = separator ? raw.slice(raw.indexOf(separator) + separator.length).trim() : "";
-  const leagueCn = LEAGUE_MAP[leagueEn] ?? leagueEn;
+  const leagueIgnoreCase = Object.entries(LEAGUE_MAP).find(
+    ([source]) => source.toLowerCase() === leagueEn.toLowerCase()
+  )?.[1];
+  const leagueCn = LEAGUE_MAP[leagueEn] ?? leagueIgnoreCase ?? leagueEn;
 
   if (!roundEn) return leagueCn;
 

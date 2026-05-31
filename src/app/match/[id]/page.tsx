@@ -669,17 +669,47 @@ export default function MatchDetailPage() {
         timeZone: "Asia/Shanghai",
       })
     : null;
+  const hasMarketData = Boolean(odds || marketSignals);
   const detailStatusLabel = loading
     ? "数据同步中"
     : match.status === "upcoming"
       ? "等待开赛"
       : stats
-        ? "真实数据已更新"
-        : "进行中 · 等待实时统计";
+        ? "真实统计已更新"
+        : hasMarketData
+          ? "比分/盘口已同步 · 统计待返回"
+          : "进行中 · 等待实时统计";
   const realtimeEmptyText =
     match.status === "upcoming"
       ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
-      : "比分和状态已同步；实时统计暂未返回，系统不会展示占位假数据。";
+      : hasMarketData
+        ? "本场已经同步比分、状态和盘口；射门、角球、黄牌、xG 等实时统计源暂未返回。系统不会用假数据占位，等数据源返回后会自动展示。"
+        : "比分和状态已同步；射门、角球、黄牌、xG 等实时统计暂未返回。系统不会展示占位假数据。";
+  const dataSourceCards = [
+    {
+      label: "比分状态",
+      value: match.status === "upcoming" ? "待开赛" : "已同步",
+      active: match.status !== "upcoming",
+      detail:
+        match.status === "live"
+          ? "正在比赛，比分会跟随接口刷新"
+          : match.status === "finished"
+            ? "比赛已结束"
+            : "开赛后自动刷新",
+    },
+    {
+      label: "盘口指数",
+      value: hasMarketData ? "已同步" : "待返回",
+      active: hasMarketData,
+      detail: hasMarketData ? "可用于市场概率和价值差计算" : "盘口源暂未覆盖本场",
+    },
+    {
+      label: "实时统计",
+      value: stats ? "已同步" : match.status === "upcoming" ? "开赛后更新" : "源未返回",
+      active: Boolean(stats),
+      detail: stats ? "射门、角球、牌和 xG 已可用" : "没有返回就不展示假统计",
+    },
+  ];
   const oddsEmptyText = "市场指数暂未更新，价值差暂不计算。";
   const marketSignalCards = marketSignals
     ? [
@@ -938,7 +968,41 @@ export default function MatchDetailPage() {
 
       <section className="grid gap-4 md:grid-cols-[1fr,1fr]">
         <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
-          <h2 className="text-sm font-semibold">实时数据对比</h2>
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">实时数据对比</h2>
+              <p className="mt-1 text-[11px] leading-5 text-white/45">
+                这里展示数据源真实返回的比赛统计；没有返回的字段不会用演示数据填充。
+              </p>
+            </div>
+            {!stats && match.status !== "upcoming" && (
+              <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-[10px] font-semibold text-amber-100/80">
+                统计源待返回
+              </span>
+            )}
+          </div>
+          <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+            {dataSourceCards.map((item) => (
+              <div
+                key={item.label}
+                className={`rounded-xl border p-3 ${
+                  item.active
+                    ? "border-[color:var(--accent)]/25 bg-[color:var(--accent)]/8"
+                    : "border-white/8 bg-black/25"
+                }`}
+              >
+                <div className="text-white/45">{item.label}</div>
+                <div
+                  className={`mt-1 text-sm font-semibold ${
+                    item.active ? "text-[color:var(--accent)]" : "text-white/70"
+                  }`}
+                >
+                  {item.value}
+                </div>
+                <div className="mt-1 text-[11px] leading-5 text-white/42">{item.detail}</div>
+              </div>
+            ))}
+          </div>
           {stats ? (
             <div className="mt-3 space-y-2">
               <StatRow label="控球率" home={stats.possessionHome} away={stats.possessionAway} isPercent />
@@ -950,7 +1014,7 @@ export default function MatchDetailPage() {
               <StatRow label="xG" home={stats.xGHome} away={stats.xGAway} />
             </div>
           ) : (
-            <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/25 p-4 text-xs leading-6 text-white/55">
+            <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/25 p-4 text-xs leading-6 text-white/58">
               {realtimeEmptyText}
             </div>
           )}
