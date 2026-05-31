@@ -119,8 +119,9 @@ function isFriendlyTestMatch(match: MatchCard) {
 function hasTestCoverage(match: MatchCard) {
   return Boolean(
     isFriendlyTestMatch(match) &&
+      match.status !== "finished" &&
       (match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable) &&
-      match.coverage?.statsAvailable
+      (match.status === "upcoming" || match.coverage?.statsAvailable)
   );
 }
 
@@ -265,7 +266,7 @@ export default function HomeClient({ initialMatches }: Props) {
 
   const liveCount = activeMatches.filter((match) => match.status === "live").length;
   const upcomingCount = activeMatches.filter((match) => match.status === "upcoming").length;
-  const finishedCount = activeMatches.filter((match) => match.status === "finished").length;
+  const trackableCount = liveCount + upcomingCount;
 
   function toggleFavorite(id: number, e: React.MouseEvent) {
     e.preventDefault();
@@ -362,8 +363,8 @@ export default function HomeClient({ initialMatches }: Props) {
           { label: scopeMode === "test" ? "可测友谊赛" : "关注赛事", value: activeMatches.length },
           { label: "进行中", value: liveCount },
           {
-            label: scopeMode === "test" ? "可复盘" : "未开赛",
-            value: scopeMode === "test" ? finishedCount : upcomingCount,
+            label: scopeMode === "test" ? "可跟踪" : "未开赛",
+            value: scopeMode === "test" ? trackableCount : upcomingCount,
           },
         ].map((item) => (
           <div
@@ -404,7 +405,7 @@ export default function HomeClient({ initialMatches }: Props) {
             <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-8 text-sm text-white/60">
               {scopeMode === "core"
                 ? "暂无五大联赛或世界杯比赛。可以切到“友谊赛测试”，只看近期有盘口和实时统计覆盖的友谊赛。"
-                : "暂时没有可测友谊赛。测试池只展示同时有盘口和实时统计覆盖的比赛，避免用低质量小联赛数据误导判断。"}
+                : "暂时没有可跟踪友谊赛。测试池只展示未开赛或进行中的友谊赛；已结束比赛会进入历史预测或赛后复盘，不放在当前工作台。"}
             </div>
           ) : (
             <>

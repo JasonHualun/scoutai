@@ -256,6 +256,10 @@ function statusFromTheStats(status?: string) {
   return "NS";
 }
 
+function isTheStatsActiveBoardMatch(match: TheStatsMatch) {
+  return !["FT", "PST", "CANC", "ABD", "AWD", "WO"].includes(statusFromTheStats(match.status));
+}
+
 function mapTheStatsMatch(match: TheStatsMatch, coverageOverrides: TheStatsCoverageOverrides = {}) {
   const competition = leagueMetaFromTheStats(match);
   const isFriendly = isTheStatsFriendly(match);
@@ -361,6 +365,7 @@ async function fetchTheStatsMatches(
     onlyFriendlies?: boolean;
     requireOdds?: boolean;
     requireStats?: boolean;
+    activeOnly?: boolean;
     maxStatChecks?: number;
     maxPages?: number;
   } = {}
@@ -387,6 +392,7 @@ async function fetchTheStatsMatches(
         : true
     )
     .filter((match) => (options.onlyFriendlies ? isTheStatsFriendly(match) : true))
+    .filter((match) => (options.activeOnly ? isTheStatsActiveBoardMatch(match) : true))
     .sort(
       (a, b) =>
         new Date(a.utc_date ?? 0).getTime() - new Date(b.utc_date ?? 0).getTime()
@@ -1117,7 +1123,8 @@ export async function getMarketTestMatches(days = 7) {
         includeUnsupported: true,
         onlyFriendlies: true,
         requireOdds: true,
-        requireStats: true,
+        requireStats: false,
+        activeOnly: true,
         maxPages: 8,
       }
     );
