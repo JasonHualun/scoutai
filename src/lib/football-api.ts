@@ -322,12 +322,29 @@ async function fetchTheStatsStatsPayload(matchId: string | number | null | undef
   return null;
 }
 
+async function filterTheStatsMatchesWithActualStats(matches: TheStatsMatch[], maxChecks: number) {
+  const covered: TheStatsMatch[] = [];
+
+  for (const match of matches.slice(0, maxChecks)) {
+    try {
+      if (hasTheStatsStats(await fetchTheStatsStatsPayload(match.id))) {
+        covered.push(match);
+      }
+    } catch (error) {
+      console.error("[thestats] stats preflight failed:", error);
+    }
+  }
+
+  return covered;
+}
+
 async function fetchTheStatsMatches(
   query: Record<string, string | number>,
   options: FixtureFilterOptions & {
     onlyFriendlies?: boolean;
     requireOdds?: boolean;
     requireStats?: boolean;
+    maxStatChecks?: number;
     maxPages?: number;
   } = {}
 ) {
@@ -352,15 +369,22 @@ async function fetchTheStatsMatches(
         ? Boolean(match.odds_available || match.live_odds_available)
         : true
     )
-    .filter((match) => (options.onlyFriendlies ? isTheStatsFriendly(match) : true));
+    .filter((match) => (options.onlyFriendlies ? isTheStatsFriendly(match) : true))
+    .sort(
+      (a, b) =>
+        new Date(a.utc_date ?? 0).getTime() - new Date(b.utc_date ?? 0).getTime()
+    );
 
-  const fixtures = filteredMatches
+  const coveredMatches = options.requireStats
+    ? await filterTheStatsMatchesWithActualStats(filteredMatches, options.maxStatChecks ?? 12)
+    : filteredMatches;
+
+  const fixtures = coveredMatches
     .map((match) =>
       mapTheStatsMatch(match, {
-        statsAvailable: Boolean(match.xg_available),
+        statsAvailable: options.requireStats ? true : Boolean(match.xg_available),
       })
     )
-    .filter((fixture) => (options.requireStats ? Boolean(fixture.coverage.statsAvailable) : true))
     .filter((fixture) => fixture.fixture.id > 0)
     .sort(
       (a, b) =>
