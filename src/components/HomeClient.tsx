@@ -117,8 +117,7 @@ function isFriendlyTestMatch(match: MatchCard) {
 
 function hasTestCoverage(match: MatchCard) {
   return Boolean(
-    match.status !== "finished" &&
-      isFriendlyTestMatch(match) &&
+    isFriendlyTestMatch(match) &&
       (match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable) &&
       match.coverage?.statsAvailable
   );
@@ -209,10 +208,10 @@ export default function HomeClient({ initialMatches }: Props) {
 
   const activeMatches = useMemo(() => {
     return matches.filter((match) => {
-      if (match.status === "finished") return false;
       if (scopeMode === "test") {
         return hasTestCoverage(match);
       }
+      if (match.status === "finished") return false;
       if (selectedLeagueIds.length === 0) return false;
       return !!match.leagueId && favoriteLeagueIds.has(match.leagueId);
     });
@@ -265,6 +264,7 @@ export default function HomeClient({ initialMatches }: Props) {
 
   const liveCount = activeMatches.filter((match) => match.status === "live").length;
   const upcomingCount = activeMatches.filter((match) => match.status === "upcoming").length;
+  const finishedCount = activeMatches.filter((match) => match.status === "finished").length;
 
   function toggleFavorite(id: number, e: React.MouseEvent) {
     e.preventDefault();
@@ -358,9 +358,12 @@ export default function HomeClient({ initialMatches }: Props) {
 
       <section className="grid gap-4 md:grid-cols-3">
         {[
-          { label: scopeMode === "test" ? "有赔率比赛" : "关注赛事", value: activeMatches.length },
+          { label: scopeMode === "test" ? "可测友谊赛" : "关注赛事", value: activeMatches.length },
           { label: "进行中", value: liveCount },
-          { label: "未开赛", value: upcomingCount },
+          {
+            label: scopeMode === "test" ? "可复盘" : "未开赛",
+            value: scopeMode === "test" ? finishedCount : upcomingCount,
+          },
         ].map((item) => (
           <div
             key={item.label}
@@ -406,6 +409,7 @@ export default function HomeClient({ initialMatches }: Props) {
             <>
               <LiveMatchUpdater onUpdate={handleLiveUpdate} />
               {sortedMatches.map((match) => {
+                const isFinished = match.status === "finished";
                 const isFavorite = favorites.includes(match.id);
                 const inPredictionPool = predictionPoolIds.includes(match.id);
                 const hotScore = matchHotScore(match, favoriteLeagueIds);
@@ -474,39 +478,45 @@ export default function HomeClient({ initialMatches }: Props) {
                       </div>
 
                       <div className="mt-4 flex items-center justify-between text-[11px] text-white/45">
-                        <span>查看概率预测、市场分析和 AI 解读</span>
+                        <span>
+                          {isFinished
+                            ? "查看赛后统计、市场分析和模型复盘"
+                            : "查看概率预测、市场分析和 AI 解读"}
+                        </span>
                         <span className="text-[color:var(--accent)]/80 transition group-hover:translate-x-0.5">
                           详情 →
                         </span>
                       </div>
                     </Link>
 
-                    <div className="absolute bottom-3 right-14 z-10 flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={(event) => toggleFavorite(match.id, event)}
-                        aria-label={isFavorite ? "取消收藏" : "收藏比赛"}
-                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
-                          isFavorite
-                            ? "border-yellow-300/35 bg-yellow-300/12 text-yellow-200"
-                            : "border-white/12 bg-black/60 text-white/55 hover:border-yellow-300/45 hover:text-yellow-100"
-                        }`}
-                      >
-                        {isFavorite ? "★ 已收藏" : "☆ 收藏"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => togglePredictionPool(match.id, event)}
-                        aria-label={inPredictionPool ? "移出预测池" : "加入预测池"}
-                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
-                          inPredictionPool
-                            ? "border-[color:var(--accent)]/45 bg-[color:var(--accent)]/14 text-[color:var(--accent)]"
-                            : "border-white/12 bg-black/60 text-white/55 hover:border-[color:var(--accent)]/55 hover:text-[color:var(--accent)]"
-                        }`}
-                      >
-                        {inPredictionPool ? "✓ 已入预测" : "+ 加入预测"}
-                      </button>
-                    </div>
+                    {!isFinished && (
+                      <div className="absolute bottom-3 right-14 z-10 flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => toggleFavorite(match.id, event)}
+                          aria-label={isFavorite ? "取消收藏" : "收藏比赛"}
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
+                            isFavorite
+                              ? "border-yellow-300/35 bg-yellow-300/12 text-yellow-200"
+                              : "border-white/12 bg-black/60 text-white/55 hover:border-yellow-300/45 hover:text-yellow-100"
+                          }`}
+                        >
+                          {isFavorite ? "★ 已收藏" : "☆ 收藏"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => togglePredictionPool(match.id, event)}
+                          aria-label={inPredictionPool ? "移出预测池" : "加入预测池"}
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition hover:scale-[1.03] ${
+                            inPredictionPool
+                              ? "border-[color:var(--accent)]/45 bg-[color:var(--accent)]/14 text-[color:var(--accent)]"
+                              : "border-white/12 bg-black/60 text-white/55 hover:border-[color:var(--accent)]/55 hover:text-[color:var(--accent)]"
+                          }`}
+                        >
+                          {inPredictionPool ? "✓ 已入预测" : "+ 加入预测"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
