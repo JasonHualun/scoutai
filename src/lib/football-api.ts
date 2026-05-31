@@ -144,8 +144,30 @@ function numericIdFromTheStats(id?: string | null) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
 }
 
-function theStatsIdFromNumeric(id: number) {
-  return `mt_${String(Math.round(id))}`;
+function theStatsIdCandidates(id: number) {
+  const raw = String(Math.round(id));
+  return Array.from(new Set([`mt_${raw}`, `mt_${raw.padStart(9, "0")}`]));
+}
+
+async function fetchTheStatsMatchResource<T>(
+  fixtureId: number,
+  pathForMatchId: (matchId: string) => string,
+  revalidate: number
+) {
+  let lastError: unknown = null;
+
+  for (const matchId of theStatsIdCandidates(fixtureId)) {
+    try {
+      return await fetchTheStatsJson<T>({
+        path: pathForMatchId(matchId),
+        revalidate,
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("TheStats match resource not found");
 }
 
 function leagueIdFromTheStatsName(name?: string | null) {
@@ -464,23 +486,26 @@ export async function getMatchMarketSignals(fixtureId: number) {
   if (!shouldUseTheStats()) return null;
 
   try {
-    const matchId = theStatsIdFromNumeric(fixtureId);
-    const [liveOddsRes, oddsRes] = await Promise.allSettled([
-      fetchTheStatsJson<TheStatsOddsPayload>({
-        path: `/football/matches/${matchId}/odds/live`,
-        revalidate: 30,
-      }),
-      fetchTheStatsJson<TheStatsOddsPayload>({
-        path: `/football/matches/${matchId}/odds`,
-        revalidate: 300,
-      }),
-    ]);
-    const payload =
-      liveOddsRes.status === "fulfilled"
-        ? liveOddsRes.value
-        : oddsRes.status === "fulfilled"
-          ? oddsRes.value
-          : null;
+    let payload: TheStatsOddsPayload | null = null;
+    for (const matchId of theStatsIdCandidates(fixtureId)) {
+      const [liveOddsRes, oddsRes] = await Promise.allSettled([
+        fetchTheStatsJson<TheStatsOddsPayload>({
+          path: `/football/matches/${matchId}/odds/live`,
+          revalidate: 30,
+        }),
+        fetchTheStatsJson<TheStatsOddsPayload>({
+          path: `/football/matches/${matchId}/odds`,
+          revalidate: 300,
+        }),
+      ]);
+      payload =
+        liveOddsRes.status === "fulfilled"
+          ? liveOddsRes.value
+          : oddsRes.status === "fulfilled"
+            ? oddsRes.value
+            : null;
+      if ((payload?.data?.bookmakers ?? []).length > 0) break;
+    }
     const bookmakers = payload?.data?.bookmakers ?? [];
     if (bookmakers.length === 0) return null;
 
@@ -787,10 +812,11 @@ export async function getLiveMatches() {
 export async function getFixtureById(fixtureId: number) {
   if (shouldUseTheStats()) {
     try {
-      const payload = await fetchTheStatsJson<TheStatsMatchPayload>({
-        path: `/football/matches/${theStatsIdFromNumeric(fixtureId)}`,
-        revalidate: 30,
-      });
+      const payload = await fetchTheStatsMatchResource<TheStatsMatchPayload>(
+        fixtureId,
+        (matchId) => `/football/matches/${matchId}`,
+        30
+      );
       if (payload.data) {
         const fixture = mapTheStatsMatch(payload.data);
         return filterAndLocalizeFixtures({
@@ -813,19 +839,27 @@ export async function getFixtureById(fixtureId: number) {
 export async function getMatchStatistics(fixtureId: number) {
   if (shouldUseTheStats()) {
     try {
-      const [matchPayload, statsPayload] = await Promise.all([
-        fetchTheStatsJson<TheStatsMatchPayload>({
-          path: `/football/matches/${theStatsIdFromNumeric(fixtureId)}`,
-          revalidate: 30,
-        }),
-        fetchTheStatsJson<TheStatsStatsPayload>({
-          path: `/football/matches/${theStatsIdFromNumeric(fixtureId)}/stats`,
-          revalidate: 30,
-        }),
-      ]);
-      if (matchPayload.data) {
-        return mapTheStatsStats(statsPayload, mapTheStatsMatch(matchPayload.data));
+      let lastError: unknown = null;
+      for (const matchId of theStatsIdCandidates(fixtureId)) {
+        try {
+          const [matchPayload, statsPayload] = await Promise.all([
+            fetchTheStatsJson<TheStatsMatchPayload>({
+              path: `/football/matches/${matchId}`,
+              revalidate: 30,
+            }),
+            fetchTheStatsJson<TheStatsStatsPayload>({
+              path: `/football/matches/${matchId}/stats`,
+              revalidate: 30,
+            }),
+          ]);
+          if (matchPayload.data) {
+            return mapTheStatsStats(statsPayload, mapTheStatsMatch(matchPayload.data));
+          }
+        } catch (error) {
+          lastError = error;
+        }
       }
+      if (lastError) throw lastError;
     } catch (error) {
       console.error("[thestats] stats failed:", error);
     }
@@ -839,24 +873,25 @@ export async function getMatchStatistics(fixtureId: number) {
 export async function getMatchOdds(fixtureId: number) {
   if (shouldUseTheStats()) {
     try {
-      const matchId = theStatsIdFromNumeric(fixtureId);
-      const [liveOddsRes, oddsRes] = await Promise.allSettled([
-        fetchTheStatsJson<TheStatsOddsPayload>({
-          path: `/football/matches/${matchId}/odds/live`,
-          revalidate: 30,
-        }),
-        fetchTheStatsJson<TheStatsOddsPayload>({
-          path: `/football/matches/${matchId}/odds`,
-          revalidate: 300,
-        }),
-      ]);
-      const payload =
-        liveOddsRes.status === "fulfilled"
-          ? liveOddsRes.value
-          : oddsRes.status === "fulfilled"
-            ? oddsRes.value
-            : null;
-      if (payload) return mapTheStatsOdds(payload);
+      for (const matchId of theStatsIdCandidates(fixtureId)) {
+        const [liveOddsRes, oddsRes] = await Promise.allSettled([
+          fetchTheStatsJson<TheStatsOddsPayload>({
+            path: `/football/matches/${matchId}/odds/live`,
+            revalidate: 30,
+          }),
+          fetchTheStatsJson<TheStatsOddsPayload>({
+            path: `/football/matches/${matchId}/odds`,
+            revalidate: 300,
+          }),
+        ]);
+        const payload =
+          liveOddsRes.status === "fulfilled"
+            ? liveOddsRes.value
+            : oddsRes.status === "fulfilled"
+              ? oddsRes.value
+              : null;
+        if (payload) return mapTheStatsOdds(payload);
+      }
     } catch (error) {
       console.error("[thestats] odds failed:", error);
     }
