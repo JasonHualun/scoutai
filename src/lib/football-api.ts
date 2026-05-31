@@ -176,13 +176,13 @@ function theStatsMatchIdCandidates(id?: string | number | null) {
 }
 
 async function fetchTheStatsMatchResource<T>(
-  fixtureId: number,
+  fixtureId: number | string,
   pathForMatchId: (matchId: string) => string,
   revalidate: number
 ) {
   let lastError: unknown = null;
 
-  for (const matchId of theStatsIdCandidates(fixtureId)) {
+  for (const matchId of theStatsMatchIdCandidates(fixtureId)) {
     try {
       return await fetchTheStatsJson<T>({
         path: pathForMatchId(matchId),
@@ -287,6 +287,7 @@ function mapTheStatsMatch(match: TheStatsMatch, coverageOverrides: TheStatsCover
     },
     coverage: {
       provider: "thestats",
+      providerMatchId: match.id ?? null,
       oddsAvailable: Boolean(match.odds_available),
       liveOddsAvailable: Boolean(match.live_odds_available),
       xgAvailable: Boolean(match.xg_available),
@@ -597,12 +598,12 @@ function exchangeLean(payload: TheStatsOddsPayload | null) {
   return `交易所更偏${labels[strongest.key]} ${strongest.diff > 0 ? "+" : ""}${strongest.diff}%`;
 }
 
-export async function getMatchMarketSignals(fixtureId: number) {
+export async function getMatchMarketSignals(fixtureId: number | string) {
   if (!shouldUseTheStats()) return null;
 
   try {
     let payload: TheStatsOddsPayload | null = null;
-    for (const matchId of theStatsIdCandidates(fixtureId)) {
+    for (const matchId of theStatsMatchIdCandidates(fixtureId)) {
       const [liveOddsRes, oddsRes] = await Promise.allSettled([
         fetchTheStatsJson<TheStatsOddsPayload>({
           path: `/football/matches/${matchId}/odds/live`,
@@ -930,7 +931,7 @@ export async function getLiveMatches() {
   }
 }
 
-export async function getFixtureById(fixtureId: number) {
+export async function getFixtureById(fixtureId: number | string) {
   if (shouldUseTheStats()) {
     try {
       const payload = await fetchTheStatsMatchResource<TheStatsMatchPayload>(
@@ -951,17 +952,18 @@ export async function getFixtureById(fixtureId: number) {
     }
   }
 
-  const data = await fetchWithCache<FootballApiResponse>(`fixture:${fixtureId}`, "/fixtures", {
-    id: fixtureId,
+  const numericFixtureId = numericIdFromTheStats(String(fixtureId));
+  const data = await fetchWithCache<FootballApiResponse>(`fixture:${numericFixtureId}`, "/fixtures", {
+    id: numericFixtureId,
   });
   return filterAndLocalizeFixtures(data);
 }
 
-export async function getMatchStatistics(fixtureId: number) {
+export async function getMatchStatistics(fixtureId: number | string) {
   if (shouldUseTheStats()) {
     try {
       let lastError: unknown = null;
-      for (const matchId of theStatsIdCandidates(fixtureId)) {
+      for (const matchId of theStatsMatchIdCandidates(fixtureId)) {
         try {
           const [matchPayload, statsPayload] = await Promise.all([
             fetchTheStatsJson<TheStatsMatchPayload>({
@@ -993,10 +995,10 @@ export async function getMatchStatistics(fixtureId: number) {
   });
 }
 
-export async function getMatchOdds(fixtureId: number) {
+export async function getMatchOdds(fixtureId: number | string) {
   if (shouldUseTheStats()) {
     try {
-      for (const matchId of theStatsIdCandidates(fixtureId)) {
+      for (const matchId of theStatsMatchIdCandidates(fixtureId)) {
         const [liveOddsRes, oddsRes] = await Promise.allSettled([
           fetchTheStatsJson<TheStatsOddsPayload>({
             path: `/football/matches/${matchId}/odds/live`,

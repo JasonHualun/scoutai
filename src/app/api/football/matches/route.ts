@@ -19,6 +19,7 @@ type FixtureLike = {
   goals: { home?: number | null; away?: number | null };
   coverage?: {
     provider?: string;
+    providerMatchId?: string | null;
     oddsAvailable?: boolean;
     liveOddsAvailable?: boolean;
     xgAvailable?: boolean;

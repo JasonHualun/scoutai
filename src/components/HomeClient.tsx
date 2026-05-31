@@ -35,6 +35,7 @@ export type MatchCard = {
   leagueId?: number;
   coverage?: {
     provider?: string;
+    providerMatchId?: string | null;
     oddsAvailable?: boolean;
     liveOddsAvailable?: boolean;
     xgAvailable?: boolean;
@@ -417,7 +418,7 @@ export default function HomeClient({ initialMatches }: Props) {
                 return (
                   <div key={match.id} className="relative">
                     <Link
-                      href={`/match/${match.id}`}
+                      href={`/match/${encodeURIComponent(match.coverage?.providerMatchId ?? String(match.id))}`}
                       className="group block rounded-2xl border border-white/5 bg-[color:var(--card)]/85 p-4 shadow-[0_16px_60px_rgba(0,0,0,0.55)] ring-1 ring-black/30 transition hover:-translate-y-0.5 hover:border-[color:var(--accent)]/60"
                     >
                       <div className="flex items-start justify-between gap-4">

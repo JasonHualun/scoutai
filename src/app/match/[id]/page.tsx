@@ -427,7 +427,8 @@ function normalizeStringList(value: unknown, fallback: string[]) {
 
 export default function MatchDetailPage() {
   const params = useParams<{ id: string }>();
-  const fixtureId = Number(params.id);
+  const fixtureParam = params.id;
+  const fixtureId = Number(fixtureParam.replace(/\D/g, ""));
   const user = useAuthStore((state) => state.user);
   const session = useAuthStore((state) => state.session);
 
@@ -465,7 +466,7 @@ export default function MatchDetailPage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/match/${fixtureId}`, {
+        const res = await fetch(`/api/match/${encodeURIComponent(fixtureParam)}`, {
           cache: "no-store",
         });
         const json = (await res.json()) as ApiMatchResponse;
@@ -550,7 +551,7 @@ export default function MatchDetailPage() {
     load();
     const refreshId = window.setInterval(load, 60000);
     return () => window.clearInterval(refreshId);
-  }, [fixtureId]);
+  }, [fixtureId, fixtureParam]);
 
   useEffect(() => {
     let cancelled = false;

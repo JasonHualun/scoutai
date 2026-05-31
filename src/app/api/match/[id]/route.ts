@@ -41,9 +41,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const resolvedParams = await params;
-  const fixtureId = Number(resolvedParams.id);
+  const fixtureLookupId = decodeURIComponent(resolvedParams.id);
+  const fixtureId = Number(fixtureLookupId.replace(/\D/g, ""));
 
-  if (!fixtureId || Number.isNaN(fixtureId)) {
+  if (!fixtureLookupId || !fixtureId || Number.isNaN(fixtureId)) {
     return NextResponse.json(
       { error: "Invalid fixture id" },
       { status: 400 }
@@ -52,10 +53,10 @@ export async function GET(
 
   try {
     const [fixtureRes, statsRes, oddsRes, marketSignalsRes] = await Promise.allSettled([
-      getFixtureById(fixtureId),
-      getMatchStatistics(fixtureId),
-      getMatchOdds(fixtureId),
-      getMatchMarketSignals(fixtureId),
+      getFixtureById(fixtureLookupId),
+      getMatchStatistics(fixtureLookupId),
+      getMatchOdds(fixtureLookupId),
+      getMatchMarketSignals(fixtureLookupId),
     ]);
 
     let fixture = fixtureRes.status === "fulfilled" ? fixtureRes.value : null;
