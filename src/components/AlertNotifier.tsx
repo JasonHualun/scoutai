@@ -17,6 +17,7 @@ import {
   cleanupStoredMatchPools,
   readFavoriteIds as readStoredFavoriteIds,
 } from "@/lib/match-pools";
+import { translateTeam, translateTeamText } from "@/lib/league-translations";
 
 type LiveMatchesResponse = {
   matches?: LiveAlertMatch[];
@@ -88,7 +89,9 @@ function buildUpsetSignal(match: LiveAlertMatch) {
 
   return {
     upsetProbability: Math.round(upsetProbability * 10) / 10,
-    upsetSide: homeIsFavorite ? `${match.awayTeam} 爆冷方向` : `${match.homeTeam} 爆冷方向`,
+    upsetSide: homeIsFavorite
+      ? `${translateTeam(match.awayTeam)} 爆冷方向`
+      : `${translateTeam(match.homeTeam)} 爆冷方向`,
   };
 }
 
@@ -103,6 +106,8 @@ async function enrichMatch(match: LiveAlertMatch): Promise<LiveAlertMatch> {
     const bets = detail.odds?.response?.[0]?.bookmakers?.[0]?.bets;
     const enriched: LiveAlertMatch = {
       ...match,
+      homeTeam: translateTeam(match.homeTeam),
+      awayTeam: translateTeam(match.awayTeam),
       yellowCardsHome: statValue(homeStats, "Yellow Cards"),
       yellowCardsAway: statValue(awayStats, "Yellow Cards"),
       redCardsHome: statValue(homeStats, "Red Cards"),
@@ -252,10 +257,12 @@ export function AlertNotifier() {
               </button>
             </div>
             <div className="mt-2 text-sm font-semibold text-white">
-              {alert.match_name}
+              {translateTeamText(alert.match_name)}
               <span className="ml-2 text-xs text-white/50">{alert.score}</span>
             </div>
-            <p className="mt-1 text-xs leading-5 text-white/65">{alert.content}</p>
+            <p className="mt-1 text-xs leading-5 text-white/65">
+              {translateTeamText(alert.content)}
+            </p>
           </div>
         );
       })}

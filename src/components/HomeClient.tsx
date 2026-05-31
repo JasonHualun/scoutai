@@ -276,10 +276,16 @@ export default function HomeClient({ initialMatches }: Props) {
   const handleLiveUpdate = useMemo(
     () => (newLiveMatches: MatchCard[]) => {
       setMatches((prev) => {
-        const liveMap = new Map(newLiveMatches.map((match) => [match.id, match]));
+        const translatedLiveMatches = newLiveMatches.map((match) => ({
+          ...match,
+          league: translateLeague(match.league),
+          homeTeam: translateTeam(match.homeTeam),
+          awayTeam: translateTeam(match.awayTeam),
+        }));
+        const liveMap = new Map(translatedLiveMatches.map((match) => [match.id, match]));
         const updated = prev.map((match) => liveMap.get(match.id) ?? match);
         const existingIds = new Set(prev.map((match) => match.id));
-        const brandNew = newLiveMatches.filter((match) => !existingIds.has(match.id));
+        const brandNew = translatedLiveMatches.filter((match) => !existingIds.has(match.id));
         return [...brandNew, ...updated];
       });
     },

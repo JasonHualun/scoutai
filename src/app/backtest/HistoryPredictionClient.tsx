@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PredictionOrder } from "@/lib/prediction-orders";
 import { useAuthStore } from "@/lib/authStore";
+import { translateLeague, translateTeam } from "@/lib/league-translations";
 
 type PredictionOrdersResponse = {
   orders?: PredictionOrder[];
@@ -206,9 +207,9 @@ export function HistoryPredictionClient() {
                   >
                     <div>
                       <div className="font-semibold text-white">
-                        {item.homeTeam} vs {item.awayTeam}
+                        {translateTeam(item.homeTeam)} vs {translateTeam(item.awayTeam)}
                       </div>
-                      <div className="mt-1 text-white/42">{item.league}</div>
+                      <div className="mt-1 text-white/42">{translateLeague(item.league)}</div>
                     </div>
                     <div>
                       <div className="text-white/42">玩法方向</div>

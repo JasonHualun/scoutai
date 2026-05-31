@@ -18,6 +18,7 @@ import {
   readStoredAlerts,
   sendBrowserNotification,
 } from "@/lib/alerts";
+import { translateTeamText } from "@/lib/league-translations";
 import {
   cleanupStoredMatchPools,
   MATCH_POOLS_UPDATED_EVENT,
@@ -280,9 +281,11 @@ export default function AlertsPage() {
                   不计入未读
                 </span>
               </div>
-              <div className="mt-2 font-semibold text-white">{testPreview.match_name}</div>
+              <div className="mt-2 font-semibold text-white">
+                {translateTeamText(testPreview.match_name)}
+              </div>
               <p className="mt-1 text-white/65">
-                {testPreview.content} 如果 Chrome 右下角也弹出通知，说明网页外通知正常。
+                {translateTeamText(testPreview.content)} 如果 Chrome 右下角也弹出通知，说明网页外通知正常。
               </p>
             </div>
           )}
@@ -350,10 +353,12 @@ export default function AlertsPage() {
                     </span>
                   </div>
                   <div className="text-sm text-white">
-                    {alert.match_name}
+                    {translateTeamText(alert.match_name)}
                     <span className="ml-2 text-xs text-white/50">{alert.score}</span>
                   </div>
-                  <p className="text-xs leading-5 text-white/60">{alert.content}</p>
+                  <p className="text-xs leading-5 text-white/60">
+                    {translateTeamText(alert.content)}
+                  </p>
                 </div>
               </Link>
             );

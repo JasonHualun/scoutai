@@ -1,3 +1,5 @@
+import { translateTeam, translateTeamText } from "./league-translations";
+
 export type AlertType =
   | "goal"
   | "yellow_card"
@@ -157,10 +159,10 @@ function normalizeStoredAlert(value: unknown): AlertItem | null {
   return {
     id: alert.id,
     match_id: alert.match_id,
-    match_name: alert.match_name,
+    match_name: translateTeamText(alert.match_name),
     score: alert.score,
     type: alert.type,
-    content: alert.content,
+    content: translateTeamText(alert.content),
     created_at: alert.created_at,
     read: Boolean(alert.read),
     source: alert.source === "server" || alert.source === "browser_test" ? alert.source : "live",
@@ -265,11 +267,16 @@ export function saveSnapshot(snapshot: AlertSnapshot) {
 export function snapshotFromMatches(matches: LiveAlertMatch[]): AlertSnapshot {
   return matches.reduce<AlertSnapshot>((snapshot, match) => {
     const id = String(match.id);
+    const homeTeam = translateTeam(match.homeTeam);
+    const awayTeam = translateTeam(match.awayTeam);
+    const upsetSide = match.upsetSide
+      ?.replace(match.homeTeam, homeTeam)
+      .replace(match.awayTeam, awayTeam);
     snapshot[id] = {
       id,
-      match_name: `${match.homeTeam} vs ${match.awayTeam}`,
-      homeTeam: match.homeTeam,
-      awayTeam: match.awayTeam,
+      match_name: `${homeTeam} vs ${awayTeam}`,
+      homeTeam,
+      awayTeam,
       homeScore: safeNumber(match.homeScore),
       awayScore: safeNumber(match.awayScore),
       status: match.status,
@@ -284,7 +291,7 @@ export function snapshotFromMatches(matches: LiveAlertMatch[]): AlertSnapshot {
       drawOdds: optionalNumber(match.drawOdds),
       awayWinOdds: optionalNumber(match.awayWinOdds),
       upsetProbability: optionalNumber(match.upsetProbability),
-      upsetSide: match.upsetSide,
+      upsetSide,
     };
     return snapshot;
   }, {});
@@ -598,7 +605,7 @@ export function sendBrowserNotification(alert: AlertItem) {
   const meta = alertTypeMeta[alert.type];
   try {
     const notification = new window.Notification(`ScoutAI ${meta.label}`, {
-      body: `${alert.match_name} ${alert.score}\n${alert.content}`,
+      body: `${translateTeamText(alert.match_name)} ${alert.score}\n${translateTeamText(alert.content)}`,
       tag: alert.id,
     });
 

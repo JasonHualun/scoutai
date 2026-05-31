@@ -3,6 +3,7 @@ import { UserPreferences } from "@/lib/football-prediction";
 import { normalizeMembership, PREDICTION_CREDITS_PER_MATCH } from "@/lib/membership";
 import { analyzeWithMinimax } from "@/lib/minimax";
 import { buildServerPredictionOrderInput } from "@/lib/server-predictions";
+import { translateLeague, translateTeam, translateTeamText } from "@/lib/league-translations";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
 
 type AnalyzeBody = {
@@ -141,14 +142,14 @@ export async function POST(req: NextRequest) {
     const analysis = await analyzeWithMinimax(builtMatch.matchData, userPrefs);
     const rpcItems = builtOrder.items.map((item) => ({
       fixture_id: String(item.fixtureId),
-      league: item.league,
-      home_team: item.homeTeam,
-      away_team: item.awayTeam,
+      league: translateLeague(item.league),
+      home_team: translateTeam(item.homeTeam),
+      away_team: translateTeam(item.awayTeam),
       kickoff_at: item.kickoffAt,
       status_at_prediction: item.statusAtPrediction,
       market: item.market,
-      direction: item.direction,
-      recommendation: item.recommendation,
+      direction: translateTeamText(item.direction),
+      recommendation: translateTeamText(item.recommendation),
       confidence: item.confidence,
       score: item.score,
       grade: item.grade,
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest) {
       value_edge: item.valueEdge,
       odds_label: item.oddsLabel,
       value_label: item.valueLabel,
-      reason: item.reason,
+      reason: translateTeamText(item.reason),
       data_basis: item.dataBasis,
     }));
 
@@ -217,4 +218,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

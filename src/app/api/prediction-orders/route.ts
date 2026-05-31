@@ -6,6 +6,7 @@ import {
   PredictionOrderItem,
 } from "@/lib/prediction-orders";
 import { buildServerPredictionOrderInput } from "@/lib/server-predictions";
+import { translateLeague, translateTeam, translateTeamText } from "@/lib/league-translations";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
 import { UserPreferences } from "@/lib/football-prediction";
 
@@ -106,14 +107,14 @@ function mapItem(row: PredictionOrderItemRow): PredictionOrderItem {
     id: row.id,
     orderId: row.order_id,
     fixtureId: row.fixture_id,
-    league: row.league,
-    homeTeam: row.home_team,
-    awayTeam: row.away_team,
+    league: translateLeague(row.league),
+    homeTeam: translateTeam(row.home_team),
+    awayTeam: translateTeam(row.away_team),
     kickoffAt: row.kickoff_at,
     statusAtPrediction: row.status_at_prediction,
     market: row.market,
-    direction: row.direction,
-    recommendation: row.recommendation,
+    direction: translateTeamText(row.direction),
+    recommendation: translateTeamText(row.recommendation),
     confidence: Number(row.confidence),
     score: Number(row.score),
     grade: row.grade,
@@ -124,7 +125,7 @@ function mapItem(row: PredictionOrderItemRow): PredictionOrderItem {
     valueEdge: row.value_edge == null ? null : Number(row.value_edge),
     oddsLabel: row.odds_label ?? "",
     valueLabel: row.value_label ?? "",
-    reason: row.reason ?? "",
+    reason: translateTeamText(row.reason ?? ""),
     dataBasis: Array.isArray(row.data_basis) ? row.data_basis.map(String) : [],
     resultStatus: row.result_status,
     finalScore: row.final_score,
@@ -280,14 +281,14 @@ export async function POST(req: NextRequest) {
 
     const rpcItems = body.items.map((item) => ({
       fixture_id: String(item.fixtureId),
-      league: item.league,
-      home_team: item.homeTeam,
-      away_team: item.awayTeam,
+      league: translateLeague(item.league),
+      home_team: translateTeam(item.homeTeam),
+      away_team: translateTeam(item.awayTeam),
       kickoff_at: item.kickoffAt,
       status_at_prediction: item.statusAtPrediction,
       market: item.market,
-      direction: item.direction,
-      recommendation: item.recommendation,
+      direction: translateTeamText(item.direction),
+      recommendation: translateTeamText(item.recommendation),
       confidence: item.confidence,
       score: item.score,
       grade: item.grade,
@@ -298,7 +299,7 @@ export async function POST(req: NextRequest) {
       value_edge: item.valueEdge,
       odds_label: item.oddsLabel,
       value_label: item.valueLabel,
-      reason: item.reason,
+      reason: translateTeamText(item.reason),
       data_basis: item.dataBasis,
     }));
 

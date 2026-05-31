@@ -243,13 +243,19 @@ const TEAM_MAP: Record<string, string> = {
   Colombia: "哥伦比亚",
   Mexico: "墨西哥",
   "United States": "美国",
+  "United States of America": "美国",
   USA: "美国",
+  "U.S.A.": "美国",
   Canada: "加拿大",
   Japan: "日本",
   "South Korea": "韩国",
+  "Korea Republic": "韩国",
+  "Korea DPR": "朝鲜",
   Iran: "伊朗",
+  "IR Iran": "伊朗",
   "Saudi Arabia": "沙特阿拉伯",
   Australia: "澳大利亚",
+  "New Zealand": "新西兰",
   Qatar: "卡塔尔",
   Ecuador: "厄瓜多尔",
   Senegal: "塞内加尔",
@@ -257,6 +263,11 @@ const TEAM_MAP: Record<string, string> = {
   Cameroon: "喀麦隆",
   Nigeria: "尼日利亚",
   Egypt: "埃及",
+  "Côte d'Ivoire": "科特迪瓦",
+  "Ivory Coast": "科特迪瓦",
+  "South Africa": "南非",
+  Mali: "马里",
+  "Burkina Faso": "布基纳法索",
   Tunisia: "突尼斯",
   Algeria: "阿尔及利亚",
   Switzerland: "瑞士",
@@ -276,6 +287,12 @@ const TEAM_MAP: Record<string, string> = {
   Paraguay: "巴拉圭",
   "Costa Rica": "哥斯达黎加",
   Panama: "巴拿马",
+  Bolivia: "玻利维亚",
+  Venezuela: "委内瑞拉",
+  Honduras: "洪都拉斯",
+  Jamaica: "牙买加",
+  "El Salvador": "萨尔瓦多",
+  Haiti: "海地",
   Benfica: "本菲卡",
   "SL Benfica": "本菲卡",
   Porto: "波尔图",
@@ -289,6 +306,49 @@ const TEAM_MAP: Record<string, string> = {
   Galatasaray: "加拉塔萨雷",
   Fenerbahce: "费内巴切",
   "Shakhtar Donetsk": "顿涅茨克矿工",
+  "Inter Miami": "迈阿密国际",
+  "Inter Miami CF": "迈阿密国际",
+  "Seattle Sounders": "西雅图海湾人",
+  "Seattle Sounders FC": "西雅图海湾人",
+  "Los Angeles FC": "洛杉矶 FC",
+  LAFC: "洛杉矶 FC",
+  "Vancouver Whitecaps": "温哥华白帽",
+  "Vancouver Whitecaps FC": "温哥华白帽",
+  "CF Montréal": "蒙特利尔",
+  "CF Montreal": "蒙特利尔",
+  "Cruz Azul": "蓝十字",
+  Monterrey: "蒙特雷",
+  "CF Monterrey": "蒙特雷",
+  "Club de Fútbol Monterrey": "蒙特雷",
+  Pachuca: "帕丘卡",
+  "CF Pachuca": "帕丘卡",
+  "Club León": "莱昂",
+  "Club Leon": "莱昂",
+  "River Plate": "河床",
+  "CA River Plate": "河床",
+  "Boca Juniors": "博卡青年",
+  "CA Boca Juniors": "博卡青年",
+  Palmeiras: "帕尔梅拉斯",
+  "SE Palmeiras": "帕尔梅拉斯",
+  Flamengo: "弗拉门戈",
+  "CR Flamengo": "弗拉门戈",
+  Fluminense: "弗鲁米嫩塞",
+  "Fluminense FC": "弗鲁米嫩塞",
+  Botafogo: "博塔弗戈",
+  "Botafogo FR": "博塔弗戈",
+  "Al Ahly": "开罗国民",
+  "Al Ahly SC": "开罗国民",
+  "Wydad AC": "卡萨布兰卡维达德",
+  Wydad: "卡萨布兰卡维达德",
+  "Mamelodi Sundowns": "马梅洛迪日落",
+  "Mamelodi Sundowns FC": "马梅洛迪日落",
+  "Esperance de Tunis": "突尼斯希望",
+  "ES Tunis": "突尼斯希望",
+  "Al Hilal": "利雅得新月",
+  "Al-Hilal Saudi FC": "利雅得新月",
+  "Urawa Red Diamonds": "浦和红钻",
+  "Auckland City": "奥克兰城",
+  "Auckland City FC": "奥克兰城",
 };
 
 const LEAGUE_MAP: Record<string, string> = {
@@ -375,6 +435,14 @@ export function translateTeam(name: string): string {
     .trim();
 
   return TEAM_MAP[simplified] ?? name;
+}
+
+export function translateTeamText(text: string): string {
+  if (!text) return text;
+
+  return Object.entries(TEAM_MAP)
+    .sort(([a], [b]) => b.length - a.length)
+    .reduce((result, [source, translated]) => result.split(source).join(translated), text);
 }
 
 export function isSupportedLeague(id?: number | null, name?: string | null): boolean {
