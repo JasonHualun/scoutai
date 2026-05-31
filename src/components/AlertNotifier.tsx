@@ -7,18 +7,30 @@ import {
   appendStoredAlerts,
   alertTypeMeta,
   buildLiveAlerts,
+  removeStoredAlertsForMatchIds,
   readSnapshot,
   saveSnapshot,
   sendBrowserNotification,
   snapshotFromMatches,
 } from "@/lib/alerts";
+import {
+  cleanupStoredMatchPools,
+  readFavoriteIds as readStoredFavoriteIds,
+} from "@/lib/match-pools";
 
 type LiveMatchesResponse = {
   matches?: LiveAlertMatch[];
 };
 
+type FixtureLike = {
+  fixture: {
+    id: number;
+    date?: string | null;
+    status?: { short?: string | null };
+  };
+};
+
 const POLL_INTERVAL_MS = 60_000;
-const FAVORITES_KEY = "scoutai_favorites";
 const MAX_ENRICHED_MATCHES = 12;
 
 type ApiStatItem = { type: string; value: number | string | null };
@@ -33,19 +45,7 @@ type MatchDetailResponse = {
 };
 
 function readFavoriteIds() {
-  try {
-    const raw = window.localStorage.getItem(FAVORITES_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    if (!Array.isArray(parsed)) return new Set<string>();
-
-    return new Set(
-      parsed
-        .map((item) => String(item))
-        .filter((item) => item && item !== "NaN" && item !== "undefined")
-    );
-  } catch {
-    return new Set<string>();
-  }
+  return new Set(readStoredFavoriteIds().map(String));
 }
 
 function statValue(items: ApiStatItem[] | undefined, type: string) {
@@ -132,6 +132,34 @@ async function enrichMatches(matches: LiveAlertMatch[]) {
   return [...enriched, ...matches.slice(MAX_ENRICHED_MATCHES)];
 }
 
+async function cleanupClosedFavoriteMatches() {
+  const favoriteIds = readFavoriteIds();
+  if (!favoriteIds.size) return;
+
+  try {
+    const res = await fetch("/api/football/all", { cache: "no-store" });
+    if (!res.ok) return;
+    const json = (await res.json()) as { fixtures?: FixtureLike[] };
+    const fixtures = json.fixtures ?? [];
+    if (fixtures.length === 0) return;
+
+    const cleanup = cleanupStoredMatchPools(
+      fixtures.map((fixture) => ({
+        id: fixture.fixture.id,
+        status: fixture.fixture.status?.short,
+        date: fixture.fixture.date,
+      })),
+      { removeMissing: true }
+    );
+
+    if (cleanup.removedIds.length > 0) {
+      removeStoredAlertsForMatchIds(cleanup.removedIds);
+    }
+  } catch {
+    // Alert polling should remain quiet if the schedule refresh fails.
+  }
+}
+
 export function AlertNotifier() {
   const [toastAlerts, setToastAlerts] = useState<AlertItem[]>([]);
 
@@ -145,6 +173,7 @@ export function AlertNotifier() {
 
   const checkLiveMatches = useCallback(async () => {
     try {
+      await cleanupClosedFavoriteMatches();
       const favoriteIds = readFavoriteIds();
       if (!favoriteIds.size) {
         saveSnapshot({});

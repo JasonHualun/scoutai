@@ -179,7 +179,8 @@ const defaultPrefs: UserPreferences = {
 
 function statusFromShort(short: string): MatchStatus {
   if (["1H", "2H", "ET", "BT"].includes(short)) return "live";
-  if (["FT", "AET", "PEN"].includes(short)) return "finished";
+  if (["FT", "AET", "PEN", "PST", "CANC", "ABD", "AWD", "WO"].includes(short))
+    return "finished";
   return "upcoming";
 }
 

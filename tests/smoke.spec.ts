@@ -85,7 +85,7 @@ async function mockUpcomingMatch(page: Page, fixtureId: number) {
             {
               fixture: {
                 id: fixtureId,
-                date: "2026-05-23T18:30:00+00:00",
+                date: "2026-06-06T18:30:00+00:00",
                 status: { short: "NS", elapsed: null },
               },
               league: { name: "Premier League", round: "Regular Season - 37" },
@@ -121,7 +121,7 @@ async function mockFavoriteMatches(page: Page) {
           {
             fixture: {
               id: 91001,
-              date: "2026-05-23T18:30:00+00:00",
+              date: "2026-06-06T18:30:00+00:00",
               status: { short: "NS", elapsed: null },
             },
             league: { id: 39, name: "Premier League", round: "Regular Season - 37" },
@@ -134,7 +134,7 @@ async function mockFavoriteMatches(page: Page) {
           {
             fixture: {
               id: 91002,
-              date: "2026-05-23T19:15:00+00:00",
+              date: "2026-06-06T19:15:00+00:00",
               status: { short: "NS", elapsed: null },
             },
             league: { id: 78, name: "Bundesliga", round: "Regular Season - 34" },
@@ -147,7 +147,7 @@ async function mockFavoriteMatches(page: Page) {
           {
             fixture: {
               id: 91003,
-              date: "2026-05-23T20:00:00+00:00",
+              date: "2026-06-06T20:00:00+00:00",
               status: { short: "NS", elapsed: null },
             },
             league: { id: 135, name: "Serie A", round: "Regular Season - 37" },
@@ -637,6 +637,107 @@ test("favorites page only explains monitoring logic", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "预测池推荐" })).toHaveCount(0);
 });
 
+test("finished matches leave favorites alerts and prediction pool but history keeps paid orders", async ({ page }) => {
+  await page.route("**/api/football/all", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fixtures: [
+          {
+            fixture: {
+              id: 93001,
+              date: "2026-05-23T12:00:00+00:00",
+              status: { short: "FT", elapsed: 90 },
+            },
+            league: { id: 39, name: "Premier League", round: "Regular Season - 38" },
+            teams: {
+              home: { name: "Arsenal" },
+              away: { name: "Chelsea" },
+            },
+            goals: { home: 2, away: 1 },
+          },
+          {
+            fixture: {
+              id: 93002,
+              date: "2026-06-06T15:00:00+00:00",
+              status: { short: "NS", elapsed: null },
+            },
+            league: { id: 140, name: "LaLiga", round: "Regular Season - 38" },
+            teams: {
+              home: { name: "Real Madrid" },
+              away: { name: "Barcelona" },
+            },
+            goals: { home: null, away: null },
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/match/93002", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        statistics: { response: [] },
+        odds: { response: [] },
+        recentForm: { home: null, away: null },
+        teamIds: { home: null, away: null },
+      }),
+    });
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem("scoutai_favorites", JSON.stringify([93001, 93002]));
+    window.localStorage.setItem("scoutai_prediction_pool", JSON.stringify([93001, 93002]));
+    window.localStorage.setItem(
+      "scoutai:alerts",
+      JSON.stringify([
+        {
+          id: "a-finished",
+          match_id: "93001",
+          match_name: "阿森纳 vs 切尔西",
+          score: "2 : 1",
+          type: "goal",
+          content: "已结束比赛的提醒应该自动移出。",
+          created_at: "2026-05-23T13:40:00.000Z",
+          read: false,
+          source: "live",
+        },
+        {
+          id: "a-upcoming",
+          match_id: "93002",
+          match_name: "皇马 vs 巴萨",
+          score: "0 : 0",
+          type: "ai_update",
+          content: "未开赛比赛继续监控。",
+          created_at: "2026-05-31T10:00:00.000Z",
+          read: false,
+          source: "live",
+        },
+      ])
+    );
+  });
+
+  await page.goto("/favorites", { waitUntil: "networkidle" });
+
+  await expect(page.getByText("已自动移出").first()).toBeVisible();
+  await expect(page.getByText("历史预测里").first()).toBeVisible();
+  await expect(page.getByText("收藏 1 场 · 预测池 1 场")).toBeVisible();
+  await expect(page.getByText("皇家马德里").first()).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("阿森纳");
+
+  const stored = await page.evaluate(() => ({
+    favorites: JSON.parse(window.localStorage.getItem("scoutai_favorites") ?? "[]"),
+    predictionPool: JSON.parse(window.localStorage.getItem("scoutai_prediction_pool") ?? "[]"),
+    alerts: JSON.parse(window.localStorage.getItem("scoutai:alerts") ?? "[]"),
+  }));
+  expect(stored.favorites).toEqual([93002]);
+  expect(stored.predictionPool).toEqual([93002]);
+  expect(stored.alerts.map((alert: { match_id: string }) => alert.match_id)).toEqual(["93002"]);
+});
+
 test("prediction page shows portfolio recommendations for prediction pool matches", async ({ page }) => {
   await mockFavoriteMatches(page);
   await page.addInitScript(() => {
@@ -709,7 +810,9 @@ test("prediction start shows generated result and prevents duplicate deduction",
 
   await expect(page.getByText("信号强度").first()).toBeVisible();
   await page.getByRole("button", { name: "开始预测推荐" }).click();
-  await expect(page.getByText("已扣除 15 预测积分，本次按预测池 3 场比赛生成推荐。")).toBeVisible();
+  await expect(
+    page.getByText("已扣除 15 预测积分，本次按预测池 3 场比赛生成推荐，并已保存到历史预测。")
+  ).toBeVisible();
   await expect(page.getByText("本次推荐已生成")).toBeVisible();
   await expect(page.getByRole("button", { name: "已生成本次推荐" })).toBeDisabled();
 });

@@ -3,8 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import LiveMatchUpdater from "@/components/LiveMatchUpdater";
+import { removeStoredAlertsForMatchIds } from "@/lib/alerts";
 import { calculateHotScore } from "@/lib/hot-score";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
+import {
+  cleanupStoredMatchPools,
+  FAVORITES_KEY,
+  PREDICTION_POOL_KEY,
+  readFavoriteIds,
+  readPredictionPoolIds,
+  writeStoredMatchIds,
+} from "@/lib/match-pools";
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime, kickoffTime } from "@/lib/time-format";
 
@@ -37,8 +46,6 @@ type Props = {
   initialMatches: MatchCard[];
 };
 
-const FAVORITES_KEY = "scoutai_favorites";
-const PREDICTION_POOL_KEY = "scoutai_prediction_pool";
 const SELECTED_LEAGUES_KEY = "scoutai_selected_leagues";
 
 const DEFAULT_LEAGUE_IDS = new Set([
@@ -117,22 +124,21 @@ export default function HomeClient({ initialMatches }: Props) {
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(FAVORITES_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setFavorites(parsed);
-      }
-
-      const poolRaw = window.localStorage.getItem(PREDICTION_POOL_KEY);
-      if (poolRaw) {
-        const parsedPool = JSON.parse(poolRaw);
-        if (Array.isArray(parsedPool)) setPredictionPoolIds(parsedPool);
-      }
+      setFavorites(readFavoriteIds());
+      setPredictionPoolIds(readPredictionPoolIds());
     } catch {
       setFavorites([]);
       setPredictionPoolIds([]);
     }
   }, []);
+
+  useEffect(() => {
+    const cleanup = cleanupStoredMatchPools(matches);
+    if (cleanup.removedIds.length === 0) return;
+    removeStoredAlertsForMatchIds(cleanup.removedIds);
+    setFavorites(cleanup.favoriteIds);
+    setPredictionPoolIds(cleanup.predictionPoolIds);
+  }, [matches]);
 
   useEffect(() => {
     try {
@@ -252,8 +258,7 @@ export default function HomeClient({ initialMatches }: Props) {
       const next = prev.includes(id)
         ? prev.filter((item) => item !== id)
         : [...prev, id];
-      window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
-      return next;
+      return writeStoredMatchIds(FAVORITES_KEY, next);
     });
   }
 
@@ -264,8 +269,7 @@ export default function HomeClient({ initialMatches }: Props) {
       const next = prev.includes(id)
         ? prev.filter((item) => item !== id)
         : [...prev, id];
-      window.localStorage.setItem(PREDICTION_POOL_KEY, JSON.stringify(next));
-      return next;
+      return writeStoredMatchIds(PREDICTION_POOL_KEY, next);
     });
   }
 

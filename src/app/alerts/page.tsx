@@ -14,13 +14,26 @@ import {
   getBrowserNotificationPermission,
   markAlertRead,
   markAllAlertsRead,
+  removeStoredAlertsForMatchIds,
   readStoredAlerts,
   sendBrowserNotification,
 } from "@/lib/alerts";
+import {
+  cleanupStoredMatchPools,
+  MATCH_POOLS_UPDATED_EVENT,
+  readFavoriteIds,
+} from "@/lib/match-pools";
 
 type FilterMode = "all" | "unread";
 type BrowserPermission = NotificationPermission | "unsupported";
-const FAVORITES_KEY = "scoutai_favorites";
+
+type FixtureLike = {
+  fixture: {
+    id: number;
+    date?: string | null;
+    status?: { short?: string | null };
+  };
+};
 
 function browserStatusText(permission: BrowserPermission, enabled: boolean) {
   if (permission === "unsupported") return "当前浏览器不支持";
@@ -37,13 +50,7 @@ function browserStatusTone(permission: BrowserPermission, enabled: boolean) {
 }
 
 function readFavoriteCount() {
-  try {
-    const raw = window.localStorage.getItem(FAVORITES_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
+  return readFavoriteIds().length;
 }
 
 export default function AlertsPage() {
@@ -62,15 +69,52 @@ export default function AlertsPage() {
     setFavoriteCount(readFavoriteCount());
   }, []);
 
+  const cleanupClosedMatches = useCallback(async () => {
+    if (readFavoriteCount() === 0) return;
+
+    try {
+      const res = await fetch("/api/football/all", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { fixtures?: FixtureLike[] };
+      const fixtures = json.fixtures ?? [];
+      if (fixtures.length === 0) return;
+
+      const cleanup = cleanupStoredMatchPools(
+        fixtures.map((fixture) => ({
+          id: fixture.fixture.id,
+          status: fixture.fixture.status?.short,
+          date: fixture.fixture.date,
+        })),
+        { removeMissing: true }
+      );
+
+      if (cleanup.removedIds.length > 0) {
+        removeStoredAlertsForMatchIds(cleanup.removedIds);
+        setNotice(
+          `已自动清理 ${cleanup.removedIds.length} 场已结束或过期的比赛提醒。已花积分的预测记录仍在历史预测里。`
+        );
+      }
+    } catch {
+      // Keep notification controls usable even when the schedule refresh is interrupted.
+    }
+  }, []);
+
   useEffect(() => {
     clearBrowserTestAlerts();
-    const timer = window.setTimeout(refreshAlerts, 0);
+    const runCleanupAndRefresh = () => {
+      void cleanupClosedMatches().finally(refreshAlerts);
+    };
+    const timer = window.setTimeout(runCleanupAndRefresh, 0);
+    const interval = window.setInterval(runCleanupAndRefresh, 60_000);
     window.addEventListener(ALERTS_UPDATED_EVENT, refreshAlerts);
+    window.addEventListener(MATCH_POOLS_UPDATED_EVENT, refreshAlerts);
     return () => {
       window.clearTimeout(timer);
+      window.clearInterval(interval);
       window.removeEventListener(ALERTS_UPDATED_EVENT, refreshAlerts);
+      window.removeEventListener(MATCH_POOLS_UPDATED_EVENT, refreshAlerts);
     };
-  }, [refreshAlerts]);
+  }, [cleanupClosedMatches, refreshAlerts]);
 
   const unreadCount = useMemo(
     () => alerts.filter((alert) => !alert.read).length,
@@ -257,11 +301,11 @@ export default function AlertsPage() {
               3. 市场指数大幅变化或冷门概率升高：提醒重新检查收藏赛事风险。
             </div>
             <div className="rounded-xl bg-black/25 px-3 py-2">
-              4. 收藏比赛进入实时监控：从开赛后第一次进入实时接口时会提醒。
+              4. 比赛结束或过期：自动退出收藏监控和提醒列表，不再占用预测池。
             </div>
           </div>
           <p className="mt-3 text-[11px] leading-5 text-white/45">
-            当前只对收藏比赛生效。红黄牌、角球、市场指数和冷门概率会在实时数据 API 返回对应字段后进入同一套提醒。
+            当前只对收藏比赛生效。红黄牌、角球、市场指数和冷门概率会在实时数据 API 返回对应字段后进入同一套提醒；已扣积分生成过的预测会留在历史预测里等待赛果结算。
           </p>
         </div>
       </section>

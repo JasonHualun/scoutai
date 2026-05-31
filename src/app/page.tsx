@@ -32,7 +32,8 @@ function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
   const statusShort = fixture.fixture.status.short;
   let status: MatchStatus = "upcoming";
   if (["1H", "2H", "ET", "BT"].includes(statusShort)) status = "live";
-  else if (["FT", "AET", "PEN"].includes(statusShort)) status = "finished";
+  else if (["FT", "AET", "PEN", "PST", "CANC", "ABD", "AWD", "WO"].includes(statusShort))
+    status = "finished";
 
   const fixtureDate = fixture.fixture.date;
 

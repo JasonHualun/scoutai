@@ -225,6 +225,24 @@ export function clearBrowserTestAlerts() {
   saveStoredAlerts(readStoredAlerts().filter((alert) => alert.source !== "browser_test"));
 }
 
+export function removeStoredAlertsForMatchIds(matchIds: Iterable<string | number>) {
+  const ids = new Set([...matchIds].map(String));
+  if (ids.size === 0) return;
+
+  const currentAlerts = readStoredAlerts();
+  const nextAlerts = currentAlerts.filter((alert) => !ids.has(alert.match_id));
+  if (nextAlerts.length !== currentAlerts.length) {
+    saveStoredAlerts(nextAlerts);
+  }
+
+  const snapshot = readSnapshot();
+  if (!snapshot) return;
+  ids.forEach((id) => {
+    delete snapshot[id];
+  });
+  saveSnapshot(snapshot);
+}
+
 export function readSnapshot(): AlertSnapshot | null {
   if (!isBrowser()) return null;
 

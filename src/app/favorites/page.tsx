@@ -18,6 +18,15 @@ import {
   PRO_TRIAL_CREDITS,
   freeMembership,
 } from "@/lib/membership";
+import { removeStoredAlertsForMatchIds } from "@/lib/alerts";
+import {
+  cleanupStoredMatchPools,
+  FAVORITES_KEY,
+  PREDICTION_POOL_KEY,
+  readFavoriteIds,
+  readPredictionPoolIds,
+  writeStoredMatchIds,
+} from "@/lib/match-pools";
 import { PREDICTION_MODEL_VERSION, PredictionOrderInput } from "@/lib/prediction-orders";
 import {
   defaultPreferenceValues,
@@ -161,9 +170,6 @@ type UserPrefs = {
   preferred_models: string[];
 };
 
-const FAVORITES_KEY = "scoutai_favorites";
-const PREDICTION_POOL_KEY = "scoutai_prediction_pool";
-
 const statusLabel: Record<MatchStatus, string> = {
   live: "进行中",
   upcoming: "未开赛",
@@ -246,7 +252,8 @@ function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
   const statusShort = fixture.fixture.status.short;
   let status: MatchStatus = "upcoming";
   if (["1H", "2H", "ET", "BT"].includes(statusShort)) status = "live";
-  else if (["FT", "AET", "PEN"].includes(statusShort)) status = "finished";
+  else if (["FT", "AET", "PEN", "PST", "CANC", "ABD", "AWD", "WO"].includes(statusShort))
+    status = "finished";
 
   return {
     id: fixture.fixture.id,
@@ -960,6 +967,7 @@ export default function FavoritesPage() {
   const [predictionStarted, setPredictionStarted] = useState(false);
   const [predictionSubmitting, setPredictionSubmitting] = useState(false);
   const [predictionMessage, setPredictionMessage] = useState<string | null>(null);
+  const [cleanupNotice, setCleanupNotice] = useState<string | null>(null);
 
   const isPro = membership.plan === "pro" && membership.status === "active";
   const isPredictionPage = pathname.startsWith("/predict");
@@ -982,10 +990,8 @@ export default function FavoritesPage() {
   useEffect(() => {
     async function load() {
       try {
-        const raw = localStorage.getItem(FAVORITES_KEY);
-        const favoriteIdsFromStorage: number[] = raw ? JSON.parse(raw) : [];
-        const poolRaw = localStorage.getItem(PREDICTION_POOL_KEY);
-        const predictionIdsFromStorage: number[] = poolRaw ? JSON.parse(poolRaw) : [];
+        let favoriteIdsFromStorage = readFavoriteIds();
+        let predictionIdsFromStorage = readPredictionPoolIds();
         setFavoriteIds(favoriteIdsFromStorage);
         setPredictionPoolIds(predictionIdsFromStorage);
 
@@ -996,21 +1002,34 @@ export default function FavoritesPage() {
         const json = (await res.json()) as { fixtures?: FixtureLike[] };
 
         if (Array.isArray(json.fixtures)) {
+          const matches = json.fixtures.map(mapFixtureToMatchCard);
+          const cleanup = cleanupStoredMatchPools(matches, { removeMissing: true });
+          if (cleanup.removedIds.length > 0) {
+            removeStoredAlertsForMatchIds(cleanup.removedIds);
+            favoriteIdsFromStorage = cleanup.favoriteIds;
+            predictionIdsFromStorage = cleanup.predictionPoolIds;
+            setFavoriteIds(favoriteIdsFromStorage);
+            setPredictionPoolIds(predictionIdsFromStorage);
+            setCleanupNotice(
+              `已自动移出 ${cleanup.removedIds.length} 场已结束或过期的比赛。已花积分生成过的预测记录会保留在历史预测里。`
+            );
+          }
+
           const matchMap = new Map(
-            json.fixtures.map((fixture) => [
-              String(fixture.fixture.id),
-              mapFixtureToMatchCard(fixture),
+            matches.map((match) => [
+              String(match.id),
+              match,
             ])
           );
           setFavoriteMatches(
             favoriteIdsFromStorage
               .map((id) => matchMap.get(String(id)))
-              .filter((match): match is MatchCard => !!match)
+              .filter((match): match is MatchCard => !!match && match.status !== "finished")
           );
           setPredictionPoolMatches(
             predictionIdsFromStorage
               .map((id) => matchMap.get(String(id)))
-              .filter((match): match is MatchCard => !!match)
+              .filter((match): match is MatchCard => !!match && match.status !== "finished")
           );
         }
       } catch (error) {
@@ -1209,8 +1228,7 @@ export default function FavoritesPage() {
 
   function handleUnfavorite(id: number) {
     const updated = favoriteIds.filter((favoriteId) => favoriteId !== id);
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(updated));
-    setFavoriteIds(updated);
+    setFavoriteIds(writeStoredMatchIds(FAVORITES_KEY, updated));
     setFavoriteMatches((prev) => prev.filter((match) => match.id !== id));
   }
 
@@ -1219,8 +1237,7 @@ export default function FavoritesPage() {
     const updated = exists
       ? predictionPoolIds.filter((matchId) => matchId !== match.id)
       : [...predictionPoolIds, match.id];
-    localStorage.setItem(PREDICTION_POOL_KEY, JSON.stringify(updated));
-    setPredictionPoolIds(updated);
+    setPredictionPoolIds(writeStoredMatchIds(PREDICTION_POOL_KEY, updated));
     setPredictionPoolMatches((prev) =>
       exists ? prev.filter((item) => item.id !== match.id) : [...prev, match]
     );
@@ -1234,8 +1251,7 @@ export default function FavoritesPage() {
 
   function handleRemoveFromPredictionPool(id: number) {
     const updated = predictionPoolIds.filter((matchId) => matchId !== id);
-    localStorage.setItem(PREDICTION_POOL_KEY, JSON.stringify(updated));
-    setPredictionPoolIds(updated);
+    setPredictionPoolIds(writeStoredMatchIds(PREDICTION_POOL_KEY, updated));
     setPredictionPoolMatches((prev) => prev.filter((match) => match.id !== id));
     setDetailByMatch((prev) => {
       const next = { ...prev };
@@ -1372,7 +1388,7 @@ export default function FavoritesPage() {
       setPredictionCredits(nextCredits);
       setPredictionStarted(true);
       setPredictionMessage(
-        `已扣除 ${predictionCost} 预测积分，本次按预测池 ${predictionPoolMatches.length} 场比赛生成推荐。`
+        `已扣除 ${predictionCost} 预测积分，本次按预测池 ${predictionPoolMatches.length} 场比赛生成推荐，并已保存到历史预测。`
       );
       setSelectionTouched(false);
       setSelectedIds(recommendedIds);
@@ -1410,8 +1426,8 @@ export default function FavoritesPage() {
           </h1>
           <p className="mt-2 text-sm text-white/60">
             {isPredictionPage
-              ? "预测池用于大模型预测和组合推荐。只有加入预测池的比赛会扣预测积分并生成推荐。"
-              : "收藏用于快速查看实时数据和异常提醒，不会扣预测积分。需要预测时，再把比赛加入预测池。"}
+              ? "预测池用于大模型预测和组合推荐。结束的比赛会自动移出；已扣积分的预测会留在历史预测。"
+              : "收藏用于快速查看实时数据和异常提醒。比赛结束后会自动移出；需要预测时，再把比赛加入预测池。"}
           </p>
         </div>
         <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/60">
@@ -1420,6 +1436,12 @@ export default function FavoritesPage() {
             : "当前为免费版"}
         </div>
       </div>
+
+      {cleanupNotice && (
+        <div className="rounded-2xl border border-[color:var(--accent)]/22 bg-[color:var(--accent)]/8 px-4 py-3 text-xs leading-5 text-[color:var(--accent)]">
+          {cleanupNotice}
+        </div>
+      )}
 
       {loading ? (
         <div className="rounded-2xl border border-white/10 bg-[color:var(--card)]/70 p-6 text-sm text-white/60">
@@ -1479,7 +1501,7 @@ export default function FavoritesPage() {
                   <div className="text-xs font-semibold text-white">开始本次预测</div>
                   <p className="mt-1 text-[11px] leading-5 text-white/50">
                     当前预测池 {predictionPoolMatches.length} 场，每场扣 {PREDICTION_CREDITS_PER_MATCH} 预测积分，合计扣 {predictionCost} 分。
-                    预测完成后，系统会直接给出每场建议占比。
+                    预测完成后，系统会直接给出每场建议占比，并把快照保存到历史预测。
                   </p>
                   {isPro && missingPredictionCredits > 0 && predictionPoolMatches.length > 0 && (
                     <p className="mt-1 text-[11px] font-semibold text-amber-200">
@@ -1513,7 +1535,7 @@ export default function FavoritesPage() {
                   </div>
                   <p className="mt-1 text-xs leading-5 text-white/58">
                     下方已经按预测池比赛生成单场优先、常规组合和高倍率机会。市场线、阵容或实时数据不完整时，
-                    系统会先按基础模型给出观察建议，并标记“待市场确认”，后续接入完整实时数据后会自动校准。
+                    系统会先按基础模型给出观察建议，并标记“待市场确认”。这次记录已进入历史预测，等赛果回来后再结算。
                   </p>
                 </div>
               )}
