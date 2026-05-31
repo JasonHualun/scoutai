@@ -92,7 +92,10 @@ type TheStatsStats = {
     total_shots?: TheStatsMetric;
     shots_on_target?: TheStatsMetric;
     corner_kicks?: TheStatsMetric;
+    yellow_cards?: TheStatsMetric;
+    red_cards?: TheStatsMetric;
   };
+  np_expected_goals?: TheStatsMetric;
 };
 
 type TheStatsOddsValue = {
@@ -272,6 +275,21 @@ function metricPair(stats: TheStatsStats | null, key: keyof NonNullable<TheStats
     home: safeNumber(metric?.home),
     away: safeNumber(metric?.away),
   };
+}
+
+function rootMetricPair(metric?: TheStatsMetric) {
+  const values = metric?.all;
+  return {
+    home: safeNumber(values?.home),
+    away: safeNumber(values?.away),
+  };
+}
+
+function preferPositiveMetric(
+  primary: { home: number; away: number },
+  fallback: { home: number; away: number }
+) {
+  return primary.home > 0 || primary.away > 0 ? primary : fallback;
 }
 
 function latestOdd(value?: TheStatsOddsValue) {
@@ -927,7 +945,10 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
   const odds = mapTheStatsOdds(liveOdds ?? preOdds);
   const marketContext = buildMarketContext(liveOdds ?? preOdds);
   const possession = metricPair(stats, "ball_possession");
-  const xg = metricPair(stats, "expected_goals");
+  const xg = preferPositiveMetric(
+    metricPair(stats, "expected_goals"),
+    rootMetricPair(stats?.np_expected_goals)
+  );
   const shots = metricPair(stats, "total_shots");
   const shotsOnTarget = metricPair(stats, "shots_on_target");
   const corners = metricPair(stats, "corner_kicks");

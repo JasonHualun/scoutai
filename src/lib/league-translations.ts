@@ -267,6 +267,7 @@ const TEAM_MAP: Record<string, string> = {
   Ecuador: "厄瓜多尔",
   Senegal: "塞内加尔",
   Ghana: "加纳",
+  Madagascar: "马达加斯加",
   Cameroon: "喀麦隆",
   Nigeria: "尼日利亚",
   Egypt: "埃及",

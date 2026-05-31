@@ -75,19 +75,35 @@ type TheStatsMatchPayload = {
 };
 
 type TheStatsMetric = {
-  all?: { home?: number | null; away?: number | null };
+  all?: { home?: number | null; away?: number | null } | null;
+  first_half?: { home?: number | null; away?: number | null } | null;
+  second_half?: { home?: number | null; away?: number | null } | null;
+};
+
+type TheStatsMetricGroup = Record<string, TheStatsMetric | undefined>;
+
+type TheStatsStatsOverview = TheStatsMetricGroup & {
+  ball_possession?: TheStatsMetric;
+  expected_goals?: TheStatsMetric;
+  big_chances?: TheStatsMetric;
+  total_shots?: TheStatsMetric;
+  shots_on_target?: TheStatsMetric;
+  corner_kicks?: TheStatsMetric;
+  fouls?: TheStatsMetric;
+  yellow_cards?: TheStatsMetric;
+  red_cards?: TheStatsMetric;
+  passes?: TheStatsMetric;
+  goalkeeper_saves?: TheStatsMetric;
 };
 
 type TheStatsStatsPayload = {
   data?: {
-    overview?: {
-      ball_possession?: TheStatsMetric;
-      expected_goals?: TheStatsMetric;
-      total_shots?: TheStatsMetric;
-      shots_on_target?: TheStatsMetric;
-      corner_kicks?: TheStatsMetric;
-      yellow_cards?: TheStatsMetric;
-    };
+    overview?: TheStatsStatsOverview;
+    shots?: TheStatsMetricGroup;
+    attack?: TheStatsMetricGroup;
+    passes?: TheStatsMetricGroup;
+    goalkeeping?: TheStatsMetricGroup;
+    np_expected_goals?: TheStatsMetric;
   };
 };
 
@@ -310,16 +326,29 @@ function hasMetricPair(metric?: TheStatsMetric) {
 }
 
 function hasTheStatsStats(payload: TheStatsStatsPayload | null) {
+  const data = payload?.data;
   const overview = payload?.data?.overview;
-  if (!overview) return false;
-  return (
-    hasMetricPair(overview.ball_possession) ||
-    hasMetricPair(overview.expected_goals) ||
-    hasMetricPair(overview.total_shots) ||
-    hasMetricPair(overview.shots_on_target) ||
-    hasMetricPair(overview.corner_kicks) ||
-    hasMetricPair(overview.yellow_cards)
-  );
+  if (!data || !overview) return false;
+
+  return [
+    overview.ball_possession,
+    overview.expected_goals,
+    overview.big_chances,
+    overview.total_shots,
+    overview.shots_on_target,
+    overview.corner_kicks,
+    overview.fouls,
+    overview.yellow_cards,
+    overview.red_cards,
+    overview.passes,
+    overview.goalkeeper_saves,
+    data.np_expected_goals,
+    data.shots?.shots_off_target,
+    data.attack?.touches_in_penalty_area,
+    data.attack?.offsides,
+    data.passes?.final_third_entries,
+    data.goalkeeping?.saves,
+  ].some(hasMetricPair);
 }
 
 async function fetchTheStatsStatsPayload(matchId: string | number | null | undefined) {
@@ -655,25 +684,94 @@ export async function getMatchMarketSignals(fixtureId: number | string) {
   }
 }
 
-function metric(payload: TheStatsStatsPayload | null, key: keyof NonNullable<NonNullable<TheStatsStatsPayload["data"]>["overview"]>) {
-  return payload?.data?.overview?.[key]?.all ?? {};
+function metricAll(metric?: TheStatsMetric) {
+  return metric?.all ?? {};
+}
+
+function overviewMetric(payload: TheStatsStatsPayload | null, key: string) {
+  return metricAll(payload?.data?.overview?.[key]);
+}
+
+function sectionMetric(
+  payload: TheStatsStatsPayload | null,
+  section: "shots" | "attack" | "passes" | "goalkeeping",
+  key: string
+) {
+  return metricAll(payload?.data?.[section]?.[key]);
+}
+
+function rootMetric(payload: TheStatsStatsPayload | null, key: "np_expected_goals") {
+  return metricAll(payload?.data?.[key]);
+}
+
+function hasAnyMetricValue(values: { home?: number | null; away?: number | null }) {
+  return values.home !== null && values.home !== undefined || values.away !== null && values.away !== undefined;
+}
+
+function preferMetric(
+  ...metrics: Array<{ home?: number | null; away?: number | null }>
+) {
+  return metrics.find(hasAnyMetricValue) ?? {};
+}
+
+function preferPositiveMetric(
+  primary: { home?: number | null; away?: number | null },
+  fallback: { home?: number | null; away?: number | null }
+) {
+  const primaryHome = safeNumber(primary.home);
+  const primaryAway = safeNumber(primary.away);
+  return primaryHome > 0 || primaryAway > 0 ? primary : fallback;
+}
+
+function metricSideValue(
+  values: { home?: number | null; away?: number | null },
+  side: "home" | "away"
+) {
+  const parsed = Number(values[side]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function mapTheStatsStats(payload: TheStatsStatsPayload | null, fixture: ReturnType<typeof mapTheStatsMatch>) {
-  const possession = metric(payload, "ball_possession");
-  const xg = metric(payload, "expected_goals");
-  const shots = metric(payload, "total_shots");
-  const shotsOnTarget = metric(payload, "shots_on_target");
-  const corners = metric(payload, "corner_kicks");
-  const yellows = metric(payload, "yellow_cards");
+  const possession = overviewMetric(payload, "ball_possession");
+  const xg = preferPositiveMetric(
+    overviewMetric(payload, "expected_goals"),
+    rootMetric(payload, "np_expected_goals")
+  );
+  const shots = overviewMetric(payload, "total_shots");
+  const shotsOnTarget = overviewMetric(payload, "shots_on_target");
+  const shotsOffTarget = sectionMetric(payload, "shots", "shots_off_target");
+  const corners = overviewMetric(payload, "corner_kicks");
+  const yellows = overviewMetric(payload, "yellow_cards");
+  const reds = overviewMetric(payload, "red_cards");
+  const fouls = overviewMetric(payload, "fouls");
+  const bigChances = overviewMetric(payload, "big_chances");
+  const passes = overviewMetric(payload, "passes");
+  const saves = preferMetric(
+    overviewMetric(payload, "goalkeeper_saves"),
+    sectionMetric(payload, "goalkeeping", "saves")
+  );
+  const touchesInBox = sectionMetric(payload, "attack", "touches_in_penalty_area");
+  const dangerousAttacks = preferMetric(
+    overviewMetric(payload, "dangerous_attacks"),
+    sectionMetric(payload, "passes", "final_third_entries"),
+    touchesInBox
+  );
 
   const makeStats = (side: "home" | "away") => [
-    { type: "Ball Possession", value: safeNumber(possession[side], 50) },
-    { type: "Total Shots", value: safeNumber(shots[side]) },
-    { type: "Shots on Target", value: safeNumber(shotsOnTarget[side]) },
-    { type: "Corner Kicks", value: safeNumber(corners[side]) },
-    { type: "Yellow Cards", value: safeNumber(yellows[side]) },
-    { type: "Expected Goals", value: safeNumber(xg[side]) },
+    { type: "Ball Possession", value: metricSideValue(possession, side) },
+    { type: "Total Shots", value: metricSideValue(shots, side) },
+    { type: "Shots on Target", value: metricSideValue(shotsOnTarget, side) },
+    { type: "Shots off Target", value: metricSideValue(shotsOffTarget, side) },
+    { type: "Corner Kicks", value: metricSideValue(corners, side) },
+    { type: "Yellow Cards", value: metricSideValue(yellows, side) },
+    { type: "Red Cards", value: metricSideValue(reds, side) },
+    { type: "Expected Goals", value: metricSideValue(xg, side) },
+    { type: "Big Chances", value: metricSideValue(bigChances, side) },
+    { type: "Dangerous Attacks", value: metricSideValue(dangerousAttacks, side) },
+    { type: "Touches in Box", value: metricSideValue(touchesInBox, side) },
+    { type: "Fouls", value: metricSideValue(fouls, side) },
+    { type: "Passes", value: metricSideValue(passes, side) },
+    { type: "Goalkeeper Saves", value: metricSideValue(saves, side) },
   ];
 
   return {

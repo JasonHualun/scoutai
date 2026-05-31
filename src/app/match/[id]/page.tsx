@@ -16,6 +16,7 @@ import {
 } from "@/lib/membership";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
 import { displayPreferenceLabel } from "@/lib/preference-options";
+import type { PredictionOrder, PredictionOrderItem } from "@/lib/prediction-orders";
 import { useAuthStore } from "@/lib/authStore";
 import { supabase } from "@/lib/supabase";
 import { ProPurchaseDialog } from "@/components/ProPurchaseDialog";
@@ -36,20 +37,34 @@ type Match = {
 };
 
 type RealtimeStats = {
-  possessionHome: number;
-  possessionAway: number;
-  shotsHome: number;
-  shotsAway: number;
-  shotsOnTargetHome: number;
-  shotsOnTargetAway: number;
-  cornersHome: number;
-  cornersAway: number;
-  yellowCardsHome: number;
-  yellowCardsAway: number;
-  dangerousAttacksHome: number;
-  dangerousAttacksAway: number;
-  xGHome: number;
-  xGAway: number;
+  possessionHome: number | null;
+  possessionAway: number | null;
+  shotsHome: number | null;
+  shotsAway: number | null;
+  shotsOnTargetHome: number | null;
+  shotsOnTargetAway: number | null;
+  shotsOffTargetHome: number | null;
+  shotsOffTargetAway: number | null;
+  cornersHome: number | null;
+  cornersAway: number | null;
+  yellowCardsHome: number | null;
+  yellowCardsAway: number | null;
+  redCardsHome: number | null;
+  redCardsAway: number | null;
+  dangerousAttacksHome: number | null;
+  dangerousAttacksAway: number | null;
+  touchesInBoxHome: number | null;
+  touchesInBoxAway: number | null;
+  bigChancesHome: number | null;
+  bigChancesAway: number | null;
+  foulsHome: number | null;
+  foulsAway: number | null;
+  passesHome: number | null;
+  passesAway: number | null;
+  savesHome: number | null;
+  savesAway: number | null;
+  xGHome: number | null;
+  xGAway: number | null;
 };
 
 type OddsData = {
@@ -97,6 +112,13 @@ type ApiMatchListResponse = {
 
 type ApiAllFixturesResponse = {
   fixtures?: ApiFixture[];
+};
+
+type PredictionHistorySummary = {
+  total: number;
+  settled: number;
+  wins: number;
+  hitRate: number;
 };
 
 type PreferencesRow = {
@@ -147,12 +169,26 @@ const neutralPredictionStats: RealtimeStats = {
   shotsAway: 0,
   shotsOnTargetHome: 0,
   shotsOnTargetAway: 0,
+  shotsOffTargetHome: 0,
+  shotsOffTargetAway: 0,
   cornersHome: 0,
   cornersAway: 0,
   yellowCardsHome: 0,
   yellowCardsAway: 0,
+  redCardsHome: 0,
+  redCardsAway: 0,
   dangerousAttacksHome: 0,
   dangerousAttacksAway: 0,
+  touchesInBoxHome: 0,
+  touchesInBoxAway: 0,
+  bigChancesHome: 0,
+  bigChancesAway: 0,
+  foulsHome: 0,
+  foulsAway: 0,
+  passesHome: 0,
+  passesAway: 0,
+  savesHome: 0,
+  savesAway: 0,
   xGHome: 0,
   xGAway: 0,
 };
@@ -215,10 +251,10 @@ function fixtureToMatchCard(fixture: ApiFixture): ApiMatchCard {
 
 function statValue(items: ApiStatItem[] | undefined, type: string) {
   const item = items?.find((stat) => stat.type === type);
-  if (!item) return 0;
+  if (!item || item.value === null || item.value === undefined || item.value === "") return null;
   const raw =
     typeof item.value === "string" ? Number(item.value.replace("%", "")) : item.value;
-  return Number.isFinite(raw) ? Number(raw) : 0;
+  return Number.isFinite(raw) ? Number(raw) : null;
 }
 
 function mapStats(teams?: ApiTeamStats[]): RealtimeStats | null {
@@ -233,29 +269,31 @@ function mapStats(teams?: ApiTeamStats[]): RealtimeStats | null {
     shotsAway: statValue(away, "Total Shots"),
     shotsOnTargetHome: statValue(home, "Shots on Target"),
     shotsOnTargetAway: statValue(away, "Shots on Target"),
+    shotsOffTargetHome: statValue(home, "Shots off Target"),
+    shotsOffTargetAway: statValue(away, "Shots off Target"),
     cornersHome: statValue(home, "Corner Kicks"),
     cornersAway: statValue(away, "Corner Kicks"),
     yellowCardsHome: statValue(home, "Yellow Cards"),
     yellowCardsAway: statValue(away, "Yellow Cards"),
+    redCardsHome: statValue(home, "Red Cards"),
+    redCardsAway: statValue(away, "Red Cards"),
     dangerousAttacksHome: statValue(home, "Dangerous Attacks"),
     dangerousAttacksAway: statValue(away, "Dangerous Attacks"),
+    touchesInBoxHome: statValue(home, "Touches in Box"),
+    touchesInBoxAway: statValue(away, "Touches in Box"),
+    bigChancesHome: statValue(home, "Big Chances"),
+    bigChancesAway: statValue(away, "Big Chances"),
+    foulsHome: statValue(home, "Fouls"),
+    foulsAway: statValue(away, "Fouls"),
+    passesHome: statValue(home, "Passes"),
+    passesAway: statValue(away, "Passes"),
+    savesHome: statValue(home, "Goalkeeper Saves"),
+    savesAway: statValue(away, "Goalkeeper Saves"),
     xGHome: statValue(home, "Expected Goals"),
     xGAway: statValue(away, "Expected Goals"),
   };
 
-  const hasAnyRealStat =
-    stats.shotsHome > 0 ||
-    stats.shotsAway > 0 ||
-    stats.shotsOnTargetHome > 0 ||
-    stats.shotsOnTargetAway > 0 ||
-    stats.cornersHome > 0 ||
-    stats.cornersAway > 0 ||
-    stats.yellowCardsHome > 0 ||
-    stats.yellowCardsAway > 0 ||
-    stats.dangerousAttacksHome > 0 ||
-    stats.dangerousAttacksAway > 0 ||
-    stats.xGHome > 0 ||
-    stats.xGAway > 0;
+  const hasAnyRealStat = Object.values(stats).some((value) => value !== null);
 
   return hasAnyRealStat ? stats : null;
 }
@@ -302,6 +340,14 @@ function formLabel(result: "W" | "D" | "L") {
   return { W: "胜", D: "平", L: "负" }[result];
 }
 
+function statNumber(value: number | null | undefined, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function percentStat(value: number | null | undefined, fallback = 50) {
+  return statNumber(value, fallback);
+}
+
 function buildAnalysisBody(
   match: Match,
   stats: RealtimeStats,
@@ -315,18 +361,18 @@ function buildAnalysisBody(
     homeForm: form.home.join("-"),
     awayForm: form.away.join("-"),
     homeStats: {
-      possession: stats.possessionHome,
-      shots: stats.shotsHome,
-      shotsOnTarget: stats.shotsOnTargetHome,
-      xG: stats.xGHome,
-      corners: stats.cornersHome,
+      possession: percentStat(stats.possessionHome),
+      shots: statNumber(stats.shotsHome),
+      shotsOnTarget: statNumber(stats.shotsOnTargetHome),
+      xG: statNumber(stats.xGHome),
+      corners: statNumber(stats.cornersHome),
     },
     awayStats: {
-      possession: stats.possessionAway,
-      shots: stats.shotsAway,
-      shotsOnTarget: stats.shotsOnTargetAway,
-      xG: stats.xGAway,
-      corners: stats.cornersAway,
+      possession: percentStat(stats.possessionAway),
+      shots: statNumber(stats.shotsAway),
+      shotsOnTarget: statNumber(stats.shotsOnTargetAway),
+      xG: statNumber(stats.xGAway),
+      corners: statNumber(stats.cornersAway),
     },
     odds,
   };
@@ -361,19 +407,29 @@ function StatRow({
   isPercent,
 }: {
   label: string;
-  home: number;
-  away: number;
+  home: number | null;
+  away: number | null;
   isPercent?: boolean;
 }) {
-  const total = home + away || 1;
-  const homePct = (home / total) * 100;
+  const hasHome = typeof home === "number" && Number.isFinite(home);
+  const hasAway = typeof away === "number" && Number.isFinite(away);
+  const homeValue = hasHome ? home : 0;
+  const awayValue = hasAway ? away : 0;
+  const total = homeValue + awayValue || 1;
+  const homePct = hasHome || hasAway ? (homeValue / total) * 100 : 50;
+  const format = (value: number | null) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? isPercent
+        ? `${value}%`
+        : value
+      : "待返回";
 
   return (
     <div className="rounded-lg border border-white/5 bg-black/25 px-3 py-2 text-xs">
       <div className="flex justify-between text-white/70">
-        <span>{isPercent ? `${home}%` : home}</span>
+        <span>{format(home)}</span>
         <span className="text-white/50">{label}</span>
-        <span>{isPercent ? `${away}%` : away}</span>
+        <span>{format(away)}</span>
       </div>
       <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/5">
         <div className="bg-[color:var(--accent)]" style={{ width: `${homePct}%` }} />
@@ -399,6 +455,83 @@ function ProMetric({
       <div className="mt-1 text-[11px] leading-5 text-white/45">{detail}</div>
     </div>
   );
+}
+
+function DetailMetric({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: "neutral" | "green" | "amber" | "red";
+}) {
+  const toneClass =
+    tone === "green"
+      ? "text-[color:var(--accent)]"
+      : tone === "amber"
+        ? "text-amber-200"
+        : tone === "red"
+          ? "text-red-200"
+          : "text-white";
+
+  return (
+    <div className="rounded-xl border border-white/6 bg-black/25 p-3">
+      <div className="text-[11px] text-white/45">{label}</div>
+      <div className={`mt-1 text-base font-semibold ${toneClass}`}>{value}</div>
+      {detail && <div className="mt-1 text-[11px] leading-5 text-white/42">{detail}</div>}
+    </div>
+  );
+}
+
+function formatMaybeNumber(value: number | null | undefined, suffix = "") {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "待返回";
+  return `${value}${suffix}`;
+}
+
+function formatDecimal(value: number | null | undefined, digits = 2) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "待返回";
+  return value.toFixed(digits);
+}
+
+function formatDelta(value: number) {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded > 0 ? "+" : ""}${rounded}%`;
+}
+
+function matchOutcome(home: number, away: number) {
+  if (home > away) return "homeWin";
+  if (home < away) return "awayWin";
+  return "draw";
+}
+
+function signalOutcome(signal: PredictionResult["valueSignals"][number]) {
+  return signal.market === "homeWin" || signal.market === "draw" || signal.market === "awayWin"
+    ? signal.market
+    : null;
+}
+
+function outcomeLabel(value: "homeWin" | "draw" | "awayWin") {
+  return { homeWin: "主胜", draw: "平局", awayWin: "客胜" }[value];
+}
+
+function resultStatusLabel(status?: PredictionOrderItem["resultStatus"]) {
+  return {
+    won: "命中",
+    lost: "未命中",
+    push: "走水",
+    void: "取消",
+    pending: "等待赛果",
+  }[status ?? "pending"];
+}
+
+function shotQuality(xg: number | null | undefined, shots: number | null | undefined) {
+  const xgValue = statNumber(xg);
+  const shotValue = statNumber(shots);
+  if (shotValue <= 0 || xgValue <= 0) return "待返回";
+  return `${(xgValue / shotValue).toFixed(2)} xG/射门`;
 }
 
 function riskLabel(level: UserPreferences["risk_level"]) {
@@ -457,6 +590,10 @@ export default function MatchDetailPage() {
   const [membership, setMembership] = useState<Membership>(() => freeMembership());
   const [membershipLoading, setMembershipLoading] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [predictionRecord, setPredictionRecord] = useState<PredictionOrderItem | null>(null);
+  const [predictionRecordLoading, setPredictionRecordLoading] = useState(false);
+  const [predictionHistorySummary, setPredictionHistorySummary] =
+    useState<PredictionHistorySummary | null>(null);
 
   const isPro = membership.plan === "pro" && membership.status === "active";
 
@@ -581,6 +718,59 @@ export default function MatchDetailPage() {
       cancelled = true;
     };
   }, [session, user?.email]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPredictionRecord() {
+      if (!session) {
+        setPredictionRecord(null);
+        setPredictionHistorySummary(null);
+        return;
+      }
+
+      setPredictionRecordLoading(true);
+      try {
+        const res = await fetch("/api/prediction-orders", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: "no-store",
+        });
+        const json = (await res.json()) as { orders?: PredictionOrder[] };
+        const allItems = json.orders?.flatMap((order) => order.items) ?? [];
+        const settledItems = allItems.filter((item) => item.resultStatus !== "pending");
+        const wins = settledItems.filter((item) => item.resultStatus === "won").length;
+        const fixtureDigits = String(fixtureId);
+        const currentParam = String(fixtureParam);
+        const item =
+          allItems
+            .find((orderItem) => {
+              const itemId = String(orderItem.fixtureId);
+              return itemId === currentParam || itemId.replace(/\D/g, "") === fixtureDigits;
+            }) ?? null;
+        if (!cancelled) {
+          setPredictionRecord(item);
+          setPredictionHistorySummary({
+            total: allItems.length,
+            settled: settledItems.length,
+            wins,
+            hitRate: settledItems.length > 0 ? Math.round((wins / settledItems.length) * 100) : 0,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setPredictionRecord(null);
+          setPredictionHistorySummary(null);
+        }
+      } finally {
+        if (!cancelled) setPredictionRecordLoading(false);
+      }
+    }
+
+    loadPredictionRecord();
+    return () => {
+      cancelled = true;
+    };
+  }, [fixtureId, fixtureParam, session]);
 
   useEffect(() => {
     let cancelled = false;
@@ -742,6 +932,66 @@ export default function MatchDetailPage() {
         },
       ]
     : [];
+  const isFinished = match.status === "finished";
+  const finalOutcome = matchOutcome(match.homeScore, match.awayScore);
+  const topSignalOutcome = signalOutcome(topSignal);
+  const topSignalHit =
+    isFinished && topSignalOutcome
+      ? topSignalOutcome === finalOutcome
+      : null;
+  const marketMovementRows =
+    marketSignals?.openingNoVig && marketSignals.noVig
+      ? [
+          {
+            label: "主胜",
+            opening: marketSignals.openingNoVig.homeWin,
+            current: marketSignals.noVig.homeWin,
+          },
+          {
+            label: "平局",
+            opening: marketSignals.openingNoVig.draw,
+            current: marketSignals.noVig.draw,
+          },
+          {
+            label: "客胜",
+            opening: marketSignals.openingNoVig.awayWin,
+            current: marketSignals.noVig.awayWin,
+          },
+        ].map((item) => ({
+          ...item,
+          delta: Math.round((item.current - item.opening) * 10) / 10,
+        }))
+      : [];
+  const strongestMarketMove =
+    marketMovementRows.length > 0
+      ? [...marketMovementRows].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0]
+      : null;
+  const modelLeader = [
+    { label: "主胜", value: prediction.probabilities.homeWin },
+    { label: "平局", value: prediction.probabilities.draw },
+    { label: "客胜", value: prediction.probabilities.awayWin },
+  ].sort((a, b) => b.value - a.value)[0];
+  const recommendationChangedText =
+    marketSignals || stats
+      ? `${topSignal.label} · 当前快照已按最新可用数据重算`
+      : `${topSignal.label} · 等待盘口或统计返回后复核`;
+  const upsetSnapshotText =
+    strongestMarketMove && ["平局", "客胜"].includes(strongestMarketMove.label)
+      ? `冷门方向${strongestMarketMove.delta >= 0 ? "升温" : "降温"} ${formatDelta(strongestMarketMove.delta)}`
+      : `当前冷门风险 ${upsetRisk}%`;
+  const shotQualityHome = shotQuality(stats?.xGHome, stats?.shotsHome);
+  const shotQualityAway = shotQuality(stats?.xGAway, stats?.shotsAway);
+  const postMatchDeviationReasons = [
+    stats
+      ? `全场射门 ${formatMaybeNumber(stats.shotsHome)}-${formatMaybeNumber(stats.shotsAway)}，射正 ${formatMaybeNumber(stats.shotsOnTargetHome)}-${formatMaybeNumber(stats.shotsOnTargetAway)}。`
+      : "技术统计源未返回，赛后偏差只能先按比分和盘口判断。",
+    stats
+      ? `xG ${formatDecimal(stats.xGHome)}-${formatDecimal(stats.xGAway)}，射门质量 ${shotQualityHome} / ${shotQualityAway}。`
+      : "xG 或射门质量待数据源补齐。",
+    marketSignals?.pressure
+      ? `盘口变化：${marketSignals.pressure}。`
+      : "盘口赛前到赛后的变化暂未返回。",
+  ];
   const isBaselineEstimate = !stats && !odds;
   const predictionDataNote =
     isBaselineEstimate
@@ -866,6 +1116,126 @@ export default function MatchDetailPage() {
             </span>
           </div>
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-[color:var(--accent)]/18 bg-[linear-gradient(135deg,rgba(0,255,135,0.08),rgba(0,0,0,0.18))] p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[color:var(--accent)]">
+              {isFinished ? "POST MATCH REVIEW" : "LIVE MATCH DESK"}
+            </div>
+            <h2 className="mt-2 text-lg font-semibold">
+              {isFinished ? "赛后复盘归档" : "赛中实时监控"}
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-white/55">
+              {isFinished
+                ? "比赛结束后会把最终比分、技术统计、模型预测结果和用户预测记录合并归档。"
+                : "开赛后持续同步比分、时间、技术统计、盘口变化、冷门概率和模型推荐变化。"}
+            </p>
+          </div>
+          <span className="rounded-full border border-white/10 bg-black/35 px-3 py-1 text-[11px] text-white/65">
+            北京时间 {match.kickOff}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <DetailMetric
+            label={isFinished ? "最终比分" : "实时比分"}
+            value={`${match.homeScore} : ${match.awayScore}`}
+            detail={
+              match.status === "live"
+                ? typeof match.minute === "number"
+                  ? `比赛时间 ${match.minute}'`
+                  : "进行中"
+                : isFinished
+                  ? "已结束"
+                  : "赛前等待"
+            }
+            tone={match.status === "live" ? "green" : "neutral"}
+          />
+          <DetailMetric
+            label="模型胜平负变化"
+            value={`${modelLeader.label} ${modelLeader.value}%`}
+            detail={marketSignals || stats ? "当前快照已重算" : "等待更多实时字段"}
+            tone="green"
+          />
+          <DetailMetric
+            label="冷门概率变化"
+            value={upsetSnapshotText}
+            detail={strongestMarketMove ? `${strongestMarketMove.label} ${formatDelta(strongestMarketMove.delta)}` : "当前没有可比盘口快照"}
+            tone={upsetRisk >= 50 ? "amber" : "neutral"}
+          />
+          <DetailMetric
+            label="推荐玩法是否变动"
+            value={recommendationChangedText}
+            detail={topSignal.edge == null ? "市场价值差待确认" : `价值差 ${topSignal.edge}%`}
+            tone={topSignal.edge != null && topSignal.edge > 0 ? "green" : "neutral"}
+          />
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <DetailMetric
+            label="xG 对比"
+            value={`${formatDecimal(stats?.xGHome)} : ${formatDecimal(stats?.xGAway)}`}
+            detail="优先使用 xG，未返回时不展示假值"
+          />
+          <DetailMetric
+            label="射门质量"
+            value={`${shotQualityHome} / ${shotQualityAway}`}
+            detail="xG ÷ 射门，衡量机会质量"
+          />
+          <DetailMetric
+            label="用户本场预测记录"
+            value={
+              predictionRecordLoading
+                ? "同步中"
+                : predictionRecord
+                  ? `${resultStatusLabel(predictionRecord.resultStatus)} · ${predictionRecord.market}`
+                  : "暂无记录"
+            }
+            detail={
+              predictionRecord
+                ? `${predictionRecord.direction} · 置信度 ${predictionRecord.confidence}%`
+                : "只有用积分预测过的比赛才会在这里归档"
+            }
+            tone={predictionRecord?.resultStatus === "won" ? "green" : "neutral"}
+          />
+          <DetailMetric
+            label="历史预测收益/命中率"
+            value={
+              predictionHistorySummary && predictionHistorySummary.settled > 0
+                ? `${predictionHistorySummary.hitRate}% 命中`
+                : "待结算"
+            }
+            detail={
+              predictionHistorySummary
+                ? `${predictionHistorySummary.total} 场已归档，${predictionHistorySummary.settled} 场已结算`
+                : "登录后读取你的历史预测"
+            }
+            tone={
+              predictionHistorySummary && predictionHistorySummary.hitRate >= 55 ? "green" : "neutral"
+            }
+          />
+        </div>
+
+        {isFinished && (
+          <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3 text-xs leading-6 text-white/60">
+            <div className="font-semibold text-white">模型赛前预测复盘</div>
+            <div className="mt-2 grid gap-2 md:grid-cols-3">
+              <div>赛前主方向：{topSignal.label}</div>
+              <div>
+                赛果判断：
+                {topSignalHit == null ? "玩法非胜平负，等待结算" : topSignalHit ? "方向命中" : "方向偏离"}
+              </div>
+              <div>真实赛果：{outcomeLabel(finalOutcome)}</div>
+            </div>
+            <div className="mt-3 space-y-1">
+              {postMatchDeviationReasons.map((reason) => (
+                <div key={reason}>{reason}</div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 md:grid-cols-[1.35fr,1fr]">
@@ -1009,9 +1379,16 @@ export default function MatchDetailPage() {
               <StatRow label="控球率" home={stats.possessionHome} away={stats.possessionAway} isPercent />
               <StatRow label="射门" home={stats.shotsHome} away={stats.shotsAway} />
               <StatRow label="射正" home={stats.shotsOnTargetHome} away={stats.shotsOnTargetAway} />
+              <StatRow label="射偏" home={stats.shotsOffTargetHome} away={stats.shotsOffTargetAway} />
               <StatRow label="角球" home={stats.cornersHome} away={stats.cornersAway} />
               <StatRow label="黄牌" home={stats.yellowCardsHome} away={stats.yellowCardsAway} />
+              <StatRow label="红牌" home={stats.redCardsHome} away={stats.redCardsAway} />
               <StatRow label="危险进攻" home={stats.dangerousAttacksHome} away={stats.dangerousAttacksAway} />
+              <StatRow label="禁区触球" home={stats.touchesInBoxHome} away={stats.touchesInBoxAway} />
+              <StatRow label="绝佳机会" home={stats.bigChancesHome} away={stats.bigChancesAway} />
+              <StatRow label="犯规" home={stats.foulsHome} away={stats.foulsAway} />
+              <StatRow label="传球" home={stats.passesHome} away={stats.passesAway} />
+              <StatRow label="门将扑救" home={stats.savesHome} away={stats.savesAway} />
               <StatRow label="xG" home={stats.xGHome} away={stats.xGAway} />
             </div>
           ) : (
@@ -1093,6 +1470,31 @@ export default function MatchDetailPage() {
                     <div className="mt-1 font-semibold text-red-200">
                       {marketSignals.noVig.awayWin}%
                     </div>
+                  </div>
+                </div>
+              )}
+              {marketMovementRows.length > 0 && (
+                <div className="mt-3 rounded-xl border border-white/8 bg-black/25 p-3">
+                  <div className="mb-2 text-[11px] font-semibold text-white/70">
+                    盘口赛前到当前变化
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    {marketMovementRows.map((item) => (
+                      <div key={item.label} className="grid grid-cols-[72px_1fr_72px] items-center gap-2">
+                        <span className="text-white/50">{item.label}</span>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+                          <div
+                            className={`h-full rounded-full ${
+                              item.delta >= 0 ? "bg-[color:var(--accent)]" : "bg-red-400/70"
+                            }`}
+                            style={{ width: `${Math.min(Math.max(item.current, 4), 96)}%` }}
+                          />
+                        </div>
+                        <span className={item.delta >= 0 ? "text-[color:var(--accent)]" : "text-red-200"}>
+                          {formatDelta(item.delta)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
