@@ -150,7 +150,18 @@ function numericIdFromTheStats(id?: string | null) {
 
 function theStatsIdCandidates(id: number) {
   const raw = String(Math.round(id));
-  return Array.from(new Set([`mt_${raw}`, `mt_${raw.padStart(9, "0")}`]));
+  const padded = raw.padStart(9, "0");
+  return Array.from(
+    new Set([
+      `mt_${raw}`,
+      `match_${raw}`,
+      `m_${raw}`,
+      raw,
+      `mt_${padded}`,
+      `match_${padded}`,
+      `m_${padded}`,
+    ])
+  );
 }
 
 function theStatsMatchIdCandidates(id?: string | number | null) {
@@ -158,7 +169,7 @@ function theStatsMatchIdCandidates(id?: string | number | null) {
   const numeric = numericIdFromTheStats(raw);
   return Array.from(
     new Set([
-      raw.startsWith("mt_") ? raw : "",
+      raw,
       ...(numeric > 0 ? theStatsIdCandidates(numeric) : []),
     ].filter(Boolean))
   );
@@ -306,20 +317,23 @@ function hasTheStatsStats(payload: TheStatsStatsPayload | null) {
 
 async function fetchTheStatsStatsPayload(matchId: string | number | null | undefined) {
   let lastError: unknown = null;
+  let firstPayload: TheStatsStatsPayload | null = null;
 
   for (const candidate of theStatsMatchIdCandidates(matchId)) {
     try {
-      return await fetchTheStatsJson<TheStatsStatsPayload>({
+      const payload = await fetchTheStatsJson<TheStatsStatsPayload>({
         path: `/football/matches/${candidate}/stats`,
         revalidate: 180,
       });
+      firstPayload = firstPayload ?? payload;
+      if (hasTheStatsStats(payload)) return payload;
     } catch (error) {
       lastError = error;
     }
   }
 
   if (lastError) throw lastError;
-  return null;
+  return firstPayload;
 }
 
 async function filterTheStatsMatchesWithActualStats(matches: TheStatsMatch[], maxChecks: number) {
