@@ -166,10 +166,12 @@ function theStatsIdCandidates(id: number) {
 
 function theStatsMatchIdCandidates(id?: string | number | null) {
   const raw = String(id ?? "").trim();
+  if (/^[a-z]+_/i.test(raw)) return [raw];
+
   const numeric = numericIdFromTheStats(raw);
   return Array.from(
     new Set([
-      raw,
+      Number.isFinite(Number(raw)) && Number(raw) > 0 ? "" : raw,
       ...(numeric > 0 ? theStatsIdCandidates(numeric) : []),
     ].filter(Boolean))
   );

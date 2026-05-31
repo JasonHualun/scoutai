@@ -90,10 +90,13 @@ export async function GET() {
       return true;
     });
 
-    return NextResponse.json({
-      matches: fixtures.map(mapFixtureToMatchCard),
-      updatedAt: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        matches: fixtures.map(mapFixtureToMatchCard),
+        updatedAt: new Date().toISOString(),
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
     return NextResponse.json(
       {
