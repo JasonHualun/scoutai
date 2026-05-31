@@ -7,7 +7,8 @@ import {
 } from "@/lib/league-translations";
 import { formatBeijingClock } from "@/lib/time-format";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type MatchStatus = "live" | "upcoming" | "finished";
 

@@ -322,25 +322,6 @@ async function fetchTheStatsStatsPayload(matchId: string | number | null | undef
   return null;
 }
 
-async function statsAvailabilityForMatches(matches: TheStatsMatch[], maxChecks: number) {
-  const limited = matches.slice(0, maxChecks);
-  const results = await Promise.allSettled(
-    limited.map(async (match) => {
-      const payload = await fetchTheStatsStatsPayload(match.id);
-      return hasTheStatsStats(payload);
-    })
-  );
-
-  return new Map(
-    limited.map((match, index) => [
-      match.id ?? "",
-      results[index]?.status === "fulfilled"
-        ? (results[index] as PromiseFulfilledResult<boolean>).value
-        : Boolean(match.xg_available),
-    ])
-  );
-}
-
 async function fetchTheStatsMatches(
   query: Record<string, string | number>,
   options: FixtureFilterOptions & {
@@ -348,7 +329,6 @@ async function fetchTheStatsMatches(
     requireOdds?: boolean;
     requireStats?: boolean;
     maxPages?: number;
-    maxStatChecks?: number;
   } = {}
 ) {
   const perPage = 100;
@@ -373,14 +353,11 @@ async function fetchTheStatsMatches(
         : true
     )
     .filter((match) => (options.onlyFriendlies ? isTheStatsFriendly(match) : true));
-  const statsAvailability = options.requireStats
-    ? await statsAvailabilityForMatches(filteredMatches, options.maxStatChecks ?? 16)
-    : new Map<string, boolean>();
 
   const fixtures = filteredMatches
     .map((match) =>
       mapTheStatsMatch(match, {
-        statsAvailable: statsAvailability.get(match.id ?? "") ?? Boolean(match.xg_available),
+        statsAvailable: Boolean(match.xg_available),
       })
     )
     .filter((fixture) => (options.requireStats ? Boolean(fixture.coverage.statsAvailable) : true))
@@ -1094,7 +1071,6 @@ export async function getMarketTestMatches(days = 7) {
         requireOdds: true,
         requireStats: true,
         maxPages: 8,
-        maxStatChecks: 24,
       }
     );
   } catch (error) {
