@@ -121,7 +121,7 @@ function hasTestCoverage(match: MatchCard) {
     isFriendlyTestMatch(match) &&
       match.status !== "finished" &&
       (match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable) &&
-      (match.status === "upcoming" || match.coverage?.statsAvailable)
+      ["live", "upcoming"].includes(match.status)
   );
 }
 
@@ -404,7 +404,7 @@ export default function HomeClient({ initialMatches }: Props) {
           {sortedMatches.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-8 text-sm text-white/60">
               {scopeMode === "core"
-                ? "暂无五大联赛或世界杯比赛。可以切到“友谊赛测试”，只看近期有盘口和实时统计覆盖的友谊赛。"
+                ? "暂无五大联赛或世界杯比赛。可以切到“友谊赛测试”，查看近期未开赛或进行中的国家队友谊赛。"
                 : "暂时没有可跟踪友谊赛。测试池只展示未开赛或进行中的友谊赛；已结束比赛会进入历史预测或赛后复盘，不放在当前工作台。"}
             </div>
           ) : (
@@ -451,7 +451,7 @@ export default function HomeClient({ initialMatches }: Props) {
                           {scopeMode === "test" && (
                             <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--accent)]">
                               {match.coverage?.liveOddsAvailable ? "实时赔率" : "赛前赔率"}
-                              {match.coverage?.statsAvailable ? " · 实时统计" : ""}
+                              {match.coverage?.statsAvailable ? " · 实时统计" : " · 统计待返回"}
                             </span>
                           )}
                         </div>
