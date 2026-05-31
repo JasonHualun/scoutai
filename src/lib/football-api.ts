@@ -632,11 +632,17 @@ function mapTheStatsStats(payload: TheStatsStatsPayload | null, fixture: ReturnT
   return {
     response: [
       {
-        team: fixture.teams.home,
+        team: {
+          ...fixture.teams.home,
+          name: translateTeam(fixture.teams.home.name ?? ""),
+        },
         statistics: makeStats("home"),
       },
       {
-        team: fixture.teams.away,
+        team: {
+          ...fixture.teams.away,
+          name: translateTeam(fixture.teams.away.name ?? ""),
+        },
         statistics: makeStats("away"),
       },
     ],
