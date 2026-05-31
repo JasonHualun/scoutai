@@ -465,7 +465,9 @@ export default function MatchDetailPage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/match/${fixtureId}`);
+        const res = await fetch(`/api/match/${fixtureId}`, {
+          cache: "no-store",
+        });
         const json = (await res.json()) as ApiMatchResponse;
         const fixture = json.fixture?.response?.[0];
         const teams = json.statistics?.response;
@@ -546,6 +548,8 @@ export default function MatchDetailPage() {
     }
 
     load();
+    const refreshId = window.setInterval(load, 60000);
+    return () => window.clearInterval(refreshId);
   }, [fixtureId]);
 
   useEffect(() => {
@@ -671,11 +675,11 @@ export default function MatchDetailPage() {
       ? "等待开赛"
       : stats
         ? "真实数据已更新"
-        : "等待数据更新";
+        : "进行中 · 等待实时统计";
   const realtimeEmptyText =
     match.status === "upcoming"
       ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
-      : "实时统计暂未更新，已隐藏占位数据。";
+      : "比分和状态已同步；实时统计暂未返回，系统不会展示占位假数据。";
   const oddsEmptyText = "市场指数暂未更新，价值差暂不计算。";
   const marketSignalCards = marketSignals
     ? [

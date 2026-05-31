@@ -248,6 +248,7 @@ const TEAM_MAP: Record<string, string> = {
   "U.S.A.": "美国",
   Canada: "加拿大",
   Japan: "日本",
+  Iceland: "冰岛",
   "South Korea": "韩国",
   "Korea Republic": "韩国",
   "Korea DPR": "朝鲜",
@@ -349,6 +350,30 @@ const TEAM_MAP: Record<string, string> = {
   "Urawa Red Diamonds": "浦和红钻",
   "Auckland City": "奥克兰城",
   "Auckland City FC": "奥克兰城",
+  Danubio: "达努比奥",
+  Progreso: "普罗格雷索",
+  "Gimnasia Jujuy": "胡胡伊体操",
+  Belgrano: "贝尔格拉诺",
+  "Fath Union Sport": "拉巴特联盟",
+  "AS FAR Rabat": "拉巴特皇家武装",
+  "Academia del Balompié Boliviano": "玻利维亚足球学院",
+  "Academia del Balompie Boliviano": "玻利维亚足球学院",
+  "Club Always Ready": "时刻准备",
+  Avaí: "阿瓦伊",
+  Avai: "阿瓦伊",
+  Criciúma: "克里西乌马",
+  Criciuma: "克里西乌马",
+  "Atlético Goianiense": "戈亚尼亚竞技",
+  "Atletico Goianiense": "戈亚尼亚竞技",
+  Goiás: "戈亚斯",
+  Goias: "戈亚斯",
+  "HFX Wanderers FC": "哈利法克斯流浪者",
+  "HFX Wanderers": "哈利法克斯流浪者",
+  "Vancouver FC": "温哥华 FC",
+  "Hồng Lĩnh Hà Tĩnh": "鸿岭河静",
+  "Hong Linh Ha Tinh": "鸿岭河静",
+  "SHB Đà Nẵng": "岘港 SHB",
+  "SHB Da Nang": "岘港 SHB",
 };
 
 const LEAGUE_MAP: Record<string, string> = {
@@ -374,6 +399,16 @@ const LEAGUE_MAP: Record<string, string> = {
   "Copa America": "美洲杯",
   "CONMEBOL Libertadores": "解放者杯",
   "FIFA Club World Cup": "世俱杯",
+  "International Friendly Games": "国际友谊赛",
+  "International Friendlies": "国际友谊赛",
+  "Friendly International": "国际友谊赛",
+  "Friendlies": "国际友谊赛",
+  "Vietnam V.League 1": "越南联赛",
+  "Uruguay Primera Division": "乌拉圭甲",
+  "Morocco Botola Pro": "摩洛哥甲",
+  "Bolivia Primera Division": "玻利维亚甲",
+  "Brazil Serie B": "巴西乙",
+  "Canadian Premier League": "加拿大超级联赛",
   Eredivisie: "荷甲",
   "Primeira Liga": "葡超",
   "Belgian Pro League": "比甲",
@@ -426,23 +461,25 @@ const ROUND_MAP: Record<string, string> = {
 
 export function translateTeam(name: string): string {
   if (!name) return name;
-  const direct = TEAM_MAP[name];
+  const normalizedName = name.normalize("NFC");
+  const direct = TEAM_MAP[normalizedName];
   if (direct) return direct;
 
-  const simplified = name
+  const simplified = normalizedName
     .replace(/\s+(FC|AFC|CF|SC|BC|SCO)$/i, "")
     .replace(/\s+Calcio$/i, "")
     .trim();
 
-  return TEAM_MAP[simplified] ?? name;
+  return TEAM_MAP[simplified] ?? normalizedName;
 }
 
 export function translateTeamText(text: string): string {
   if (!text) return text;
+  const normalizedText = text.normalize("NFC");
 
   return Object.entries(TEAM_MAP)
     .sort(([a], [b]) => b.length - a.length)
-    .reduce((result, [source, translated]) => result.split(source).join(translated), text);
+    .reduce((result, [source, translated]) => result.split(source).join(translated), normalizedText);
 }
 
 export function isSupportedLeague(id?: number | null, name?: string | null): boolean {

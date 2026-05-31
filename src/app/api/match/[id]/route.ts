@@ -1,17 +1,40 @@
 import { NextResponse } from "next/server";
 import {
   getFixtureById,
+  getLiveMatches,
   getMatchMarketSignals,
   getMatchStatistics,
   getMatchOdds,
+  getMarketTestMatches,
   getTeamRecentForm,
+  getTodayMatches,
+  getUpcomingMatches,
 } from "@/lib/football-api";
 
-export const revalidate = 180;
+export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 type TeamInfo = { id?: number; name?: string };
 type FixtureItem = { teams?: { home?: TeamInfo; away?: TeamInfo } };
+type FixtureResponse = { response?: unknown[]; results?: number; errors?: unknown };
+type FixtureWithId = { fixture?: { id?: number } };
 type StatisticTeam = { team?: { id?: number } };
+
+async function findFixtureFromLists(fixtureId: number): Promise<FixtureResponse | null> {
+  const results = await Promise.allSettled([
+    getLiveMatches(),
+    getTodayMatches(),
+    getUpcomingMatches(7),
+    getMarketTestMatches(7),
+  ]);
+
+  const fixtures = results
+    .filter((result): result is PromiseFulfilledResult<FixtureResponse> => result.status === "fulfilled")
+    .flatMap((result) => result.value.response ?? []);
+  const found = fixtures.find((item) => Number((item as FixtureWithId).fixture?.id) === fixtureId);
+
+  return found ? { response: [found], results: 1, errors: {} } : null;
+}
 
 export async function GET(
   _req: Request,
@@ -35,11 +58,15 @@ export async function GET(
       getMatchMarketSignals(fixtureId),
     ]);
 
-    const fixture = fixtureRes.status === "fulfilled" ? fixtureRes.value : null;
+    let fixture = fixtureRes.status === "fulfilled" ? fixtureRes.value : null;
     const statistics = statsRes.status === "fulfilled" ? statsRes.value : null;
     const odds = oddsRes.status === "fulfilled" ? oddsRes.value : null;
     const marketSignals =
       marketSignalsRes.status === "fulfilled" ? marketSignalsRes.value : null;
+
+    if (!Array.isArray(fixture?.response) || fixture.response.length === 0) {
+      fixture = await findFixtureFromLists(fixtureId);
+    }
 
     let homeForm: unknown = null;
     let awayForm: unknown = null;
@@ -85,7 +112,9 @@ export async function GET(
       fetchedAt: new Date().toISOString(),
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Failed to fetch match data";
     console.error("[match] failed to fetch match data:", message);
@@ -98,7 +127,7 @@ export async function GET(
         recentForm: { home: null, away: null },
         error: message,
       },
-      { status: 200 }
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

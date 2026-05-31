@@ -145,7 +145,7 @@ function numericIdFromTheStats(id?: string | null) {
 }
 
 function theStatsIdFromNumeric(id: number) {
-  return `mt_${String(Math.round(id)).padStart(9, "0")}`;
+  return `mt_${String(Math.round(id))}`;
 }
 
 function leagueIdFromTheStatsName(name?: string | null) {
@@ -167,6 +167,13 @@ function leagueMetaFromTheStats(match: TheStatsMatch) {
     comp_5840: { id: 135, name: "Serie A" },
     comp_0256: { id: 61, name: "Ligue 1" },
     comp_6107: { id: 1, name: "FIFA World Cup" },
+    comp_29967: { id: 29967, name: "International Friendly Games" },
+    comp_6059: { id: 6059, name: "Vietnam V.League 1" },
+    comp_8998: { id: 8998, name: "Uruguay Primera Division" },
+    comp_30610: { id: 30610, name: "Morocco Botola Pro" },
+    comp_623699: { id: 623699, name: "Bolivia Primera Division" },
+    comp_1085: { id: 1085, name: "Brazil Serie B" },
+    comp_194097: { id: 194097, name: "Canadian Premier League" },
   };
   const mapped = match.competition_id ? byId[match.competition_id] : null;
   const name =
@@ -782,7 +789,7 @@ export async function getFixtureById(fixtureId: number) {
     try {
       const payload = await fetchTheStatsJson<TheStatsMatchPayload>({
         path: `/football/matches/${theStatsIdFromNumeric(fixtureId)}`,
-        revalidate: 120,
+        revalidate: 30,
       });
       if (payload.data) {
         const fixture = mapTheStatsMatch(payload.data);
@@ -809,11 +816,11 @@ export async function getMatchStatistics(fixtureId: number) {
       const [matchPayload, statsPayload] = await Promise.all([
         fetchTheStatsJson<TheStatsMatchPayload>({
           path: `/football/matches/${theStatsIdFromNumeric(fixtureId)}`,
-          revalidate: 120,
+          revalidate: 30,
         }),
         fetchTheStatsJson<TheStatsStatsPayload>({
           path: `/football/matches/${theStatsIdFromNumeric(fixtureId)}/stats`,
-          revalidate: 120,
+          revalidate: 30,
         }),
       ]);
       if (matchPayload.data) {

@@ -39,7 +39,7 @@ export function CaptchaField({
       <div className="grid grid-cols-[150px_1fr] gap-3">
         <Image
           src={`/api/auth/captcha?t=${refreshKey}-${nonce}`}
-          alt="验证码"
+          alt="图形校验码"
           width={150}
           height={58}
           unoptimized
