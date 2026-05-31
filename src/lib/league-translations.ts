@@ -1,4 +1,7 @@
 const TEAM_MAP: Record<string, string> = {
+  Korea: "韩国",
+  "Republic of Korea": "韩国",
+  "Trinidad and Tobago": "特立尼达和多巴哥",
   "Manchester United": "曼联",
   "Manchester United FC": "曼联",
   "Manchester City": "曼城",
