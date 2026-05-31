@@ -128,6 +128,10 @@ type TheStatsMatchOdds = NonNullable<
 
 type TheStatsOddsSnapshot = "opening" | "last_seen" | "live";
 
+type TheStatsCoverageOverrides = {
+  statsAvailable?: boolean;
+};
+
 const CACHE_TTL_MS = 60 * 1000;
 const UPCOMING_CACHE_TTL_MS = 10 * 60 * 1000;
 const FALLBACK_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "WC"];
@@ -147,6 +151,17 @@ function numericIdFromTheStats(id?: string | null) {
 function theStatsIdCandidates(id: number) {
   const raw = String(Math.round(id));
   return Array.from(new Set([`mt_${raw}`, `mt_${raw.padStart(9, "0")}`]));
+}
+
+function theStatsMatchIdCandidates(id?: string | number | null) {
+  const raw = String(id ?? "").trim();
+  const numeric = numericIdFromTheStats(raw);
+  return Array.from(
+    new Set([
+      raw.startsWith("mt_") ? raw : "",
+      ...(numeric > 0 ? theStatsIdCandidates(numeric) : []),
+    ].filter(Boolean))
+  );
 }
 
 async function fetchTheStatsMatchResource<T>(
@@ -210,6 +225,16 @@ function leagueMetaFromTheStats(match: TheStatsMatch) {
   };
 }
 
+function isTheStatsFriendly(match: TheStatsMatch) {
+  const name = `${match.competition_name ?? ""} ${match.competition_id ?? ""}`.toLowerCase();
+  return (
+    match.competition_id === "comp_29967" ||
+    name.includes("friendly") ||
+    name.includes("friendlies") ||
+    name.includes("友谊")
+  );
+}
+
 function statusFromTheStats(status?: string) {
   if (status === "live") return "1H";
   if (status === "finished") return "FT";
@@ -218,8 +243,9 @@ function statusFromTheStats(status?: string) {
   return "NS";
 }
 
-function mapTheStatsMatch(match: TheStatsMatch) {
+function mapTheStatsMatch(match: TheStatsMatch, coverageOverrides: TheStatsCoverageOverrides = {}) {
   const competition = leagueMetaFromTheStats(match);
+  const isFriendly = isTheStatsFriendly(match);
   return {
     fixture: {
       id: numericIdFromTheStats(match.id),
@@ -253,14 +279,77 @@ function mapTheStatsMatch(match: TheStatsMatch) {
       oddsAvailable: Boolean(match.odds_available),
       liveOddsAvailable: Boolean(match.live_odds_available),
       xgAvailable: Boolean(match.xg_available),
+      statsAvailable: coverageOverrides.statsAvailable ?? Boolean(match.xg_available),
       isCoreLeague: isSupportedLeague(competition.id, competition.name),
+      isFriendly,
     },
   };
 }
 
+function hasMetricPair(metric?: TheStatsMetric) {
+  const values = metric?.all;
+  return Boolean(values && (values.home !== null && values.home !== undefined || values.away !== null && values.away !== undefined));
+}
+
+function hasTheStatsStats(payload: TheStatsStatsPayload | null) {
+  const overview = payload?.data?.overview;
+  if (!overview) return false;
+  return (
+    hasMetricPair(overview.ball_possession) ||
+    hasMetricPair(overview.expected_goals) ||
+    hasMetricPair(overview.total_shots) ||
+    hasMetricPair(overview.shots_on_target) ||
+    hasMetricPair(overview.corner_kicks) ||
+    hasMetricPair(overview.yellow_cards)
+  );
+}
+
+async function fetchTheStatsStatsPayload(matchId: string | number | null | undefined) {
+  let lastError: unknown = null;
+
+  for (const candidate of theStatsMatchIdCandidates(matchId)) {
+    try {
+      return await fetchTheStatsJson<TheStatsStatsPayload>({
+        path: `/football/matches/${candidate}/stats`,
+        revalidate: 180,
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
+async function statsAvailabilityForMatches(matches: TheStatsMatch[], maxChecks: number) {
+  const limited = matches.slice(0, maxChecks);
+  const results = await Promise.allSettled(
+    limited.map(async (match) => {
+      const payload = await fetchTheStatsStatsPayload(match.id);
+      return hasTheStatsStats(payload);
+    })
+  );
+
+  return new Map(
+    limited.map((match, index) => [
+      match.id ?? "",
+      results[index]?.status === "fulfilled"
+        ? (results[index] as PromiseFulfilledResult<boolean>).value
+        : Boolean(match.xg_available),
+    ])
+  );
+}
+
 async function fetchTheStatsMatches(
   query: Record<string, string | number>,
-  options: FixtureFilterOptions & { requireOdds?: boolean; maxPages?: number } = {}
+  options: FixtureFilterOptions & {
+    onlyFriendlies?: boolean;
+    requireOdds?: boolean;
+    requireStats?: boolean;
+    maxPages?: number;
+    maxStatChecks?: number;
+  } = {}
 ) {
   const perPage = 100;
   const matches: TheStatsMatch[] = [];
@@ -277,13 +366,24 @@ async function fetchTheStatsMatches(
     if (pageMatches.length < perPage) break;
   }
 
-  const fixtures = matches
+  const filteredMatches = matches
     .filter((match) =>
       options.requireOdds
         ? Boolean(match.odds_available || match.live_odds_available)
         : true
     )
-    .map(mapTheStatsMatch)
+    .filter((match) => (options.onlyFriendlies ? isTheStatsFriendly(match) : true));
+  const statsAvailability = options.requireStats
+    ? await statsAvailabilityForMatches(filteredMatches, options.maxStatChecks ?? 16)
+    : new Map<string, boolean>();
+
+  const fixtures = filteredMatches
+    .map((match) =>
+      mapTheStatsMatch(match, {
+        statsAvailable: statsAvailability.get(match.id ?? "") ?? Boolean(match.xg_available),
+      })
+    )
+    .filter((fixture) => (options.requireStats ? Boolean(fixture.coverage.statsAvailable) : true))
     .filter((fixture) => fixture.fixture.id > 0)
     .sort(
       (a, b) =>
@@ -847,12 +947,9 @@ export async function getMatchStatistics(fixtureId: number) {
               path: `/football/matches/${matchId}`,
               revalidate: 30,
             }),
-            fetchTheStatsJson<TheStatsStatsPayload>({
-              path: `/football/matches/${matchId}/stats`,
-              revalidate: 30,
-            }),
+            fetchTheStatsStatsPayload(matchId),
           ]);
-          if (matchPayload.data) {
+          if (matchPayload.data && hasTheStatsStats(statsPayload)) {
             return mapTheStatsStats(statsPayload, mapTheStatsMatch(matchPayload.data));
           }
         } catch (error) {
@@ -863,6 +960,11 @@ export async function getMatchStatistics(fixtureId: number) {
     } catch (error) {
       console.error("[thestats] stats failed:", error);
     }
+    return {
+      response: [],
+      results: 0,
+      errors: {},
+    };
   }
 
   return fetchWithCache<FootballApiResponse>(`stats:${fixtureId}`, "/fixtures/statistics", {
@@ -984,11 +1086,15 @@ export async function getMarketTestMatches(days = 7) {
       {
         date_from: beijingDateString(),
         date_to: beijingDateString(days),
+        competition_id: "comp_29967",
       },
       {
         includeUnsupported: true,
+        onlyFriendlies: true,
         requireOdds: true,
+        requireStats: true,
         maxPages: 8,
+        maxStatChecks: 24,
       }
     );
   } catch (error) {

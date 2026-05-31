@@ -21,7 +21,9 @@ type FixtureLike = {
     oddsAvailable?: boolean;
     liveOddsAvailable?: boolean;
     xgAvailable?: boolean;
+    statsAvailable?: boolean;
     isCoreLeague?: boolean;
+    isFriendly?: boolean;
   };
 };
 

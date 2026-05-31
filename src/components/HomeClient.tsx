@@ -38,7 +38,9 @@ export type MatchCard = {
     oddsAvailable?: boolean;
     liveOddsAvailable?: boolean;
     xgAvailable?: boolean;
+    statsAvailable?: boolean;
     isCoreLeague?: boolean;
+    isFriendly?: boolean;
   };
 };
 
@@ -106,6 +108,20 @@ function matchHotScore(match: MatchCard, favoriteLeagueIds: Set<number>) {
     awayScore: match.awayScore,
     isUserFavoriteLeague: !!match.leagueId && favoriteLeagueIds.has(match.leagueId),
   });
+}
+
+function isFriendlyTestMatch(match: MatchCard) {
+  const league = translateLeague(match.league).toLowerCase();
+  return Boolean(match.coverage?.isFriendly || league.includes("友谊") || league.includes("friendly"));
+}
+
+function hasTestCoverage(match: MatchCard) {
+  return Boolean(
+    match.status !== "finished" &&
+      isFriendlyTestMatch(match) &&
+      (match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable) &&
+      match.coverage?.statsAvailable
+  );
 }
 
 export default function HomeClient({ initialMatches }: Props) {
@@ -195,7 +211,7 @@ export default function HomeClient({ initialMatches }: Props) {
     return matches.filter((match) => {
       if (match.status === "finished") return false;
       if (scopeMode === "test") {
-        return Boolean(match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable);
+        return hasTestCoverage(match);
       }
       if (selectedLeagueIds.length === 0) return false;
       return !!match.leagueId && favoriteLeagueIds.has(match.leagueId);
@@ -217,8 +233,7 @@ export default function HomeClient({ initialMatches }: Props) {
     () =>
       matches.filter(
         (match) =>
-          match.status !== "finished" &&
-          Boolean(match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable)
+          hasTestCoverage(match)
       ).length,
     [matches]
   );
@@ -321,7 +336,7 @@ export default function HomeClient({ initialMatches }: Props) {
             >
               {mode === "core"
                 ? `正式赛事 ${coreMatchesCount}`
-                : `试用测试池 ${testMatchesCount}`}
+                : `友谊赛测试 ${testMatchesCount}`}
             </button>
           ))}
           {(["hot", "live"] as SortMode[]).map((mode) => (
@@ -384,8 +399,8 @@ export default function HomeClient({ initialMatches }: Props) {
           {sortedMatches.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-8 text-sm text-white/60">
               {scopeMode === "core"
-                ? "暂无五大联赛或世界杯比赛。可以切到“试用测试池”，用有赔率的其它比赛测试真实 API 和盘口链路。"
-                : "暂时没有带赔率的可测比赛，临近开赛时再刷新。"}
+                ? "暂无五大联赛或世界杯比赛。可以切到“友谊赛测试”，只看近期有盘口和实时统计覆盖的友谊赛。"
+                : "暂时没有可测友谊赛。测试池只展示同时有盘口和实时统计覆盖的比赛，避免用低质量小联赛数据误导判断。"}
             </div>
           ) : (
             <>
@@ -406,7 +421,7 @@ export default function HomeClient({ initialMatches }: Props) {
                           <div className="truncate text-[11px] font-medium uppercase tracking-[0.16em] text-[color:var(--accent)]/80">
                             {translateLeague(match.league)}
                             {scopeMode === "test" && !match.coverage?.isCoreLeague
-                              ? " · 试用测试"
+                              ? " · 友谊赛测试"
                               : ""}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/80">
@@ -430,7 +445,7 @@ export default function HomeClient({ initialMatches }: Props) {
                           {scopeMode === "test" && (
                             <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--accent)]">
                               {match.coverage?.liveOddsAvailable ? "实时赔率" : "赛前赔率"}
-                              {match.coverage?.xgAvailable ? " · xG" : ""}
+                              {match.coverage?.statsAvailable ? " · 实时统计" : ""}
                             </span>
                           )}
                         </div>
