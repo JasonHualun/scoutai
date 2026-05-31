@@ -325,7 +325,7 @@ test("backtest page shows logged-in user's real prediction history", async ({ pa
             predictionCount: 3,
             selectedCount: 2,
             totalSuggestedPercent: 100,
-            summary: "常规组合 · 预测池 3 场",
+            summary: "逐场单场预测 · 预测池 3 场",
             createdAt: "2026-05-24T08:00:00.000Z",
             settledAt: null,
             items: [
@@ -738,7 +738,7 @@ test("finished matches leave favorites alerts and prediction pool but history ke
   expect(stored.alerts.map((alert: { match_id: string }) => alert.match_id)).toEqual(["93002"]);
 });
 
-test("prediction page shows portfolio recommendations for prediction pool matches", async ({ page }) => {
+test("prediction page shows single-match recommendations for prediction pool matches", async ({ page }) => {
   await mockFavoriteMatches(page);
   await page.addInitScript(() => {
     window.localStorage.setItem("scoutai_favorites", JSON.stringify([91001, 91002, 91003]));
@@ -748,18 +748,19 @@ test("prediction page shows portfolio recommendations for prediction pool matche
   await page.goto("/predict", { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { name: "预测", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "预测池推荐" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "单场预测推荐" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "收藏监控" })).toHaveCount(0);
   await expect(page.getByText("开始本次预测")).toBeVisible();
   await expect(page.getByText("开通 Pro 后预测")).toBeVisible();
   await expect(page.getByText("当前预测池 3 场，每场扣 5 预测积分，合计扣 15 分。")).toBeVisible();
   await expect(page.getByText("按设置页自动匹配")).toBeVisible();
+  await expect(page.getByText("逐场单场预测")).toBeVisible();
   await expect(page.getByRole("link", { name: "去设置修改" })).toBeVisible();
   await expect(page.getByRole("button", { name: /稳健组合/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /机会组合/ })).toHaveCount(0);
   await expect(page.getByText("剩余预测积分")).toBeVisible();
   await expect(page.getByText("分析口径")).toBeVisible();
-  await expect(page.getByText("信号强度").first()).toBeVisible();
+  await expect(page.getByText("单场建议：")).toBeVisible();
   await expect(page.getByRole("button", { name: "移出预测池" }).first()).toBeVisible();
   await page.getByRole("button", { name: "开通 Pro", exact: true }).click();
   await expect(page.getByRole("heading", { name: "开通 Pro 预测积分" })).toBeVisible();
@@ -808,12 +809,14 @@ test("prediction start shows generated result and prevents duplicate deduction",
 
   await page.goto("/predict", { waitUntil: "networkidle" });
 
-  await expect(page.getByText("信号强度").first()).toBeVisible();
+  await expect(page.getByText("逐场单场预测")).toBeVisible();
   await page.getByRole("button", { name: "开始预测推荐" }).click();
   await expect(
-    page.getByText("已扣除 15 预测积分，本次按预测池 3 场比赛生成推荐，并已保存到历史预测。")
+    page.getByText("已扣除 15 预测积分，本次按预测池 3 场比赛生成单场推荐，并已保存到历史预测。")
   ).toBeVisible();
   await expect(page.getByText("本次推荐已生成")).toBeVisible();
+  await expect(page.getByText("Market Signals").first()).toBeVisible();
+  await expect(page.getByText("主看市场").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "已生成本次推荐" })).toBeDisabled();
 });
 

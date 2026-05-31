@@ -121,7 +121,7 @@ export default function OnboardingPage() {
               <div>
                 <h2 className="text-sm font-semibold">风险偏好</h2>
                 <p className="mt-1 text-xs text-white/50">
-                  先选择你更习惯的判断风格，系统会自动匹配模型、市场和组合口径。
+                  先选择你更习惯的判断风格，系统会自动匹配模型、市场和单场口径。
                 </p>
               </div>
             </div>

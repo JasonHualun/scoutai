@@ -163,7 +163,7 @@ const detailRows: DetailRow[] = [
     edge: "16.3%",
     stake: "8%",
     result: "+35 分",
-    note: "降低市场指数换稳定性，用于组合里的防守位。",
+    note: "降低市场指数换稳定性，用于单场判断里的防守口径。",
     win: true,
   },
   {
@@ -493,7 +493,7 @@ export default function BacktestPage() {
               </div>
               <div className="rounded-xl bg-black/24 p-3">
                 <span className="font-semibold text-[color:var(--accent)]">预测池：</span>
-                用户选择未来比赛后消耗积分，生成单场建议、常规组合和高倍率机会。
+                用户选择未来比赛后消耗积分，按每场生成单场建议，并保存当时的模型和市场快照。
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px]">

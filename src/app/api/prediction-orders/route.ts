@@ -160,7 +160,7 @@ function mapOrder(row: PredictionOrderRow, items: PredictionOrderItem[]): Predic
     predictionCount: Number(row.prediction_count),
     selectedCount: Number(row.selected_count),
     totalSuggestedPercent: Number(row.total_suggested_percent),
-    summary: row.summary ?? "预测池推荐",
+    summary: row.summary ?? "单场预测推荐",
     createdAt: row.created_at,
     settledAt: row.settled_at,
     items,

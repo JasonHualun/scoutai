@@ -93,7 +93,7 @@ export const marketOptions: PreferenceOption[] = [
   {
     id: "半全场",
     label: "半全场",
-    description: "组合半场和全场结果，波动更高，适合进取型用户做赛前观察。",
+    description: "同时观察半场和全场结果，波动更高，适合进取型用户做赛前观察。",
   },
   {
     id: "比分",
@@ -130,8 +130,8 @@ export const betTypeOptions: PreferenceOption[] = [
   },
   {
     id: "低波动组合",
-    label: "低波动组合",
-    description: "倾向双重机会、平局退款等更稳的观察方向。",
+    label: "低波动单场",
+    description: "倾向双重机会、平局退款等更稳的单场观察方向。",
   },
   {
     id: "高波动机会",

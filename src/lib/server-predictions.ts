@@ -401,20 +401,358 @@ function gradeFromScore(score: number) {
   return "观察";
 }
 
-function buildOrderItem(match: BuiltMatch): PredictionOrderItemInput {
-  const top = match.prediction.valueSignals[0];
-  const edge = top.edge ?? null;
-  const hasMarket = top.offeredOdds != null;
+type OrderSignal = {
+  market: string;
+  direction: string;
+  probability: number;
+  fairOdds: number;
+  offeredOdds: number | null;
+  valueEdge: number | null;
+  oddsLabel: string;
+  valueLabel: string;
+  volatility: "low" | "medium" | "high";
+};
+
+function hasPreferredMarket(prefs: UserPreferences, market: string) {
+  return prefs.preferred_markets.length === 0 || prefs.preferred_markets.includes(market);
+}
+
+function fairOddsFromProbability(probability: number) {
+  return Math.round((100 / Math.max(probability, 1)) * 100) / 100;
+}
+
+function probabilityFromExpectedGoals(expectedGoals: number, line = 0.5) {
+  const value = Math.max(expectedGoals, 0.01);
+  if (line <= 0.5) return (1 - Math.exp(-value)) * 100;
+  const zero = Math.exp(-value);
+  const one = zero * value;
+  return (1 - zero - one) * 100;
+}
+
+function orderValueLabel(edge: number | null, fallback: string) {
+  if (edge == null) return fallback;
+  if (edge >= 3) return `价值差 +${edge.toFixed(1)}%`;
+  if (edge <= -3) return `市场偏热 ${Math.abs(edge).toFixed(1)}%`;
+  return "模型与市场接近";
+}
+
+function orderOddsLabel(offeredOdds: number | null, fairOdds: number) {
+  return offeredOdds
+    ? `市场 ${offeredOdds.toFixed(2)} / 公平 ${fairOdds.toFixed(2)}`
+    : `公平 ${fairOdds.toFixed(2)} / 待市场`;
+}
+
+function outcomeDirection(market: PredictionResult["valueSignals"][number]["market"]) {
+  return {
+    homeWin: "主胜方向",
+    draw: "平局方向",
+    awayWin: "客胜方向",
+  }[market];
+}
+
+function buildOrderSignals(match: BuiltMatch, prefs: UserPreferences): OrderSignal[] {
+  const { prediction, matchData } = match;
+  const signals: OrderSignal[] = [];
+
+  if (hasPreferredMarket(prefs, "胜平负")) {
+    prediction.valueSignals.forEach((signal) => {
+      signals.push({
+        market: "胜平负",
+        direction: outcomeDirection(signal.market),
+        probability: signal.modelProbability,
+        fairOdds: signal.fairOdds,
+        offeredOdds: signal.offeredOdds,
+        valueEdge: signal.edge ?? null,
+        oddsLabel: orderOddsLabel(signal.offeredOdds, signal.fairOdds),
+        valueLabel: orderValueLabel(signal.edge ?? null, signal.offeredOdds ? "等待市场确认" : "等待市场指数"),
+        volatility: signal.market === "draw" ? "medium" : "low",
+      });
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "让球")) {
+    const side = prediction.valueSignals.find((signal) => signal.market !== "draw");
+    if (side) {
+      signals.push({
+        market: "让球 / 亚洲让球",
+        direction: `${side.market === "homeWin" ? "主队" : "客队"}让球观察`,
+        probability: side.modelProbability,
+        fairOdds: side.fairOdds,
+        offeredOdds: side.offeredOdds,
+        valueEdge: side.edge ?? null,
+        oddsLabel: orderOddsLabel(side.offeredOdds, side.fairOdds),
+        valueLabel: orderValueLabel(side.edge ?? null, matchData.odds.handicap !== "暂无" ? "让球线待校准" : "等待让球市场"),
+        volatility: "medium",
+      });
+    }
+  }
+
+  if (hasPreferredMarket(prefs, "大小球")) {
+    const over = prediction.probabilities.over25;
+    const under = prediction.probabilities.under25;
+    const probability = Math.max(over, under);
+    const direction = over >= under ? "大 2.5 球方向" : "小 2.5 球方向";
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "大小球",
+      direction,
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: `${orderOddsLabel(null, fairOdds)} · 盘口 ${matchData.odds.overUnder}`,
+      valueLabel: "基于进球分布",
+      volatility: "medium",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "双方进球")) {
+    const probability = prediction.probabilities.bothTeamsToScore;
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "双方进球",
+      direction: probability >= 52 ? "双方进球方向" : "双方不进球观察",
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: orderOddsLabel(null, fairOdds),
+      valueLabel: "基于双方进攻强度",
+      volatility: "medium",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "双重机会")) {
+    const candidates = [
+      { direction: "主队不败", probability: prediction.probabilities.homeWin + prediction.probabilities.draw },
+      { direction: "客队不败", probability: prediction.probabilities.awayWin + prediction.probabilities.draw },
+      { direction: "分胜负", probability: prediction.probabilities.homeWin + prediction.probabilities.awayWin },
+    ].sort((a, b) => b.probability - a.probability);
+    const best = candidates[0];
+    const fairOdds = fairOddsFromProbability(best.probability);
+    signals.push({
+      market: "双重机会",
+      direction: best.direction,
+      probability: best.probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: orderOddsLabel(null, fairOdds),
+      valueLabel: "低波动保护",
+      volatility: "low",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "平局退款")) {
+    const home = prediction.probabilities.homeWin;
+    const away = prediction.probabilities.awayWin;
+    const probability = Math.max(home, away) + prediction.probabilities.draw * 0.35;
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "平局退款",
+      direction: `${home >= away ? "主队" : "客队"}平局退款`,
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: orderOddsLabel(null, fairOdds),
+      valueLabel: "平局风险保护",
+      volatility: "low",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "比分")) {
+    const probability = clamp(prediction.confidence * 0.18, 8, 22);
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "比分",
+      direction: `${prediction.predictedScore.label} 小比例观察`,
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: "需要真实比分市场指数",
+      valueLabel: "高波动观察",
+      volatility: "high",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "球队进球数")) {
+    const candidates = [
+      {
+        direction: `${matchData.homeTeam} 进球 1+`,
+        probability: probabilityFromExpectedGoals(prediction.expectedGoals.home),
+      },
+      {
+        direction: `${matchData.awayTeam} 进球 1+`,
+        probability: probabilityFromExpectedGoals(prediction.expectedGoals.away),
+      },
+      {
+        direction: `${matchData.homeTeam} 进球 2+`,
+        probability: probabilityFromExpectedGoals(prediction.expectedGoals.home, 1.5),
+      },
+      {
+        direction: `${matchData.awayTeam} 进球 2+`,
+        probability: probabilityFromExpectedGoals(prediction.expectedGoals.away, 1.5),
+      },
+    ].sort((a, b) => b.probability - a.probability);
+    const best = candidates[0];
+    const fairOdds = fairOddsFromProbability(best.probability);
+    signals.push({
+      market: "球队进球数",
+      direction: best.direction,
+      probability: best.probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: orderOddsLabel(null, fairOdds),
+      valueLabel: "基于预期进球",
+      volatility: best.probability >= 62 ? "low" : "medium",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "半场胜平负")) {
+    const top = prediction.valueSignals[0];
+    const probability = clamp(top.modelProbability * 0.62, 18, 62);
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "半场胜平负",
+      direction: `${top.label}半场走势观察`,
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: "等待半场市场指数",
+      valueLabel: "半场波动更高",
+      volatility: "high",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "半全场")) {
+    const top = prediction.valueSignals[0];
+    const probability = clamp(prediction.confidence * 0.18, 8, 22);
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "半全场",
+      direction: `${top.label}相关半全场小比例观察`,
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: "需要半全场市场指数",
+      valueLabel: "高波动玩法",
+      volatility: "high",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "角球")) {
+    const pressure =
+      matchData.homeStats.corners +
+      matchData.awayStats.corners +
+      (matchData.homeStats.shots + matchData.awayStats.shots) * 0.28;
+    const probability = clamp(28 + pressure * 4.2, 24, 72);
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "角球",
+      direction: pressure >= 7 ? "角球偏多观察" : "角球等待实时压力",
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: "等待角球市场指数",
+      valueLabel: "依赖实时压力",
+      volatility: "high",
+    });
+  }
+
+  if (hasPreferredMarket(prefs, "红黄牌")) {
+    const probability = clamp(24 + Math.abs(prediction.expectedGoals.home - prediction.expectedGoals.away) * 6, 18, 58);
+    const fairOdds = fairOddsFromProbability(probability);
+    signals.push({
+      market: "红黄牌",
+      direction: "牌数风险观察",
+      probability,
+      fairOdds,
+      offeredOdds: null,
+      valueEdge: null,
+      oddsLabel: "等待裁判和牌数市场",
+      valueLabel: "风险观察项",
+      volatility: "high",
+    });
+  }
+
+  if (signals.length > 0) return signals;
+
+  const fallback = prediction.valueSignals[0];
+  return [
+    {
+      market: mapSignalMarket(fallback),
+      direction: fallback.label,
+      probability: fallback.modelProbability,
+      fairOdds: fallback.fairOdds,
+      offeredOdds: fallback.offeredOdds,
+      valueEdge: fallback.edge ?? null,
+      oddsLabel: orderOddsLabel(fallback.offeredOdds, fallback.fairOdds),
+      valueLabel: orderValueLabel(fallback.edge ?? null, "等待市场指数"),
+      volatility: fallback.market === "draw" ? "medium" : "low",
+    },
+  ];
+}
+
+function orderSignalScore(signal: OrderSignal, prefs: UserPreferences) {
+  const edgeScore = Math.max(signal.valueEdge ?? 0, 0) * 2.2;
+  const probabilityScore = signal.probability * 0.55;
+  const volatilityScore =
+    signal.volatility === "low" ? 14 : signal.volatility === "medium" ? 6 : -8;
+  const riskAdjustment =
+    prefs.risk_level === "conservative"
+      ? signal.volatility === "high"
+        ? -18
+        : signal.volatility === "low"
+          ? 8
+          : 0
+      : prefs.risk_level === "aggressive"
+        ? signal.volatility === "high"
+          ? 7
+          : 0
+        : 0;
+  const oddsScore = signal.offeredOdds ? Math.min(signal.offeredOdds, 5) * 2 : 0;
+  return probabilityScore + edgeScore + volatilityScore + riskAdjustment + oddsScore;
+}
+
+function chooseOrderSignal(match: BuiltMatch, prefs: UserPreferences) {
+  return buildOrderSignals(match, prefs).sort(
+    (a, b) => orderSignalScore(b, prefs) - orderSignalScore(a, prefs)
+  )[0];
+}
+
+function riskLabelFromSignal(score: number, confidence: number, signal: OrderSignal) {
+  if (signal.volatility === "high") return "高";
+  if (score >= 78 && confidence >= 65 && signal.probability >= 58) return "低";
+  return riskLabel(score, confidence, signal.valueEdge);
+}
+
+function buildOrderItem(match: BuiltMatch, prefs: UserPreferences): PredictionOrderItemInput {
+  const top = chooseOrderSignal(match, prefs);
+  const edge = top.valueEdge;
+  const hasMarket = top.offeredOdds != null || edge != null;
   const score = Math.round(
     clamp(
       match.prediction.confidence * 0.72 +
+        top.probability * 0.18 +
         Math.max(edge ?? 0, 0) * 1.8 +
-        (hasMarket ? 8 : -10),
+        (hasMarket ? 8 : -4) +
+        (top.volatility === "low" ? 5 : top.volatility === "high" ? -6 : 0),
       0,
       100
     )
   );
-  const selected = hasMarket && edge != null && edge >= 4 && match.prediction.confidence >= 54 && score >= 64;
+  const threshold = prefs.risk_level === "conservative" ? 66 : prefs.risk_level === "aggressive" ? 58 : 62;
+  const selected =
+    match.status !== "finished" &&
+    score >= threshold &&
+    top.volatility !== "high" &&
+    (edge != null ? edge >= 2 : top.probability >= 57);
 
   return {
     fixtureId: match.fixtureId,
@@ -423,23 +761,21 @@ function buildOrderItem(match: BuiltMatch): PredictionOrderItemInput {
     awayTeam: match.matchData.awayTeam,
     kickoffAt: match.kickoffAt,
     statusAtPrediction: match.status,
-    market: mapSignalMarket(top),
-    direction: top.label,
+    market: top.market,
+    direction: top.direction,
     recommendation: selected ? "selected" : "observe",
     confidence: Math.round(match.prediction.confidence),
     score,
     grade: gradeFromScore(score),
-    riskLabel: riskLabel(score, match.prediction.confidence, edge),
+    riskLabel: riskLabelFromSignal(score, match.prediction.confidence, top),
     suggestedPercent: 0,
     fairOdds: top.fairOdds,
     offeredOdds: top.offeredOdds,
     valueEdge: edge,
-    oddsLabel: top.offeredOdds
-      ? `市场 ${top.offeredOdds.toFixed(2)} / 公平 ${top.fairOdds.toFixed(2)}`
-      : `公平 ${top.fairOdds.toFixed(2)} / 待市场`,
-    valueLabel: edge == null ? "等待市场指数" : `价值差 ${edge > 0 ? "+" : ""}${edge.toFixed(1)}%`,
+    oddsLabel: top.oddsLabel,
+    valueLabel: top.valueLabel,
     reason: selected
-      ? "服务端读取最新比赛、市场指数和模型结果后生成，信号达到当前风险偏好门槛。"
+      ? `服务端按用户设置的关注市场完成单场计算，${top.market} 的信号达到当前风险偏好门槛。`
       : "服务端已完成计算，但当前信号强度或市场指数不足，建议先观察。",
     dataBasis: match.dataBasis,
   };
@@ -677,7 +1013,7 @@ export async function buildServerPredictionOrderInput({
   if (ids.length === 0) throw new Error("请先把比赛加入预测池");
 
   const builtMatches = await Promise.all(ids.map((id) => fetchPredictionMatch(id, prefs)));
-  const rawItems = builtMatches.map(buildOrderItem);
+  const rawItems = builtMatches.map((match) => buildOrderItem(match, prefs));
   const items = allocateSuggestedPercent(rawItems);
   const selectedCount = items.filter((item) => item.recommendation === "selected").length;
   const totalSuggestedPercent = items.reduce((sum, item) => sum + item.suggestedPercent, 0);
