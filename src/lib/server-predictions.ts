@@ -30,6 +30,7 @@ type BuiltMatch = {
   kickoffAt: string | null;
   prediction: PredictionResult;
   dataBasis: string[];
+  marketContext?: string[];
 };
 
 type BuildParams = {
@@ -177,7 +178,7 @@ export function isTheStatsFixtureId(id: FixtureId) {
 
 function normalizeTheStatsMatchId(id: FixtureId) {
   const value = String(id);
-  return value.startsWith("mt_") ? value : `mt_${value}`;
+  return value.startsWith("mt_") ? value : `mt_${value.padStart(9, "0")}`;
 }
 
 function statusFromLegacy(short?: string): MatchStatus {
@@ -276,6 +277,10 @@ function latestOdd(value?: TheStatsOddsValue) {
   return oddValue(value?.live ?? value?.last_seen ?? value?.opening);
 }
 
+function oddAt(value: TheStatsOddsValue | undefined, key: "opening" | "last_seen" | "live") {
+  return oddValue(value?.[key]);
+}
+
 function chooseBookmaker(odds: TheStatsOdds | null) {
   const bookmakers = odds?.bookmakers ?? [];
   const priority = ["Pinnacle", "Bet365", "Betfair Exchange", "Kambi"];
@@ -315,6 +320,64 @@ function mapTheStatsOdds(odds: TheStatsOdds | null): MatchAnalysisData["odds"] {
     handicap: chooseHandicapLine(markets?.asian_handicap),
     overUnder: chooseTotalGoalsLine(markets?.total_goals),
   };
+}
+
+function noVigSnapshot(
+  matchOdds: TheStatsMarkets["match_odds"] | undefined,
+  key: "opening" | "last_seen" | "live"
+) {
+  const home = oddAt(matchOdds?.home, key);
+  const draw = oddAt(matchOdds?.draw, key);
+  const away = oddAt(matchOdds?.away, key);
+  if (!home || !draw || !away) return null;
+
+  const raw = {
+    homeWin: 1 / home,
+    draw: 1 / draw,
+    awayWin: 1 / away,
+  };
+  const total = raw.homeWin + raw.draw + raw.awayWin;
+  if (!Number.isFinite(total) || total <= 0) return null;
+
+  return {
+    overround: Math.round((total - 1) * 1000) / 10,
+    noVig: {
+      homeWin: Math.round((raw.homeWin / total) * 1000) / 10,
+      draw: Math.round((raw.draw / total) * 1000) / 10,
+      awayWin: Math.round((raw.awayWin / total) * 1000) / 10,
+    },
+  };
+}
+
+function buildMarketContext(odds: TheStatsOdds | null) {
+  const bookmaker = chooseBookmaker(odds);
+  const matchOdds = bookmaker?.markets?.match_odds;
+  const latest = noVigSnapshot(matchOdds, "live") ?? noVigSnapshot(matchOdds, "last_seen");
+  const opening = noVigSnapshot(matchOdds, "opening");
+  if (!bookmaker || !latest) return [];
+
+  const context = [`盘口源 ${bookmaker.bookmaker ?? "TheStats"}`];
+  context.push(`抽水 ${latest.overround}%`);
+
+  if (opening) {
+    const shifts = [
+      { label: "主胜", value: latest.noVig.homeWin - opening.noVig.homeWin },
+      { label: "平局", value: latest.noVig.draw - opening.noVig.draw },
+      { label: "客胜", value: latest.noVig.awayWin - opening.noVig.awayWin },
+    ].sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    const strongest = shifts[0];
+    if (strongest && Math.abs(strongest.value) >= 0.8) {
+      context.push(
+        `${strongest.label}方向${strongest.value > 0 ? "升温" : "降温"} ${
+          strongest.value > 0 ? "+" : ""
+        }${(Math.round(strongest.value * 10) / 10).toFixed(1)}%`
+      );
+    } else {
+      context.push("盘口整体平稳");
+    }
+  }
+
+  return context;
 }
 
 function mapSignalMarket(signal: PredictionResult["valueSignals"][number]) {
@@ -525,6 +588,7 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
       : null;
   const preOdds = oddsRes.status === "fulfilled" ? oddsRes.value.data ?? null : null;
   const odds = mapTheStatsOdds(liveOdds ?? preOdds);
+  const marketContext = buildMarketContext(liveOdds ?? preOdds);
   const possession = metricPair(stats, "ball_possession");
   const xg = metricPair(stats, "expected_goals");
   const shots = metricPair(stats, "total_shots");
@@ -572,10 +636,12 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
       "TheStats match",
       statsRes.status === "fulfilled" ? "TheStats stats/xG" : "stats unavailable",
       liveOdds ? "TheStats live odds" : oddsRes.status === "fulfilled" ? "TheStats odds" : "odds unavailable",
+      ...marketContext,
       homeFormRes.status === "fulfilled" || awayFormRes.status === "fulfilled"
         ? "team form"
         : "team form unavailable",
     ],
+    marketContext,
   };
 }
 

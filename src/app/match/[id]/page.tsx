@@ -84,6 +84,7 @@ type ApiMatchResponse = {
   fixture?: { response?: ApiFixture[] } | null;
   statistics?: { response?: ApiTeamStats[] } | null;
   odds?: { response?: Array<{ bookmakers?: Array<{ bets?: ApiBet[] }> }> } | null;
+  marketSignals?: MarketSignals | null;
   recentForm?: { home?: ApiRecentForm | null; away?: ApiRecentForm | null };
   teamIds?: { home?: number | null; away?: number | null };
 };
@@ -116,6 +117,26 @@ type ApiRecentFixture = {
 };
 
 type ApiRecentForm = { response?: ApiRecentFixture[] };
+
+type MarketSignals = {
+  source: string;
+  availableBooks: string[];
+  overroundPercent: number | null;
+  noVig: {
+    homeWin: number;
+    draw: number;
+    awayWin: number;
+  } | null;
+  openingNoVig: {
+    homeWin: number;
+    draw: number;
+    awayWin: number;
+  } | null;
+  pressure: string;
+  exchangeLean: string | null;
+  bookmakerSpreadPercent: number | null;
+  note: string;
+};
 
 const RECENT_FORM_LIMIT = 10;
 
@@ -421,6 +442,7 @@ export default function MatchDetailPage() {
   });
   const [stats, setStats] = useState<RealtimeStats | null>(null);
   const [odds, setOdds] = useState<OddsData | null>(null);
+  const [marketSignals, setMarketSignals] = useState<MarketSignals | null>(null);
   const [recentForm, setRecentForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -504,6 +526,7 @@ export default function MatchDetailPage() {
         const bets = json.odds?.response?.[0]?.bookmakers?.[0]?.bets;
         const nextOdds = mapOdds(bets);
         setOdds(nextOdds);
+        setMarketSignals(json.marketSignals ?? null);
 
         const homeForm = mapForm(json.recentForm?.home, json.teamIds?.home);
         const awayForm = mapForm(json.recentForm?.away, json.teamIds?.away);
@@ -514,6 +537,7 @@ export default function MatchDetailPage() {
       } catch {
         setStats(null);
         setOdds(null);
+        setMarketSignals(null);
         setRecentForm(emptyForm);
       } finally {
         setLoading(false);
@@ -652,6 +676,36 @@ export default function MatchDetailPage() {
       ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
       : "实时统计暂未更新，已隐藏占位数据。";
   const oddsEmptyText = "市场指数暂未更新，价值差暂不计算。";
+  const marketSignalCards = marketSignals
+    ? [
+        {
+          label: "庄家抽水",
+          value:
+            marketSignals.overroundPercent == null
+              ? "待更新"
+              : `${marketSignals.overroundPercent}%`,
+          detail: `${marketSignals.source} 去水前盘口`,
+        },
+        {
+          label: "盘口倾向",
+          value: marketSignals.pressure,
+          detail: "开盘到最新价格变化",
+        },
+        {
+          label: "交易所参考",
+          value: marketSignals.exchangeLean ?? "待更新",
+          detail: "Betfair 与锐利盘口差异",
+        },
+        {
+          label: "盘口分歧",
+          value:
+            marketSignals.bookmakerSpreadPercent == null
+              ? "待更新"
+              : `${marketSignals.bookmakerSpreadPercent}%`,
+          detail: `${marketSignals.availableBooks.length} 个盘口源`,
+        },
+      ]
+    : [];
   const isBaselineEstimate = !stats && !odds;
   const predictionDataNote =
     isBaselineEstimate
@@ -761,7 +815,8 @@ export default function MatchDetailPage() {
             </h1>
             <p className="mt-2 text-xs text-white/55">
               开球时间：{match.kickOff}
-              {match.status === "live" && ` · 进行中 ${match.minute ?? 0}'`}
+              {match.status === "live" &&
+                ` · ${typeof match.minute === "number" ? `进行中 ${match.minute}'` : "进行中"}`}
             </p>
           </div>
           <div className="flex items-center gap-5">
@@ -926,6 +981,55 @@ export default function MatchDetailPage() {
           ) : (
             <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/25 p-4 text-xs leading-6 text-white/55">
               {oddsEmptyText}
+            </div>
+          )}
+
+          {marketSignals ? (
+            <div className="mt-4 rounded-2xl border border-[color:var(--accent)]/20 bg-[linear-gradient(135deg,rgba(0,255,135,0.08),rgba(0,0,0,0.22))] p-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-xs font-semibold text-white">盘口资金倾向参考</h3>
+                  <p className="mt-1 text-[11px] leading-5 text-white/50">
+                    用开盘、最新赔率、去水概率和交易所价格推断市场压力，不再只看单一赔率。
+                  </p>
+                </div>
+                <div className="rounded-full border border-[color:var(--accent)]/30 bg-black/35 px-3 py-1 text-[10px] font-semibold text-[color:var(--accent)]">
+                  {marketSignals.source}
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {marketSignalCards.map((item) => (
+                  <div key={item.label} className="rounded-xl bg-black/25 p-3">
+                    <div className="text-[11px] text-white/45">{item.label}</div>
+                    <div className="mt-1 text-sm font-semibold text-white">{item.value}</div>
+                    <div className="mt-1 text-[11px] text-white/42">{item.detail}</div>
+                  </div>
+                ))}
+              </div>
+              {marketSignals.noVig && (
+                <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <div className="text-white/45">去水主胜</div>
+                    <div className="mt-1 font-semibold text-[color:var(--accent)]">
+                      {marketSignals.noVig.homeWin}%
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <div className="text-white/45">去水平局</div>
+                    <div className="mt-1 font-semibold text-white">{marketSignals.noVig.draw}%</div>
+                  </div>
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <div className="text-white/45">去水客胜</div>
+                    <div className="mt-1 font-semibold text-red-200">
+                      {marketSignals.noVig.awayWin}%
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/20 p-3 text-xs leading-5 text-white/45">
+              盘口资金倾向暂未更新；有开盘和最新赔率后会显示抽水、去水概率、盘口升温和交易所差异。
             </div>
           )}
 

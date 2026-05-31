@@ -31,6 +31,10 @@ type FixtureItem = {
   };
 };
 
+type FixtureFilterOptions = {
+  includeUnsupported?: boolean;
+};
+
 type FallbackMatch = {
   id: number;
   utcDate: string;
@@ -57,7 +61,9 @@ type TheStatsMatch = {
   home_team?: { id?: string; name?: string };
   away_team?: { id?: string; name?: string };
   score?: { home?: number | null; away?: number | null };
+  odds_available?: boolean;
   live_odds_available?: boolean;
+  xg_available?: boolean;
 };
 
 type TheStatsMatchesPayload = {
@@ -114,6 +120,14 @@ type TheStatsOddsPayload = {
   };
 };
 
+type TheStatsMatchOdds = NonNullable<
+  NonNullable<
+    NonNullable<NonNullable<TheStatsOddsPayload["data"]>["bookmakers"]>[number]["markets"]
+  >["match_odds"]
+>;
+
+type TheStatsOddsSnapshot = "opening" | "last_seen" | "live";
+
 const CACHE_TTL_MS = 60 * 1000;
 const UPCOMING_CACHE_TTL_MS = 10 * 60 * 1000;
 const FALLBACK_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "WC"];
@@ -131,7 +145,7 @@ function numericIdFromTheStats(id?: string | null) {
 }
 
 function theStatsIdFromNumeric(id: number) {
-  return `mt_${Math.round(id)}`;
+  return `mt_${String(Math.round(id)).padStart(9, "0")}`;
 }
 
 function leagueIdFromTheStatsName(name?: string | null) {
@@ -155,9 +169,14 @@ function leagueMetaFromTheStats(match: TheStatsMatch) {
     comp_6107: { id: 1, name: "FIFA World Cup" },
   };
   const mapped = match.competition_id ? byId[match.competition_id] : null;
-  const name = match.competition_name || mapped?.name || "";
+  const name =
+    match.competition_name ||
+    mapped?.name ||
+    (match.competition_id ? `测试赛事 ${match.competition_id}` : "");
   return {
-    id: mapped?.id ?? leagueIdFromTheStatsName(name),
+    id:
+      mapped?.id ??
+      (leagueIdFromTheStatsName(name) || numericIdFromTheStats(match.competition_id)),
     name,
   };
 }
@@ -200,23 +219,52 @@ function mapTheStatsMatch(match: TheStatsMatch) {
       home: match.score?.home ?? 0,
       away: match.score?.away ?? 0,
     },
+    coverage: {
+      provider: "thestats",
+      oddsAvailable: Boolean(match.odds_available),
+      liveOddsAvailable: Boolean(match.live_odds_available),
+      xgAvailable: Boolean(match.xg_available),
+      isCoreLeague: isSupportedLeague(competition.id, competition.name),
+    },
   };
 }
 
-async function fetchTheStatsMatches(query: Record<string, string | number>) {
-  const payload = await fetchTheStatsJson<TheStatsMatchesPayload>({
-    path: "/football/matches",
-    query: { page: 1, per_page: 100, utc_offset: "+08:00", ...query },
-    revalidate: 180,
-  });
-  const fixtures = (payload.data ?? [])
+async function fetchTheStatsMatches(
+  query: Record<string, string | number>,
+  options: FixtureFilterOptions & { requireOdds?: boolean; maxPages?: number } = {}
+) {
+  const perPage = 100;
+  const matches: TheStatsMatch[] = [];
+  const maxPages = options.maxPages ?? 4;
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const payload = await fetchTheStatsJson<TheStatsMatchesPayload>({
+      path: "/football/matches",
+      query: { page, per_page: perPage, utc_offset: "+08:00", ...query },
+      revalidate: 180,
+    });
+    const pageMatches = payload.data ?? [];
+    matches.push(...pageMatches);
+    if (pageMatches.length < perPage) break;
+  }
+
+  const fixtures = matches
+    .filter((match) =>
+      options.requireOdds
+        ? Boolean(match.odds_available || match.live_odds_available)
+        : true
+    )
     .map(mapTheStatsMatch)
-    .filter((fixture) => fixture.fixture.id > 0);
+    .filter((fixture) => fixture.fixture.id > 0)
+    .sort(
+      (a, b) =>
+        new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime()
+    );
   return filterAndLocalizeFixtures({
     response: fixtures,
     results: fixtures.length,
     errors: {},
-  });
+  }, options);
 }
 
 function safeNumber(value: unknown, fallback = 0) {
@@ -302,6 +350,155 @@ function mapTheStatsOdds(payload: TheStatsOddsPayload | null) {
   };
 }
 
+function oddsAt(value: TheStatsOddsValue | undefined, snapshot: TheStatsOddsSnapshot) {
+  const parsed = safeNumber(value?.[snapshot]);
+  return parsed > 1 ? parsed : 0;
+}
+
+function impliedFromMatchOdds(
+  matchOdds: TheStatsMatchOdds | undefined,
+  snapshot: TheStatsOddsSnapshot
+) {
+  const odds = {
+    homeWin: oddsAt(matchOdds?.home, snapshot),
+    draw: oddsAt(matchOdds?.draw, snapshot),
+    awayWin: oddsAt(matchOdds?.away, snapshot),
+  };
+
+  if (!odds.homeWin || !odds.draw || !odds.awayWin) return null;
+
+  const raw = {
+    homeWin: 1 / odds.homeWin,
+    draw: 1 / odds.draw,
+    awayWin: 1 / odds.awayWin,
+  };
+  const total = raw.homeWin + raw.draw + raw.awayWin;
+  if (!Number.isFinite(total) || total <= 0) return null;
+
+  return {
+    odds,
+    overroundPercent: Math.round((total - 1) * 1000) / 10,
+    noVig: {
+      homeWin: Math.round((raw.homeWin / total) * 1000) / 10,
+      draw: Math.round((raw.draw / total) * 1000) / 10,
+      awayWin: Math.round((raw.awayWin / total) * 1000) / 10,
+    },
+  };
+}
+
+function pressureLabel(
+  latest: NonNullable<ReturnType<typeof impliedFromMatchOdds>>["noVig"] | null,
+  opening: NonNullable<ReturnType<typeof impliedFromMatchOdds>>["noVig"] | null
+) {
+  if (!latest || !opening) return "等待更多盘口变化";
+
+  const labels = {
+    homeWin: "主胜",
+    draw: "平局",
+    awayWin: "客胜",
+  } as const;
+  const shifts = (Object.keys(labels) as Array<keyof typeof labels>).map((key) => ({
+    key,
+    shift: Math.round((latest[key] - opening[key]) * 10) / 10,
+  }));
+  const strongest = shifts.sort((a, b) => Math.abs(b.shift) - Math.abs(a.shift))[0];
+  if (!strongest || Math.abs(strongest.shift) < 0.8) return "盘口整体平稳";
+
+  return `${labels[strongest.key]}方向${strongest.shift > 0 ? "升温" : "降温"} ${
+    strongest.shift > 0 ? "+" : ""
+  }${strongest.shift}%`;
+}
+
+function marketSpread(bookmakers: NonNullable<TheStatsOddsPayload["data"]>["bookmakers"]) {
+  const snapshots = (bookmakers ?? [])
+    .map((bookmaker) => impliedFromMatchOdds(bookmaker.markets?.match_odds, "last_seen"))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  if (snapshots.length < 2) return null;
+
+  const outcomes = ["homeWin", "draw", "awayWin"] as const;
+  const spread = Math.max(
+    ...outcomes.map((outcome) => {
+      const values = snapshots.map((snapshot) => snapshot.noVig[outcome]);
+      return Math.max(...values) - Math.min(...values);
+    })
+  );
+
+  return Math.round(spread * 10) / 10;
+}
+
+function exchangeLean(payload: TheStatsOddsPayload | null) {
+  const bookmakers = payload?.data?.bookmakers ?? [];
+  const exchange = bookmakers.find((bookmaker) => bookmaker.bookmaker === "Betfair Exchange");
+  const sharp =
+    bookmakers.find((bookmaker) => bookmaker.bookmaker === "Pinnacle") ??
+    bookmakers.find((bookmaker) => bookmaker.bookmaker !== "Betfair Exchange");
+
+  const exchangeNoVig = impliedFromMatchOdds(exchange?.markets?.match_odds, "last_seen")?.noVig;
+  const sharpNoVig = impliedFromMatchOdds(sharp?.markets?.match_odds, "last_seen")?.noVig;
+  if (!exchangeNoVig || !sharpNoVig) return null;
+
+  const labels = {
+    homeWin: "主胜",
+    draw: "平局",
+    awayWin: "客胜",
+  } as const;
+  const diffs = (Object.keys(labels) as Array<keyof typeof labels>).map((key) => ({
+    key,
+    diff: Math.round((exchangeNoVig[key] - sharpNoVig[key]) * 10) / 10,
+  }));
+  const strongest = diffs.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))[0];
+  if (!strongest || Math.abs(strongest.diff) < 1) return "交易所与锐利盘口接近";
+
+  return `交易所更偏${labels[strongest.key]} ${strongest.diff > 0 ? "+" : ""}${strongest.diff}%`;
+}
+
+export async function getMatchMarketSignals(fixtureId: number) {
+  if (!shouldUseTheStats()) return null;
+
+  try {
+    const matchId = theStatsIdFromNumeric(fixtureId);
+    const [liveOddsRes, oddsRes] = await Promise.allSettled([
+      fetchTheStatsJson<TheStatsOddsPayload>({
+        path: `/football/matches/${matchId}/odds/live`,
+        revalidate: 30,
+      }),
+      fetchTheStatsJson<TheStatsOddsPayload>({
+        path: `/football/matches/${matchId}/odds`,
+        revalidate: 300,
+      }),
+    ]);
+    const payload =
+      liveOddsRes.status === "fulfilled"
+        ? liveOddsRes.value
+        : oddsRes.status === "fulfilled"
+          ? oddsRes.value
+          : null;
+    const bookmakers = payload?.data?.bookmakers ?? [];
+    if (bookmakers.length === 0) return null;
+
+    const primary = chooseTheStatsBookmaker(payload);
+    const latest = impliedFromMatchOdds(primary?.markets?.match_odds, "last_seen");
+    const opening = impliedFromMatchOdds(primary?.markets?.match_odds, "opening");
+    const live = impliedFromMatchOdds(primary?.markets?.match_odds, "live");
+
+    return {
+      source: primary?.bookmaker ?? "TheStats",
+      availableBooks: bookmakers.map((bookmaker) => bookmaker.bookmaker).filter(Boolean),
+      overroundPercent: live?.overroundPercent ?? latest?.overroundPercent ?? null,
+      noVig: live?.noVig ?? latest?.noVig ?? null,
+      openingNoVig: opening?.noVig ?? null,
+      pressure: pressureLabel(live?.noVig ?? latest?.noVig ?? null, opening?.noVig ?? null),
+      exchangeLean: exchangeLean(payload),
+      bookmakerSpreadPercent: marketSpread(bookmakers),
+      note: "由开盘、即时/最新赔率、去水概率和交易所价格推断市场倾向。",
+    };
+  } catch (error) {
+    console.error("[thestats] market signals failed:", error);
+    return null;
+  }
+}
+
 function metric(payload: TheStatsStatsPayload | null, key: keyof NonNullable<NonNullable<TheStatsStatsPayload["data"]>["overview"]>) {
   return payload?.data?.overview?.[key]?.all ?? {};
 }
@@ -377,10 +574,15 @@ function localizeFixture(item: unknown) {
   };
 }
 
-function filterAndLocalizeFixtures<T extends FootballApiResponse>(data: T): T {
+function filterAndLocalizeFixtures<T extends FootballApiResponse>(
+  data: T,
+  options: FixtureFilterOptions = {}
+): T {
   if (!Array.isArray(data.response)) return data;
 
-  const response = data.response.filter(isSupportedFixture).map(localizeFixture);
+  const response = data.response
+    .filter((fixture) => options.includeUnsupported || isSupportedFixture(fixture))
+    .map(localizeFixture);
   return {
     ...data,
     response,
@@ -588,7 +790,7 @@ export async function getFixtureById(fixtureId: number) {
           response: [fixture],
           results: 1,
           errors: {},
-        });
+        }, { includeUnsupported: true });
       }
     } catch (error) {
       console.error("[thestats] fixture failed:", error);
@@ -724,4 +926,35 @@ export async function getUpcomingMatches(days = 3) {
     .flatMap((result) => result.value.response ?? []);
 
   return filterAndLocalizeFixtures({ response, results: response.length, errors: {} });
+}
+
+export async function getMarketTestMatches(days = 7) {
+  if (!shouldUseTheStats()) {
+    return {
+      response: [],
+      results: 0,
+      errors: {},
+    };
+  }
+
+  try {
+    return await fetchTheStatsMatches(
+      {
+        date_from: beijingDateString(),
+        date_to: beijingDateString(days),
+      },
+      {
+        includeUnsupported: true,
+        requireOdds: true,
+        maxPages: 8,
+      }
+    );
+  } catch (error) {
+    console.error("[thestats] market test matches failed:", error);
+    return {
+      response: [],
+      results: 0,
+      errors: {},
+    };
+  }
 }

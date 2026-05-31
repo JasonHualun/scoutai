@@ -10,6 +10,7 @@ import { formatBeijingMatchTime, kickoffTime } from "@/lib/time-format";
 
 type MatchStatus = "live" | "upcoming" | "finished";
 type SortMode = "hot" | "live";
+type ScopeMode = "core" | "test";
 
 export type MatchCard = {
   id: number;
@@ -23,6 +24,13 @@ export type MatchCard = {
   awayScore: number;
   status: MatchStatus;
   leagueId?: number;
+  coverage?: {
+    provider?: string;
+    oddsAvailable?: boolean;
+    liveOddsAvailable?: boolean;
+    xgAvailable?: boolean;
+    isCoreLeague?: boolean;
+  };
 };
 
 type Props = {
@@ -95,6 +103,7 @@ function matchHotScore(match: MatchCard, favoriteLeagueIds: Set<number>) {
 
 export default function HomeClient({ initialMatches }: Props) {
   const [sortMode, setSortMode] = useState<SortMode>("hot");
+  const [scopeMode, setScopeMode] = useState<ScopeMode>("core");
   const [favorites, setFavorites] = useState<number[]>([]);
   const [predictionPoolIds, setPredictionPoolIds] = useState<number[]>([]);
   const [matches, setMatches] = useState<MatchCard[]>(initialMatches);
@@ -179,10 +188,40 @@ export default function HomeClient({ initialMatches }: Props) {
   const activeMatches = useMemo(() => {
     return matches.filter((match) => {
       if (match.status === "finished") return false;
+      if (scopeMode === "test") {
+        return Boolean(match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable);
+      }
       if (selectedLeagueIds.length === 0) return false;
       return !!match.leagueId && favoriteLeagueIds.has(match.leagueId);
     });
-  }, [favoriteLeagueIds, matches, selectedLeagueIds.length]);
+  }, [favoriteLeagueIds, matches, scopeMode, selectedLeagueIds.length]);
+
+  const coreMatchesCount = useMemo(
+    () =>
+      matches.filter(
+        (match) =>
+          match.status !== "finished" &&
+          !!match.leagueId &&
+          favoriteLeagueIds.has(match.leagueId)
+      ).length,
+    [favoriteLeagueIds, matches]
+  );
+
+  const testMatchesCount = useMemo(
+    () =>
+      matches.filter(
+        (match) =>
+          match.status !== "finished" &&
+          Boolean(match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable)
+      ).length,
+    [matches]
+  );
+
+  useEffect(() => {
+    if (coreMatchesCount === 0 && testMatchesCount > 0) {
+      setScopeMode("test");
+    }
+  }, [coreMatchesCount, testMatchesCount]);
 
   const sortedMatches = useMemo(() => {
     const list = [...activeMatches];
@@ -259,6 +298,22 @@ export default function HomeClient({ initialMatches }: Props) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          {(["core", "test"] as ScopeMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setScopeMode(mode)}
+              className={`rounded-full border px-3 py-1.5 transition ${
+                scopeMode === mode
+                  ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-black"
+                  : "border-white/15 bg-black/30 text-white/60 hover:text-white"
+              }`}
+            >
+              {mode === "core"
+                ? `正式赛事 ${coreMatchesCount}`
+                : `试用测试池 ${testMatchesCount}`}
+            </button>
+          ))}
           {(["hot", "live"] as SortMode[]).map((mode) => (
             <button
               key={mode}
@@ -278,7 +333,7 @@ export default function HomeClient({ initialMatches }: Props) {
 
       <section className="grid gap-4 md:grid-cols-3">
         {[
-          { label: "关注赛事", value: activeMatches.length },
+          { label: scopeMode === "test" ? "有赔率比赛" : "关注赛事", value: activeMatches.length },
           { label: "进行中", value: liveCount },
           { label: "未开赛", value: upcomingCount },
         ].map((item) => (
@@ -318,7 +373,9 @@ export default function HomeClient({ initialMatches }: Props) {
         <div className="space-y-3">
           {sortedMatches.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/60 p-8 text-sm text-white/60">
-              暂无符合条件的比赛。可以在设置里调整关注联赛，或稍后刷新。
+              {scopeMode === "core"
+                ? "暂无五大联赛或世界杯比赛。可以切到“试用测试池”，用有赔率的其它比赛测试真实 API 和盘口链路。"
+                : "暂时没有带赔率的可测比赛，临近开赛时再刷新。"}
             </div>
           ) : (
             <>
@@ -338,6 +395,9 @@ export default function HomeClient({ initialMatches }: Props) {
                         <div className="min-w-0">
                           <div className="truncate text-[11px] font-medium uppercase tracking-[0.16em] text-[color:var(--accent)]/80">
                             {translateLeague(match.league)}
+                            {scopeMode === "test" && !match.coverage?.isCoreLeague
+                              ? " · 试用测试"
+                              : ""}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/80">
                             <span>{translateTeam(match.homeTeam)}</span>
@@ -354,7 +414,13 @@ export default function HomeClient({ initialMatches }: Props) {
                           {match.status === "live" && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-300">
                               <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-                              {match.minute ?? 0}&apos;
+                              {typeof match.minute === "number" ? `${match.minute}'` : "进行中"}
+                            </span>
+                          )}
+                          {scopeMode === "test" && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--accent)]">
+                              {match.coverage?.liveOddsAvailable ? "实时赔率" : "赛前赔率"}
+                              {match.coverage?.xgAvailable ? " · xG" : ""}
                             </span>
                           )}
                         </div>

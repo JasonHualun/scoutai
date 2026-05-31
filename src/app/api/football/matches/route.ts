@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLiveMatches, getTodayMatches } from "@/lib/football-api";
+import { getLiveMatches, getMarketTestMatches, getTodayMatches } from "@/lib/football-api";
 import { translateLeague, translateTeam } from "@/lib/league-translations";
 import { formatBeijingClock } from "@/lib/time-format";
 
@@ -16,6 +16,13 @@ type FixtureLike = {
   league: { id: number; name: string; round?: string | null };
   teams: { home: { name: string }; away: { name: string } };
   goals: { home?: number | null; away?: number | null };
+  coverage?: {
+    provider?: string;
+    oddsAvailable?: boolean;
+    liveOddsAvailable?: boolean;
+    xgAvailable?: boolean;
+    isCoreLeague?: boolean;
+  };
 };
 
 type MatchCard = {
@@ -29,6 +36,7 @@ type MatchCard = {
   homeScore: number;
   awayScore: number;
   status: MatchStatus;
+  coverage?: FixtureLike["coverage"];
 };
 
 function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
@@ -48,23 +56,29 @@ function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
     homeScore: fixture.goals.home ?? 0,
     awayScore: fixture.goals.away ?? 0,
     status,
+    coverage: fixture.coverage,
   };
 }
 
 export async function GET() {
   try {
-    const [liveRes, todayRes] = await Promise.allSettled([
+    const [liveRes, todayRes, marketTestRes] = await Promise.allSettled([
       getLiveMatches(),
       getTodayMatches(),
+      getMarketTestMatches(1),
     ]);
 
     const liveFixtures =
       liveRes.status === "fulfilled" ? (liveRes.value.response as FixtureLike[]) ?? [] : [];
     const todayFixtures =
       todayRes.status === "fulfilled" ? (todayRes.value.response as FixtureLike[]) ?? [] : [];
+    const marketTestFixtures =
+      marketTestRes.status === "fulfilled"
+        ? (marketTestRes.value.response as FixtureLike[]) ?? []
+        : [];
 
     const seen = new Set<string>();
-    const fixtures = [...liveFixtures, ...todayFixtures].filter((fixture) => {
+    const fixtures = [...liveFixtures, ...todayFixtures, ...marketTestFixtures].filter((fixture) => {
       const key = String(fixture.fixture.id);
       if (seen.has(key)) return false;
       seen.add(key);

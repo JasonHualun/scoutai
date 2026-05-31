@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getFixtureById,
+  getMatchMarketSignals,
   getMatchStatistics,
   getMatchOdds,
   getTeamRecentForm,
@@ -27,15 +28,18 @@ export async function GET(
   }
 
   try {
-    const [fixtureRes, statsRes, oddsRes] = await Promise.allSettled([
+    const [fixtureRes, statsRes, oddsRes, marketSignalsRes] = await Promise.allSettled([
       getFixtureById(fixtureId),
       getMatchStatistics(fixtureId),
       getMatchOdds(fixtureId),
+      getMatchMarketSignals(fixtureId),
     ]);
 
     const fixture = fixtureRes.status === "fulfilled" ? fixtureRes.value : null;
     const statistics = statsRes.status === "fulfilled" ? statsRes.value : null;
     const odds = oddsRes.status === "fulfilled" ? oddsRes.value : null;
+    const marketSignals =
+      marketSignalsRes.status === "fulfilled" ? marketSignalsRes.value : null;
 
     let homeForm: unknown = null;
     let awayForm: unknown = null;
@@ -69,6 +73,7 @@ export async function GET(
       fixture,
       statistics,
       odds,
+      marketSignals,
       recentForm: {
         home: homeForm,
         away: awayForm,
@@ -89,6 +94,7 @@ export async function GET(
         fixture: null,
         statistics: null,
         odds: null,
+        marketSignals: null,
         recentForm: { home: null, away: null },
         error: message,
       },

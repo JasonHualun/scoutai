@@ -1,6 +1,7 @@
 import HomeClient, { MatchCard } from "@/components/HomeClient";
 import {
   getLiveMatches,
+  getMarketTestMatches,
   getTodayMatches,
   getUpcomingMatches,
 } from "@/lib/football-api";
@@ -18,6 +19,13 @@ type FixtureLike = {
   league: { id?: number; name: string; round?: string | null };
   teams: { home: { name: string }; away: { name: string } };
   goals: { home?: number | null; away?: number | null };
+  coverage?: {
+    provider?: string;
+    oddsAvailable?: boolean;
+    liveOddsAvailable?: boolean;
+    xgAvailable?: boolean;
+    isCoreLeague?: boolean;
+  };
 };
 
 function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
@@ -40,6 +48,7 @@ function mapFixtureToMatchCard(fixture: FixtureLike): MatchCard {
     awayScore: fixture.goals.away ?? 0,
     status,
     leagueId: fixture.league.id ?? 0,
+    coverage: fixture.coverage,
   };
 }
 
@@ -47,10 +56,11 @@ export default async function Home() {
   let matches: MatchCard[] = [];
 
   try {
-    const [todayRes, liveRes, upcomingRes] = await Promise.allSettled([
+    const [todayRes, liveRes, upcomingRes, marketTestRes] = await Promise.allSettled([
       getTodayMatches(),
       getLiveMatches(),
       getUpcomingMatches(7),
+      getMarketTestMatches(7),
     ]);
 
     const todayFixtures =
@@ -65,13 +75,17 @@ export default async function Home() {
       upcomingRes.status === "fulfilled"
         ? ((upcomingRes.value.response as FixtureLike[] | undefined) ?? [])
         : [];
+    const marketTestFixtures =
+      marketTestRes.status === "fulfilled"
+        ? ((marketTestRes.value.response as FixtureLike[] | undefined) ?? [])
+        : [];
 
     if (upcomingRes.status === "rejected") {
       console.error("[page] upcoming fixtures failed:", upcomingRes.reason);
     }
 
     const seen = new Set<string>();
-    matches = [...liveFixtures, ...todayFixtures, ...upcomingFixtures]
+    matches = [...liveFixtures, ...todayFixtures, ...upcomingFixtures, ...marketTestFixtures]
       .map(mapFixtureToMatchCard)
       .filter((match) => {
         const key = String(match.id);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getLiveMatches,
+  getMarketTestMatches,
   getTodayMatches,
   getUpcomingMatches,
 } from "@/lib/football-api";
@@ -8,10 +9,11 @@ import {
 type FixtureLike = { fixture: { id: number } };
 
 export async function GET() {
-  const [todayRes, liveRes, upcomingRes] = await Promise.allSettled([
+  const [todayRes, liveRes, upcomingRes, marketTestRes] = await Promise.allSettled([
     getTodayMatches(),
     getLiveMatches(),
     getUpcomingMatches(7),
+    getMarketTestMatches(7),
   ]);
 
   const todayFixtures =
@@ -20,9 +22,13 @@ export async function GET() {
     liveRes.status === "fulfilled" ? (liveRes.value.response as FixtureLike[]) ?? [] : [];
   const upcomingFixtures =
     upcomingRes.status === "fulfilled" ? (upcomingRes.value.response as FixtureLike[]) ?? [] : [];
+  const marketTestFixtures =
+    marketTestRes.status === "fulfilled"
+      ? (marketTestRes.value.response as FixtureLike[]) ?? []
+      : [];
 
   const seen = new Set<string>();
-  const fixtures = [...liveFixtures, ...todayFixtures, ...upcomingFixtures].filter((fixture) => {
+  const fixtures = [...liveFixtures, ...todayFixtures, ...upcomingFixtures, ...marketTestFixtures].filter((fixture) => {
     const key = String(fixture.fixture.id);
     if (seen.has(key)) return false;
     seen.add(key);
