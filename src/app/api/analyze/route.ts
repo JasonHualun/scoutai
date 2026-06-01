@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { UserPreferences } from "@/lib/football-prediction";
 import { normalizeMembership, PREDICTION_CREDITS_PER_MATCH } from "@/lib/membership";
 import { analyzeWithMinimax } from "@/lib/minimax";
-import { buildServerPredictionOrderInput } from "@/lib/server-predictions";
+import {
+  buildServerPredictionOrderInput,
+  PredictionDataQualityError,
+} from "@/lib/server-predictions";
 import { translateLeague, translateTeam, translateTeamText } from "@/lib/league-translations";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
 
@@ -139,7 +142,6 @@ export async function POST(req: NextRequest) {
     });
 
     const builtMatch = builtOrder.builtMatches[0];
-    const analysis = await analyzeWithMinimax(builtMatch.matchData, userPrefs);
     const rpcItems = builtOrder.items.map((item) => ({
       fixture_id: String(item.fixtureId),
       league: translateLeague(item.league),
@@ -163,6 +165,10 @@ export async function POST(req: NextRequest) {
       reason: translateTeamText(item.reason),
       data_basis: item.dataBasis,
     }));
+    const portfolioSnapshot = {
+      ...builtOrder.portfolioSnapshot,
+      aiAnalysisStatus: "pending",
+    };
 
     const { data, error: rpcError } = await serviceSupabase.rpc("create_prediction_order", {
       p_user_id: user.id,
@@ -175,10 +181,7 @@ export async function POST(req: NextRequest) {
       p_total_suggested_percent: builtOrder.totalSuggestedPercent,
       p_summary: builtOrder.summary,
       p_preferences_snapshot: builtOrder.preferencesSnapshot,
-      p_portfolio_snapshot: {
-        ...builtOrder.portfolioSnapshot,
-        aiAnalysis: analysis,
-      },
+      p_portfolio_snapshot: portfolioSnapshot,
       p_items: rpcItems,
     });
 
@@ -188,6 +191,25 @@ export async function POST(req: NextRequest) {
       | CreatePredictionOrderRpcRow
       | undefined;
 
+    const analysis = await analyzeWithMinimax(builtMatch.matchData, userPrefs);
+    if (result?.order_id) {
+      const { error: snapshotError } = await serviceSupabase
+        .from("prediction_orders")
+        .update({
+          portfolio_snapshot: {
+            ...portfolioSnapshot,
+            aiAnalysis: analysis,
+            aiAnalysisStatus: "completed",
+            aiAnalysisAt: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", result.order_id);
+      if (snapshotError) {
+        console.error("[analyze] failed to attach AI analysis:", snapshotError.message);
+      }
+    }
+
     return NextResponse.json({
       analysis,
       prediction: builtMatch.prediction,
@@ -195,6 +217,16 @@ export async function POST(req: NextRequest) {
       credits: Math.max(0, Math.round(Number(result?.credits_after ?? 0))),
     });
   } catch (error: unknown) {
+    if (error instanceof PredictionDataQualityError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          dataQuality: error.details,
+          noCharge: true,
+        },
+        { status: 422 }
+      );
+    }
     const message = errorMessage(error, "分析失败");
     if (message.includes("INSUFFICIENT_CREDITS")) {
       return NextResponse.json(

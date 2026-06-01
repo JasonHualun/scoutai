@@ -16,7 +16,15 @@ import {
   PredictionOrderInput,
   PredictionOrderItemInput,
 } from "./prediction-orders";
-import { fetchTheStatsJson, theStatsConfigStatus } from "./thestats-api";
+import {
+  fetchTheStatsJson,
+  shouldAttemptTheStats,
+  theStatsConfigStatus,
+} from "./thestats-api";
+import {
+  isPrefixedTheStatsId,
+  theStatsMatchIdCandidates,
+} from "./thestats-ids";
 import { translateLeague, translateTeam } from "./league-translations";
 
 type FixtureId = string | number;
@@ -41,6 +49,16 @@ type BuildParams = {
   preferencesSnapshot?: Record<string, unknown>;
   portfolioSnapshot?: Record<string, unknown>;
 };
+
+export class PredictionDataQualityError extends Error {
+  details: string[];
+
+  constructor(message: string, details: string[] = []) {
+    super(message);
+    this.name = "PredictionDataQualityError";
+    this.details = details;
+  }
+}
 
 type LegacyFixture = {
   fixture?: {
@@ -176,12 +194,7 @@ function uniqueFixtureIds(ids: FixtureId[]) {
 
 export function isTheStatsFixtureId(id: FixtureId) {
   const value = String(id);
-  return value.startsWith("mt_") || (theStatsConfigStatus().configured && /^\d+$/.test(value));
-}
-
-function normalizeTheStatsMatchId(id: FixtureId) {
-  const value = String(id);
-  return value.startsWith("mt_") ? value : `mt_${value.padStart(9, "0")}`;
+  return isPrefixedTheStatsId(value) || (shouldAttemptTheStats() && /^\d+$/.test(value));
 }
 
 function statusFromLegacy(short?: string): MatchStatus {
@@ -339,6 +352,44 @@ function mapTheStatsOdds(odds: TheStatsOdds | null): MatchAnalysisData["odds"] {
     handicap: chooseHandicapLine(markets?.asian_handicap),
     overUnder: chooseTotalGoalsLine(markets?.total_goals),
   };
+}
+
+function hasBillableMatchOdds(odds: MatchAnalysisData["odds"]) {
+  return odds.homeWin > 1 && odds.draw > 1 && odds.awayWin > 1;
+}
+
+function hasBillableKeyStats(data: MatchAnalysisData) {
+  const home = data.homeStats;
+  const away = data.awayStats;
+  const totals = [
+    home.shots,
+    away.shots,
+    home.shotsOnTarget,
+    away.shotsOnTarget,
+    home.corners,
+    away.corners,
+    home.xG,
+    away.xG,
+  ];
+  const hasCountingStats = totals.some((value) => safeNumber(value) > 0);
+  const hasPossessionSignal =
+    safeNumber(home.possession) > 0 &&
+    safeNumber(away.possession) > 0 &&
+    (safeNumber(home.possession) !== 50 || safeNumber(away.possession) !== 50);
+  return hasCountingStats || hasPossessionSignal;
+}
+
+function validateBillableData(match: BuiltMatch) {
+  const missing: string[] = [];
+  if (!hasBillableMatchOdds(match.matchData.odds)) missing.push("胜平负赔率");
+  if (!hasBillableKeyStats(match.matchData)) missing.push("关键统计/xG");
+
+  if (missing.length > 0) {
+    throw new PredictionDataQualityError(
+      `本场真实数据暂时不足，系统没有扣积分：缺少 ${missing.join("、")}。请等 TheStats 返回赔率和技术统计后再预测。`,
+      missing
+    );
+  }
 }
 
 function noVigSnapshot(
@@ -717,6 +768,19 @@ function buildOrderSignals(match: BuiltMatch, prefs: UserPreferences): OrderSign
   ];
 }
 
+const AUTO_SETTLED_MARKETS = new Set([
+  "胜平负",
+  "大小球",
+  "双方进球",
+  "双重机会",
+  "平局退款",
+  "比分",
+]);
+
+function isAutoSettledMarket(market: string) {
+  return AUTO_SETTLED_MARKETS.has(market);
+}
+
 function orderSignalScore(signal: OrderSignal, prefs: UserPreferences) {
   const edgeScore = Math.max(signal.valueEdge ?? 0, 0) * 2.2;
   const probabilityScore = signal.probability * 0.55;
@@ -739,7 +803,14 @@ function orderSignalScore(signal: OrderSignal, prefs: UserPreferences) {
 }
 
 function chooseOrderSignal(match: BuiltMatch, prefs: UserPreferences) {
-  return buildOrderSignals(match, prefs).sort(
+  const preferredSignals = buildOrderSignals(match, prefs);
+  const candidates = preferredSignals.some((signal) => isAutoSettledMarket(signal.market))
+    ? preferredSignals.filter((signal) => isAutoSettledMarket(signal.market))
+    : buildOrderSignals(match, { ...prefs, preferred_markets: [] }).filter((signal) =>
+        isAutoSettledMarket(signal.market)
+      );
+
+  return candidates.sort(
     (a, b) => orderSignalScore(b, prefs) - orderSignalScore(a, prefs)
   )[0];
 }
@@ -909,13 +980,30 @@ async function fetchTheStatsMatch(fixtureId: string): Promise<BuiltMatch> {
     throw new Error("THESTATS_API_KEY 未配置，无法读取 TheStats 实盘数据");
   }
 
-  const matchId = normalizeTheStatsMatchId(fixtureId);
-  const matchPayload = await fetchTheStatsJson<{ data?: TheStatsMatch }>({
-    path: `/football/matches/${matchId}`,
-    revalidate: 120,
-  });
-  const match = matchPayload.data;
-  if (!match) throw new Error("TheStats 没有返回比赛基础信息");
+  let matchId = "";
+  let match: TheStatsMatch | null = null;
+  let lastMatchError: unknown = null;
+
+  for (const candidate of theStatsMatchIdCandidates(fixtureId)) {
+    try {
+      const matchPayload = await fetchTheStatsJson<{ data?: TheStatsMatch }>({
+        path: `/football/matches/${candidate}`,
+        revalidate: 120,
+      });
+      if (matchPayload.data) {
+        matchId = candidate;
+        match = matchPayload.data;
+        break;
+      }
+    } catch (error) {
+      lastMatchError = error;
+    }
+  }
+
+  if (!matchId || !match) {
+    if (lastMatchError instanceof Error) throw lastMatchError;
+    throw new Error("TheStats 没有返回比赛基础信息");
+  }
 
   const [statsRes, oddsRes, liveOddsRes, homeFormRes, awayFormRes] = await Promise.allSettled([
     fetchTheStatsJson<{ data?: TheStatsStats }>({
@@ -1010,8 +1098,7 @@ export async function fetchPredictionMatch(fixtureId: FixtureId, prefs: UserPref
     try {
       built = await fetchTheStatsMatch(id);
     } catch (error) {
-      if (id.startsWith("mt_")) throw error;
-      built = await fetchLegacyMatch(id);
+      throw error;
     }
   } else {
     built = await fetchLegacyMatch(id);
@@ -1034,6 +1121,7 @@ export async function buildServerPredictionOrderInput({
   if (ids.length === 0) throw new Error("请先把比赛加入预测池");
 
   const builtMatches = await Promise.all(ids.map((id) => fetchPredictionMatch(id, prefs)));
+  builtMatches.forEach(validateBillableData);
   const rawItems = builtMatches.map((match) => buildOrderItem(match, prefs));
   const items = allocateSuggestedPercent(rawItems);
   const selectedCount = items.filter((item) => item.recommendation === "selected").length;

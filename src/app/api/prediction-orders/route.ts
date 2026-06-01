@@ -5,7 +5,10 @@ import {
   PredictionOrderInput,
   PredictionOrderItem,
 } from "@/lib/prediction-orders";
-import { buildServerPredictionOrderInput } from "@/lib/server-predictions";
+import {
+  buildServerPredictionOrderInput,
+  PredictionDataQualityError,
+} from "@/lib/server-predictions";
 import { translateLeague, translateTeam, translateTeamText } from "@/lib/league-translations";
 import { createServerClient, createServiceRoleClient } from "@/lib/supabase";
 import { UserPreferences } from "@/lib/football-prediction";
@@ -330,6 +333,16 @@ export async function POST(req: NextRequest) {
       items: body.items,
     });
   } catch (err) {
+    if (err instanceof PredictionDataQualityError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          dataQuality: err.details,
+          noCharge: true,
+        },
+        { status: 422 }
+      );
+    }
     const message = errorMessage(err, "保存预测记录失败");
     if (message.includes("INSUFFICIENT_CREDITS")) {
       return NextResponse.json(

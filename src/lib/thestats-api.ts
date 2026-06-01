@@ -16,10 +16,30 @@ function baseUrl() {
   return (process.env.THESTATS_API_URL || DEFAULT_THE_STATS_API_URL).replace(/\/+$/, "");
 }
 
+function truthyEnv(value?: string) {
+  return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
+}
+
+export class TheStatsConfigError extends Error {
+  constructor(message = "THESTATS_API_KEY 未配置") {
+    super(message);
+    this.name = "TheStatsConfigError";
+  }
+}
+
+export function isTheStatsStrictMode() {
+  return truthyEnv(process.env.THESTATS_STRICT) || truthyEnv(process.env.FORCE_THE_STATS);
+}
+
+export function shouldAttemptTheStats() {
+  return Boolean(apiKey()) || isTheStatsStrictMode();
+}
+
 export function theStatsConfigStatus() {
   return {
     configured: Boolean(apiKey()),
     baseUrl: baseUrl(),
+    strict: isTheStatsStrictMode(),
   };
 }
 
@@ -41,7 +61,7 @@ export async function fetchTheStatsJson<T = unknown>({
   revalidate = 120,
 }: TheStatsRequestOptions): Promise<T> {
   const token = apiKey();
-  if (!token) throw new Error("THESTATS_API_KEY 未配置");
+  if (!token) throw new TheStatsConfigError();
 
   const res = await fetch(buildTheStatsUrl(path, query), {
     headers: {

@@ -3,7 +3,12 @@ import {
   translateLeague,
   translateTeam,
 } from "./league-translations";
-import { fetchTheStatsJson, theStatsConfigStatus } from "./thestats-api";
+import { numericIdFromTheStats, theStatsMatchIdCandidates } from "./thestats-ids";
+import {
+  fetchTheStatsJson,
+  isTheStatsStrictMode,
+  shouldAttemptTheStats,
+} from "./thestats-api";
 import { beijingDateString } from "./time-format";
 
 const API_URL = process.env.FOOTBALL_API_URL || "https://v3.football.api-sports.io";
@@ -156,41 +161,11 @@ const cache = new Map<string, CacheEntry<unknown>>();
 let primaryExhausted = false;
 
 function shouldUseTheStats() {
-  return theStatsConfigStatus().configured;
+  return shouldAttemptTheStats();
 }
 
-function numericIdFromTheStats(id?: string | null) {
-  const numeric = Number(String(id ?? "").replace(/\D/g, ""));
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
-}
-
-function theStatsIdCandidates(id: number) {
-  const raw = String(Math.round(id));
-  const padded = raw.padStart(9, "0");
-  return Array.from(
-    new Set([
-      `mt_${raw}`,
-      `match_${raw}`,
-      `m_${raw}`,
-      raw,
-      `mt_${padded}`,
-      `match_${padded}`,
-      `m_${padded}`,
-    ])
-  );
-}
-
-function theStatsMatchIdCandidates(id?: string | number | null) {
-  const raw = String(id ?? "").trim();
-  if (/^[a-z]+_/i.test(raw)) return [raw];
-
-  const numeric = numericIdFromTheStats(raw);
-  return Array.from(
-    new Set([
-      Number.isFinite(Number(raw)) && Number(raw) > 0 ? "" : raw,
-      ...(numeric > 0 ? theStatsIdCandidates(numeric) : []),
-    ].filter(Boolean))
-  );
+function throwIfTheStatsStrict(error: unknown) {
+  if (isTheStatsStrictMode()) throw error;
 }
 
 async function fetchTheStatsMatchResource<T>(
@@ -678,10 +653,11 @@ export async function getMatchMarketSignals(fixtureId: number | string) {
       bookmakerSpreadPercent: marketSpread(bookmakers),
       note: "由开盘、即时/最新赔率、去水概率和交易所价格推断市场倾向。",
     };
-  } catch (error) {
-    console.error("[thestats] market signals failed:", error);
-    return null;
-  }
+    } catch (error) {
+      console.error("[thestats] market signals failed:", error);
+      throwIfTheStatsStrict(error);
+      return null;
+    }
 }
 
 function metricAll(metric?: TheStatsMetric) {
@@ -992,6 +968,7 @@ export async function getTodayMatches() {
       });
     } catch (error) {
       console.error("[thestats] today matches failed:", error);
+      throwIfTheStatsStrict(error);
     }
   }
 
@@ -1018,6 +995,7 @@ export async function getLiveMatches() {
       return await fetchTheStatsMatches({ status: "live" });
     } catch (error) {
       console.error("[thestats] live matches failed:", error);
+      throwIfTheStatsStrict(error);
     }
   }
 
@@ -1053,8 +1031,12 @@ export async function getFixtureById(fixtureId: number | string) {
           errors: {},
         }, { includeUnsupported: true });
       }
+      if (isTheStatsStrictMode()) {
+        throw new Error("TheStats 没有返回比赛基础信息");
+      }
     } catch (error) {
       console.error("[thestats] fixture failed:", error);
+      throwIfTheStatsStrict(error);
     }
   }
 
@@ -1088,6 +1070,7 @@ export async function getMatchStatistics(fixtureId: number | string) {
       if (lastError) throw lastError;
     } catch (error) {
       console.error("[thestats] stats failed:", error);
+      throwIfTheStatsStrict(error);
     }
     return {
       response: [],
@@ -1125,6 +1108,10 @@ export async function getMatchOdds(fixtureId: number | string) {
       }
     } catch (error) {
       console.error("[thestats] odds failed:", error);
+      throwIfTheStatsStrict(error);
+    }
+    if (isTheStatsStrictMode()) {
+      throw new Error("TheStats 暂未返回比赛赔率");
     }
   }
 
@@ -1164,6 +1151,7 @@ export async function getUpcomingMatches(days = 3) {
       });
     } catch (error) {
       console.error("[thestats] upcoming matches failed:", error);
+      throwIfTheStatsStrict(error);
     }
   }
 
@@ -1228,6 +1216,7 @@ export async function getMarketTestMatches(days = 7) {
     );
   } catch (error) {
     console.error("[thestats] market test matches failed:", error);
+    throwIfTheStatsStrict(error);
     return {
       response: [],
       results: 0,

@@ -101,11 +101,11 @@ function settleByMarket(item: PendingItem, home: number, away: number): SettledS
 
   if (item.market === "比分") {
     const scoreMatch = direction.match(/(\d+)\s*-\s*(\d+)/);
-    if (!scoreMatch) return "void";
+    if (!scoreMatch) return "pending";
     return Number(scoreMatch[1]) === home && Number(scoreMatch[2]) === away ? "won" : "lost";
   }
 
-  return "void";
+  return "pending";
 }
 
 export async function POST(req: NextRequest) {
