@@ -518,7 +518,7 @@ test("alerts page uses real notification controls instead of demo alerts", async
   await page.goto("/alerts", { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { name: "异常提醒" })).toBeVisible();
-  await expect(page.getByText("只监控你收藏里的比赛")).toBeVisible();
+  await expect(page.getByText("监控你收藏和预测池里的比赛")).toBeVisible();
   await expect(page.getByText("收藏监控 0 场")).toBeVisible();
   await expect(page.getByRole("button", { name: "开启 Chrome 通知" })).toBeVisible();
   await expect(page.getByText("演示数据")).toHaveCount(0);

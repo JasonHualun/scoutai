@@ -23,7 +23,9 @@ import {
   cleanupStoredMatchPools,
   MATCH_POOLS_UPDATED_EVENT,
   readFavoriteIds,
+  readPredictionPoolIds,
 } from "@/lib/match-pools";
+import { supabase } from "@/lib/supabase";
 
 type FilterMode = "all" | "unread";
 type BrowserPermission = NotificationPermission | "unsupported";
@@ -54,6 +56,21 @@ function readFavoriteCount() {
   return readFavoriteIds().length;
 }
 
+function mergeAlerts(serverAlerts: AlertItem[], localAlerts: AlertItem[]) {
+  const map = new Map<string, AlertItem>();
+  [...serverAlerts, ...localAlerts].forEach((alert) => {
+    map.set(alert.id, alert);
+  });
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+async function accessToken() {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [filter, setFilter] = useState<FilterMode>("all");
@@ -64,10 +81,41 @@ export default function AlertsPage() {
   const [favoriteCount, setFavoriteCount] = useState(0);
 
   const refreshAlerts = useCallback(() => {
-    setAlerts(readStoredAlerts());
+    const localAlerts = readStoredAlerts();
+    setAlerts(localAlerts);
     setPermission(getBrowserNotificationPermission());
     setBrowserEnabled(browserNotificationsEnabled());
     setFavoriteCount(readFavoriteCount());
+
+    void accessToken()
+      .then(async (token) => {
+        if (!token) return;
+        const res = await fetch("/api/alerts", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { alerts?: AlertItem[] };
+        setAlerts(mergeAlerts(json.alerts ?? [], readStoredAlerts()));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const syncServerMonitors = useCallback(async () => {
+    const token = await accessToken();
+    if (!token) return;
+
+    await fetch("/api/alerts/monitors", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        favoriteIds: readFavoriteIds(),
+        predictionPoolIds: readPredictionPoolIds(),
+      }),
+    });
   }, []);
 
   const cleanupClosedMatches = useCallback(async () => {
@@ -103,7 +151,9 @@ export default function AlertsPage() {
   useEffect(() => {
     clearBrowserTestAlerts();
     const runCleanupAndRefresh = () => {
-      void cleanupClosedMatches().finally(refreshAlerts);
+      void syncServerMonitors()
+        .catch(() => undefined)
+        .finally(() => cleanupClosedMatches().finally(refreshAlerts));
     };
     const timer = window.setTimeout(runCleanupAndRefresh, 0);
     const interval = window.setInterval(runCleanupAndRefresh, 60_000);
@@ -115,7 +165,7 @@ export default function AlertsPage() {
       window.removeEventListener(ALERTS_UPDATED_EVENT, refreshAlerts);
       window.removeEventListener(MATCH_POOLS_UPDATED_EVENT, refreshAlerts);
     };
-  }, [cleanupClosedMatches, refreshAlerts]);
+  }, [cleanupClosedMatches, refreshAlerts, syncServerMonitors]);
 
   const unreadCount = useMemo(
     () => alerts.filter((alert) => !alert.read).length,
@@ -163,6 +213,20 @@ export default function AlertsPage() {
   function handleMarkAllRead() {
     markAllAlertsRead();
     refreshAlerts();
+    void accessToken()
+      .then((token) =>
+        token
+          ? fetch("/api/alerts", {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ all: true, status: "read" }),
+            })
+          : null
+      )
+      .catch(() => undefined);
   }
 
   return (
@@ -171,7 +235,7 @@ export default function AlertsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">异常提醒</h1>
           <p className="mt-2 text-sm text-white/60">
-            只监控你收藏里的比赛。进球、牌、角球、市场指数异动和冷门概率升高时，站内提醒和 Chrome 通知会同步触发。
+            监控你收藏和预测池里的比赛。服务端会定时检查进球、牌、角球、市场指数异动和冷门概率升高，并写入站内提醒。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -216,7 +280,7 @@ export default function AlertsPage() {
               </div>
               <h2 className="mt-2 text-base font-semibold">通知状态</h2>
               <p className="mt-1 text-xs leading-5 text-white/55">
-                站内提醒始终开启；Chrome 通知需要用户点一次允许。提醒范围只来自收藏池。
+                站内提醒由服务器定时写入；Chrome 通知是在线增强，需要用户点一次允许。
               </p>
             </div>
             <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-[color:var(--accent)]">
@@ -231,7 +295,7 @@ export default function AlertsPage() {
                 已开启
               </div>
               <p className="mt-1 text-[11px] leading-5 text-white/45">
-                收藏比赛发生异常时，页面右上角会弹出绿色提醒。
+                收藏或预测池里的比赛发生异常时，会写入这里。
               </p>
             </div>
             <div className="rounded-xl bg-black/25 p-3">
@@ -295,7 +359,7 @@ export default function AlertsPage() {
           <h2 className="text-base font-semibold">当前会触发的真实提醒</h2>
           <div className="mt-3 grid gap-2 text-xs text-white/60">
             <div className="rounded-xl bg-black/25 px-3 py-2">
-              1. 收藏比赛比分变化：进球后写入站内提醒，并弹出 Chrome 通知。
+              1. 收藏或预测池比赛比分变化：进球后写入站内提醒。
             </div>
             <div className="rounded-xl bg-black/25 px-3 py-2">
               2. 黄牌、红牌、角球增加：实时数据 API 返回后会按变化提醒。
@@ -304,11 +368,11 @@ export default function AlertsPage() {
               3. 市场指数大幅变化或冷门概率升高：提醒重新检查收藏赛事风险。
             </div>
             <div className="rounded-xl bg-black/25 px-3 py-2">
-              4. 比赛结束或过期：自动退出收藏监控和提醒列表，不再占用预测池。
+              4. 比赛结束或过期：服务端停止监控；已花积分的比赛继续进入历史预测结算。
             </div>
           </div>
           <p className="mt-3 text-[11px] leading-5 text-white/45">
-            当前只对收藏比赛生效。红黄牌、角球、市场指数和冷门概率会在实时数据 API 返回对应字段后进入同一套提醒；已扣积分生成过的预测会留在历史预测里等待赛果结算。
+            Chrome 通知只在用户浏览器允许后触发；网页关闭后的外部通知后续再接邮件、Telegram 或企业微信。
           </p>
         </div>
       </section>
@@ -316,7 +380,7 @@ export default function AlertsPage() {
       {visibleAlerts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/15 bg-[color:var(--card)]/70 p-6 text-sm leading-6 text-white/60">
           {favoriteCount > 0
-            ? "暂无收藏比赛异常提醒。网站会每 60 秒检查收藏池里的实时比赛；发生进球、牌、角球、市场线或冷门概率变化时会自动写入这里。"
+            ? "暂无异常提醒。服务端会定时检查收藏和预测池里的比赛；发生进球、牌、角球、市场线或冷门概率变化时会自动写入这里。"
             : "你还没有收藏要监控的比赛。先到热门赛事点星标加入收藏池，开赛后这里才会提醒。"}
         </div>
       ) : (
@@ -331,6 +395,20 @@ export default function AlertsPage() {
                 onClick={() => {
                   markAlertRead(alert.id);
                   refreshAlerts();
+                  void accessToken()
+                    .then((token) =>
+                      token
+                        ? fetch("/api/alerts", {
+                            method: "PATCH",
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({ id: alert.id, status: "read" }),
+                          })
+                        : null
+                    )
+                    .catch(() => undefined);
                 }}
                 className={`flex items-start justify-between gap-4 rounded-2xl border bg-[color:var(--card)]/85 p-4 shadow-[0_14px_50px_rgba(0,0,0,0.65)] transition hover:border-[color:var(--accent)]/50 ${
                   alert.read ? "border-white/8" : "border-[color:var(--accent)]/60"

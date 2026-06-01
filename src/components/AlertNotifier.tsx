@@ -16,8 +16,10 @@ import {
 import {
   cleanupStoredMatchPools,
   readFavoriteIds as readStoredFavoriteIds,
+  readPredictionPoolIds,
 } from "@/lib/match-pools";
 import { translateTeam, translateTeamText } from "@/lib/league-translations";
+import { supabase } from "@/lib/supabase";
 
 type LiveMatchesResponse = {
   matches?: LiveAlertMatch[];
@@ -47,6 +49,41 @@ type MatchDetailResponse = {
 
 function readFavoriteIds() {
   return new Set(readStoredFavoriteIds().map(String));
+}
+
+async function accessToken() {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+async function syncServerMonitors() {
+  const token = await accessToken();
+  if (!token) return;
+
+  await fetch("/api/alerts/monitors", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      favoriteIds: readStoredFavoriteIds(),
+      predictionPoolIds: readPredictionPoolIds(),
+    }),
+  });
+}
+
+async function readServerAlerts() {
+  const token = await accessToken();
+  if (!token) return [];
+
+  const res = await fetch("/api/alerts", {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { alerts?: AlertItem[] };
+  return json.alerts ?? [];
 }
 
 function statValue(items: ApiStatItem[] | undefined, type: string) {
@@ -178,6 +215,12 @@ export function AlertNotifier() {
 
   const checkLiveMatches = useCallback(async () => {
     try {
+      await syncServerMonitors();
+      const serverAlerts = await readServerAlerts();
+      if (serverAlerts.length > 0) {
+        publishAlerts(serverAlerts);
+      }
+
       await cleanupClosedFavoriteMatches();
       const favoriteIds = readFavoriteIds();
       if (!favoriteIds.size) {
