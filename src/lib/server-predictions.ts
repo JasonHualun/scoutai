@@ -379,17 +379,33 @@ function hasBillableKeyStats(data: MatchAnalysisData) {
   return hasCountingStats || hasPossessionSignal;
 }
 
+function hasUsableMatchIdentity(data: MatchAnalysisData) {
+  const homeTeam = data.homeTeam.trim();
+  const awayTeam = data.awayTeam.trim();
+  return Boolean(homeTeam && awayTeam && homeTeam !== "主队" && awayTeam !== "客队");
+}
+
 function validateBillableData(match: BuiltMatch) {
   const missing: string[] = [];
-  if (!hasBillableMatchOdds(match.matchData.odds)) missing.push("胜平负赔率");
-  if (!hasBillableKeyStats(match.matchData)) missing.push("关键统计/xG");
+  if (!hasUsableMatchIdentity(match.matchData)) missing.push("球队信息");
 
   if (missing.length > 0) {
     throw new PredictionDataQualityError(
-      `本场真实数据暂时不足，系统没有扣积分：缺少 ${missing.join("、")}。请等 TheStats 返回赔率和技术统计后再预测。`,
+      `本场基础比赛信息不足，系统没有扣积分：缺少 ${missing.join("、")}。请从比赛列表重新进入后再预测。`,
       missing
     );
   }
+}
+
+function predictionDataBasisNotes(match: BuiltMatch) {
+  const notes: string[] = [];
+  if (!hasBillableMatchOdds(match.matchData.odds)) {
+    notes.push("胜平负赔率待返回，当前按模型公平指数做基础预测");
+  }
+  if (!hasBillableKeyStats(match.matchData)) {
+    notes.push("关键统计/xG待返回，当前降低置信度并等待赛中数据校准");
+  }
+  return notes;
 }
 
 function noVigSnapshot(
@@ -1122,7 +1138,18 @@ export async function buildServerPredictionOrderInput({
 
   const builtMatches = await Promise.all(ids.map((id) => fetchPredictionMatch(id, prefs)));
   builtMatches.forEach(validateBillableData);
-  const rawItems = builtMatches.map((match) => buildOrderItem(match, prefs));
+  const rawItems = builtMatches.map((match) => {
+    const item = buildOrderItem(match, prefs);
+    const dataQualityNotes = predictionDataBasisNotes(match);
+    return {
+      ...item,
+      dataBasis: [...item.dataBasis, ...dataQualityNotes],
+      reason:
+        dataQualityNotes.length > 0
+          ? `${item.reason} 当前为基础预测：${dataQualityNotes.join("；")}。`
+          : item.reason,
+    };
+  });
   const items = allocateSuggestedPercent(rawItems);
   const selectedCount = items.filter((item) => item.recommendation === "selected").length;
   const totalSuggestedPercent = items.reduce((sum, item) => sum + item.suggestedPercent, 0);
