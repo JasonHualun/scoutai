@@ -637,7 +637,7 @@ test("favorites page only explains monitoring logic", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "预测池推荐" })).toHaveCount(0);
 });
 
-test("finished matches leave favorites alerts and prediction pool but history keeps paid orders", async ({ page }) => {
+test("finished matches stay in favorites but leave prediction pool", async ({ page }) => {
   await page.route("**/api/football/all", async (route) => {
     await route.fulfill({
       status: 200,
@@ -722,18 +722,19 @@ test("finished matches leave favorites alerts and prediction pool but history ke
 
   await page.goto("/favorites", { waitUntil: "networkidle" });
 
-  await expect(page.getByText("已自动移出").first()).toBeVisible();
-  await expect(page.getByText("历史预测里").first()).toBeVisible();
-  await expect(page.getByText("收藏 1 场 · 预测池 1 场")).toBeVisible();
+  await expect(page.getByText("已自动从预测池移出").first()).toBeVisible();
+  await expect(page.getByText("收藏比赛会保留赛后复盘入口").first()).toBeVisible();
+  await expect(page.getByText("收藏 2 场 · 预测池 1 场")).toBeVisible();
+  await expect(page.getByText("已保留赛后数据")).toBeVisible();
+  await expect(page.getByText("阿森纳").first()).toBeVisible();
   await expect(page.getByText("皇家马德里").first()).toBeVisible();
-  await expect(page.locator("body")).not.toContainText("阿森纳");
 
   const stored = await page.evaluate(() => ({
     favorites: JSON.parse(window.localStorage.getItem("scoutai_favorites") ?? "[]"),
     predictionPool: JSON.parse(window.localStorage.getItem("scoutai_prediction_pool") ?? "[]"),
     alerts: JSON.parse(window.localStorage.getItem("scoutai:alerts") ?? "[]"),
   }));
-  expect(stored.favorites).toEqual([93002]);
+  expect(stored.favorites).toEqual([93001, 93002]);
   expect(stored.predictionPool).toEqual([93002]);
   expect(stored.alerts.map((alert: { match_id: string }) => alert.match_id)).toEqual(["93002"]);
 });

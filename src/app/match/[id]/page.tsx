@@ -993,6 +993,24 @@ export default function MatchDetailPage() {
       : "盘口赛前到赛后的变化暂未返回。",
   ];
   const isBaselineEstimate = !stats && !odds;
+  const deskLabel =
+    match.status === "finished"
+      ? "POST MATCH REVIEW"
+      : match.status === "live"
+        ? "LIVE MATCH DESK"
+        : "PRE MATCH DESK";
+  const deskTitle =
+    match.status === "finished"
+      ? "赛后复盘归档"
+      : match.status === "live"
+        ? "赛中实时监控"
+        : "赛前数据观察";
+  const deskDescription =
+    match.status === "finished"
+      ? "比赛结束后会把最终比分、技术统计、模型预测结果和用户预测记录合并归档。"
+      : match.status === "live"
+        ? "开赛后持续同步比分、时间、技术统计、盘口变化、冷门概率和模型推荐变化。"
+        : "赛前主要看开球时间、赛程信息、赛前盘口、市场指数和模型基准；控球、射门、xG 等技术统计会在开赛后更新。";
   const predictionDataNote =
     isBaselineEstimate
       ? "当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在市场指数、近况或实时统计更新后重新校准。"
@@ -1122,15 +1140,13 @@ export default function MatchDetailPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[color:var(--accent)]">
-              {isFinished ? "POST MATCH REVIEW" : "LIVE MATCH DESK"}
+              {deskLabel}
             </div>
             <h2 className="mt-2 text-lg font-semibold">
-              {isFinished ? "赛后复盘归档" : "赛中实时监控"}
+              {deskTitle}
             </h2>
             <p className="mt-1 text-xs leading-5 text-white/55">
-              {isFinished
-                ? "比赛结束后会把最终比分、技术统计、模型预测结果和用户预测记录合并归档。"
-                : "开赛后持续同步比分、时间、技术统计、盘口变化、冷门概率和模型推荐变化。"}
+              {deskDescription}
             </p>
           </div>
           <span className="rounded-full border border-white/10 bg-black/35 px-3 py-1 text-[11px] text-white/65">

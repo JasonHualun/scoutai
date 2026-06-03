@@ -3,6 +3,7 @@
 export const FAVORITES_KEY = "scoutai_favorites";
 export const PREDICTION_POOL_KEY = "scoutai_prediction_pool";
 export const MATCH_POOLS_UPDATED_EVENT = "scoutai:match-pools-updated";
+export const MATCH_SNAPSHOTS_KEY = "scoutai_match_snapshots";
 
 const FINISHED_STATUS = new Set([
   "finished",
@@ -25,6 +26,7 @@ export type MatchPoolCandidate = {
   id: string | number;
   status?: string | null;
   date?: string | null;
+  [key: string]: unknown;
 };
 
 export type MatchPoolCleanupResult = {
@@ -33,6 +35,11 @@ export type MatchPoolCleanupResult = {
   removedIds: string[];
   removedFavoriteCount: number;
   removedPredictionPoolCount: number;
+};
+
+export type StoredMatchSnapshot<T extends MatchPoolCandidate = MatchPoolCandidate> = T & {
+  id: number;
+  savedAt: string;
 };
 
 function isBrowser() {
@@ -84,6 +91,52 @@ export function readPredictionPoolIds() {
   return readStoredMatchIds(PREDICTION_POOL_KEY);
 }
 
+export function readStoredMatchSnapshots<T extends MatchPoolCandidate = MatchPoolCandidate>() {
+  if (!isBrowser()) return {} as Record<string, StoredMatchSnapshot<T>>;
+
+  try {
+    const raw = window.localStorage.getItem(MATCH_SNAPSHOTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, StoredMatchSnapshot<T>>)
+      : ({} as Record<string, StoredMatchSnapshot<T>>);
+  } catch {
+    return {} as Record<string, StoredMatchSnapshot<T>>;
+  }
+}
+
+export function writeStoredMatchSnapshots<T extends MatchPoolCandidate>(
+  matches: T[]
+) {
+  if (!isBrowser()) return {} as Record<string, StoredMatchSnapshot<T>>;
+  const current = readStoredMatchSnapshots<T>();
+  const next = { ...current };
+
+  matches.forEach((match) => {
+    const id = normalizeId(match.id);
+    if (!id) return;
+    next[String(id)] = {
+      ...match,
+      id,
+      savedAt: new Date().toISOString(),
+    };
+  });
+
+  window.localStorage.setItem(MATCH_SNAPSHOTS_KEY, JSON.stringify(next));
+  return next;
+}
+
+export function removeStoredMatchSnapshotsForIds(ids: Array<string | number>) {
+  if (!isBrowser()) return;
+  const current = readStoredMatchSnapshots();
+  const next = { ...current };
+  ids.forEach((value) => {
+    const id = normalizeId(value);
+    if (id) delete next[String(id)];
+  });
+  window.localStorage.setItem(MATCH_SNAPSHOTS_KEY, JSON.stringify(next));
+}
+
 export function isFinishedOrExpiredMatch(match: MatchPoolCandidate, now = Date.now()) {
   const status = String(match.status ?? "").trim().toLowerCase();
   if (FINISHED_STATUS.has(status)) return true;
@@ -94,26 +147,35 @@ export function isFinishedOrExpiredMatch(match: MatchPoolCandidate, now = Date.n
 
 export function cleanupStoredMatchPools(
   matches: MatchPoolCandidate[],
-  options: { removeMissing?: boolean } = {}
+  options: { removeMissing?: boolean; removeFinishedFavorites?: boolean } = {}
 ): MatchPoolCleanupResult {
   const favoriteIds = readFavoriteIds();
   const predictionPoolIds = readPredictionPoolIds();
-  const storedIds = new Set([...favoriteIds, ...predictionPoolIds].map(String));
   const currentIds = new Set(matches.map((match) => String(match.id)));
-  const removedIds = new Set<string>();
+  const removedFavoriteIds = new Set<string>();
+  const removedPredictionPoolIds = new Set<string>();
 
   matches.forEach((match) => {
     const id = String(match.id);
-    if (storedIds.has(id) && isFinishedOrExpiredMatch(match)) {
-      removedIds.add(id);
+    if (predictionPoolIds.map(String).includes(id) && isFinishedOrExpiredMatch(match)) {
+      removedPredictionPoolIds.add(id);
+    }
+    if (
+      options.removeFinishedFavorites &&
+      favoriteIds.map(String).includes(id) &&
+      isFinishedOrExpiredMatch(match)
+    ) {
+      removedFavoriteIds.add(id);
     }
   });
 
   if (options.removeMissing && matches.length > 0) {
-    storedIds.forEach((id) => {
-      if (!currentIds.has(id)) removedIds.add(id);
+    predictionPoolIds.map(String).forEach((id) => {
+      if (!currentIds.has(id)) removedPredictionPoolIds.add(id);
     });
   }
+
+  const removedIds = new Set([...removedFavoriteIds, ...removedPredictionPoolIds]);
 
   if (removedIds.size === 0) {
     return {
@@ -125,9 +187,9 @@ export function cleanupStoredMatchPools(
     };
   }
 
-  const nextFavoriteIds = favoriteIds.filter((id) => !removedIds.has(String(id)));
+  const nextFavoriteIds = favoriteIds.filter((id) => !removedFavoriteIds.has(String(id)));
   const nextPredictionPoolIds = predictionPoolIds.filter(
-    (id) => !removedIds.has(String(id))
+    (id) => !removedPredictionPoolIds.has(String(id))
   );
 
   if (nextFavoriteIds.length !== favoriteIds.length) {
@@ -142,8 +204,7 @@ export function cleanupStoredMatchPools(
     favoriteIds: nextFavoriteIds,
     predictionPoolIds: nextPredictionPoolIds,
     removedIds: [...removedIds],
-    removedFavoriteCount: favoriteIds.length - nextFavoriteIds.length,
-    removedPredictionPoolCount: predictionPoolIds.length - nextPredictionPoolIds.length,
+    removedFavoriteCount: removedFavoriteIds.size,
+    removedPredictionPoolCount: removedPredictionPoolIds.size,
   };
 }
-

@@ -13,6 +13,8 @@ import {
   readFavoriteIds,
   readPredictionPoolIds,
   writeStoredMatchIds,
+  writeStoredMatchSnapshots,
+  removeStoredMatchSnapshotsForIds,
 } from "@/lib/match-pools";
 import { supabase } from "@/lib/supabase";
 import { formatBeijingMatchTime, kickoffTime } from "@/lib/time-format";
@@ -149,6 +151,8 @@ export default function HomeClient({ initialMatches }: Props) {
   }, []);
 
   useEffect(() => {
+    const storedIds = new Set([...readFavoriteIds(), ...readPredictionPoolIds()].map(String));
+    writeStoredMatchSnapshots(matches.filter((match) => storedIds.has(String(match.id))));
     const cleanup = cleanupStoredMatchPools(matches);
     if (cleanup.removedIds.length === 0) return;
     removeStoredAlertsForMatchIds(cleanup.removedIds);
@@ -274,6 +278,12 @@ export default function HomeClient({ initialMatches }: Props) {
       const next = prev.includes(id)
         ? prev.filter((item) => item !== id)
         : [...prev, id];
+      if (prev.includes(id)) {
+        removeStoredMatchSnapshotsForIds([id]);
+      } else {
+        const match = matches.find((item) => item.id === id);
+        if (match) writeStoredMatchSnapshots([match]);
+      }
       return writeStoredMatchIds(FAVORITES_KEY, next);
     });
   }

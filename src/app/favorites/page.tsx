@@ -25,7 +25,10 @@ import {
   PREDICTION_POOL_KEY,
   readFavoriteIds,
   readPredictionPoolIds,
+  readStoredMatchSnapshots,
+  removeStoredMatchSnapshotsForIds,
   writeStoredMatchIds,
+  writeStoredMatchSnapshots,
 } from "@/lib/match-pools";
 import { PREDICTION_MODEL_VERSION, PredictionOrderInput } from "@/lib/prediction-orders";
 import {
@@ -1175,6 +1178,8 @@ export default function FavoritesPage() {
 
         if (Array.isArray(json.fixtures)) {
           const matches = json.fixtures.map(mapFixtureToMatchCard);
+          const storedIdSet = new Set(allIds.map(String));
+          writeStoredMatchSnapshots(matches.filter((match) => storedIdSet.has(String(match.id))));
           const cleanup = cleanupStoredMatchPools(matches, { removeMissing: true });
           if (cleanup.removedIds.length > 0) {
             removeStoredAlertsForMatchIds(cleanup.removedIds);
@@ -1183,20 +1188,22 @@ export default function FavoritesPage() {
             setFavoriteIds(favoriteIdsFromStorage);
             setPredictionPoolIds(predictionIdsFromStorage);
             setCleanupNotice(
-              `已自动移出 ${cleanup.removedIds.length} 场已结束或过期的比赛。已花积分生成过的预测记录会保留在历史预测里。`
+              `已自动从预测池移出 ${cleanup.removedIds.length} 场已结束或过期的比赛。收藏比赛会保留赛后复盘入口。`
             );
           }
 
           const matchMap = new Map(
-            matches.map((match) => [
-              String(match.id),
-              match,
-            ])
+            [
+              ...Object.values(readStoredMatchSnapshots<MatchCard>()).map(
+                (match) => [String(match.id), match] as const
+              ),
+              ...matches.map((match) => [String(match.id), match] as const),
+            ]
           );
           setFavoriteMatches(
             favoriteIdsFromStorage
               .map((id) => matchMap.get(String(id)))
-              .filter((match): match is MatchCard => !!match && match.status !== "finished")
+              .filter((match): match is MatchCard => !!match)
           );
           setPredictionPoolMatches(
             predictionIdsFromStorage
@@ -1432,6 +1439,7 @@ export default function FavoritesPage() {
   function handleUnfavorite(id: number) {
     const updated = favoriteIds.filter((favoriteId) => favoriteId !== id);
     setFavoriteIds(writeStoredMatchIds(FAVORITES_KEY, updated));
+    removeStoredMatchSnapshotsForIds([id]);
     setFavoriteMatches((prev) => prev.filter((match) => match.id !== id));
   }
 
@@ -1630,7 +1638,7 @@ export default function FavoritesPage() {
           <p className="mt-2 text-sm text-white/60">
             {isPredictionPage
               ? "预测池只放你要花积分预测的比赛。系统按单场逐场计算，并优先读取设置页勾选的关注市场。"
-              : "收藏用于快速查看实时数据和异常提醒。比赛结束后会自动移出；需要预测时，再把比赛加入预测池。"}
+              : "收藏用于快速查看实时数据和异常提醒。已收藏比赛结束后会保留赛后复盘入口；需要预测时，再把比赛加入预测池。"}
           </p>
         </div>
         <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/60">
@@ -2102,6 +2110,9 @@ export default function FavoritesPage() {
                       {statusLabel[match.status]} · {match.kickOff}
                       {match.status === "live" && match.minute && (
                         <span className="ml-2 text-red-400">{match.minute}&apos;</span>
+                      )}
+                      {match.status === "finished" && (
+                        <span className="ml-2 text-[color:var(--accent)]">已保留赛后数据</span>
                       )}
                     </div>
                   </div>
