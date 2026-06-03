@@ -1184,10 +1184,10 @@ export default function MatchDetailPage() {
           : "进行中 · 等待实时统计";
   const realtimeEmptyText =
     match.status === "upcoming"
-      ? "比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。"
+      ? "暂无赛中技术统计"
       : hasMarketData
-        ? "本场已经同步比分、状态和盘口；射门、角球、黄牌、xG 等实时统计源暂未返回。系统不会用假数据占位，等数据源返回后会自动展示。"
-        : "比分和状态已同步；射门、角球、黄牌、xG 等实时统计暂未返回。系统不会展示占位假数据。";
+        ? "技术统计接口暂未返回"
+        : "比分和状态已同步，技术统计待返回";
   const dataSourceCards = [
     {
       label: "比分状态",
@@ -1195,22 +1195,22 @@ export default function MatchDetailPage() {
       active: match.status !== "upcoming",
       detail:
         match.status === "live"
-          ? "正在比赛，比分会跟随接口刷新"
+          ? "实时比分"
           : match.status === "finished"
-            ? "比赛已结束"
-            : "开赛后自动刷新",
+            ? "最终比分"
+            : "等待开赛",
     },
     {
       label: "盘口指数",
       value: hasMarketData ? "已同步" : "待返回",
       active: hasMarketData,
-      detail: hasMarketData ? "可用于市场概率和价值差计算" : "盘口源暂未覆盖本场",
+      detail: hasMarketData ? "市场概率已可计算" : "盘口源暂未覆盖本场",
     },
     {
       label: "实时统计",
-      value: stats ? "已同步" : match.status === "upcoming" ? "开赛后更新" : "源未返回",
+      value: stats ? "已同步" : match.status === "upcoming" ? "待开赛" : "待返回",
       active: Boolean(stats),
-      detail: stats ? "射门、角球、牌和 xG 已可用" : "没有返回就不展示假统计",
+      detail: stats ? "射门、角球、牌和 xG 已可用" : "射门、角球、牌和 xG",
     },
   ];
   const oddsEmptyText = "市场指数暂未更新，价值差暂不计算。";
@@ -1925,9 +1925,9 @@ export default function MatchDetailPage() {
         <div className="rounded-2xl border border-white/5 bg-[color:var(--card)]/90 p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="text-sm font-semibold">实时数据对比</h2>
+              <h2 className="text-sm font-semibold">实时数据</h2>
               <p className="mt-1 text-[11px] leading-5 text-white/45">
-                这里展示数据源真实返回的比赛统计；没有返回的字段不会用演示数据填充。
+                比分、盘口、射门、角球、牌、xG 和危险进攻。
               </p>
             </div>
             {!stats && match.status !== "upcoming" && (

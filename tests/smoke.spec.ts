@@ -456,7 +456,7 @@ test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await page.goto("/match/12345", { waitUntil: "domcontentloaded" });
   await matchResponse;
 
-  await expect(page.getByText("等待开赛")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("等待开赛").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("赛前关键数据")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("胜平负赔率", { exact: true })).toBeVisible();
   await expect(page.getByText("让球 / 大小球", { exact: true })).toBeVisible();
