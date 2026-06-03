@@ -160,6 +160,15 @@ type MarketSignals = {
   note: string;
 };
 
+type DetailTone = "neutral" | "green" | "amber" | "red";
+
+type DetailCard = {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: DetailTone;
+};
+
 const RECENT_FORM_LIMIT = 10;
 
 const neutralPredictionStats: RealtimeStats = {
@@ -489,6 +498,41 @@ function DetailMetric({
 function formatMaybeNumber(value: number | null | undefined, suffix = "") {
   if (typeof value !== "number" || !Number.isFinite(value)) return "待返回";
   return `${value}${suffix}`;
+}
+
+function formatStatNumber(value: number | null | undefined, suffix = "") {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "待返回";
+  return `${value}${suffix}`;
+}
+
+function formatStatPair(
+  home: number | null | undefined,
+  away: number | null | undefined,
+  suffix = ""
+) {
+  const hasHome = typeof home === "number" && Number.isFinite(home);
+  const hasAway = typeof away === "number" && Number.isFinite(away);
+  if (!hasHome && !hasAway) return "接口暂未返回";
+  return `${hasHome ? `${home}${suffix}` : "待返回"} : ${
+    hasAway ? `${away}${suffix}` : "待返回"
+  }`;
+}
+
+function formatStatSlash(
+  firstHome: number | null | undefined,
+  firstAway: number | null | undefined,
+  secondHome: number | null | undefined,
+  secondAway: number | null | undefined
+) {
+  const hasFirst =
+    typeof firstHome === "number" ||
+    typeof firstAway === "number" ||
+    typeof secondHome === "number" ||
+    typeof secondAway === "number";
+  if (!hasFirst) return "接口暂未返回";
+  return `${formatStatNumber(firstHome)}-${formatStatNumber(firstAway)} / ${formatStatNumber(
+    secondHome
+  )}-${formatStatNumber(secondAway)}`;
 }
 
 function formatDecimal(value: number | null | undefined, digits = 2) {
@@ -995,22 +1039,277 @@ export default function MatchDetailPage() {
   const isBaselineEstimate = !stats && !odds;
   const deskLabel =
     match.status === "finished"
-      ? "POST MATCH REVIEW"
+      ? "POST MATCH DATA"
       : match.status === "live"
-        ? "LIVE MATCH DESK"
-        : "PRE MATCH DESK";
+        ? "LIVE MATCH DATA"
+        : "PRE MATCH DATA";
   const deskTitle =
     match.status === "finished"
-      ? "赛后复盘归档"
+      ? "赛后数据复盘"
       : match.status === "live"
-        ? "赛中实时监控"
-        : "赛前数据观察";
+        ? "赛中实时数据"
+        : "赛前数据准备";
   const deskDescription =
     match.status === "finished"
-      ? "比赛结束后会把最终比分、技术统计、模型预测结果和用户预测记录合并归档。"
+      ? "比赛结束后重点看最终比分、全场技术统计、xG、盘口变化、赛前预测是否命中和偏差原因。"
       : match.status === "live"
-        ? "开赛后持续同步比分、时间、技术统计、盘口变化、冷门概率和模型推荐变化。"
-        : "赛前主要看开球时间、赛程信息、赛前盘口、市场指数和模型基准；控球、射门、xG 等技术统计会在开赛后更新。";
+        ? "比赛进行中优先看实时比分、比赛时间、控球率、射门、射正、角球、红黄牌、xG、危险进攻和盘口变化。"
+        : "开赛前重点看开球时间、赛前盘口/赔率、模型赛前方向和预计比分；控球、射门、xG 等技术统计要开赛后才会返回。";
+  const matchClockText =
+    match.status === "live"
+      ? typeof match.minute === "number"
+        ? `比赛时间 ${match.minute}'`
+        : "进行中"
+      : match.status === "finished"
+        ? "比赛已结束"
+        : "等待开赛";
+  const technicalDataStatus = stats
+    ? "已返回"
+    : match.status === "upcoming"
+      ? "开赛后更新"
+      : "接口暂未返回";
+  const technicalDataDetail = stats
+    ? "控球、射门、角球、牌、xG 等字段已可查看"
+    : match.status === "upcoming"
+      ? "这些是赛中数据，开赛后才会有"
+      : "当前数据源只返回比分/状态，暂未返回技术统计";
+  const marketDataStatus = hasMarketData ? "已返回" : "接口暂未返回";
+  const marketDataDetail = hasMarketData
+    ? "用于判断市场概率、盘口压力和价值差"
+    : "当前盘口源暂未覆盖本场，不能计算真实市场差";
+  const predictionRecordValue = predictionRecordLoading
+    ? "同步中"
+    : predictionRecord
+      ? `${resultStatusLabel(predictionRecord.resultStatus)} · ${predictionRecord.market}`
+      : "暂无本场记录";
+  const predictionRecordDetail = predictionRecord
+    ? `${predictionRecord.direction} · 置信度 ${predictionRecord.confidence}%`
+    : "只有用积分预测过的比赛，才会在赛后进入历史预测";
+  const historySummaryValue =
+    predictionHistorySummary && predictionHistorySummary.settled > 0
+      ? `${predictionHistorySummary.hitRate}% 命中`
+      : "待积累";
+  const historySummaryDetail = predictionHistorySummary
+    ? `${predictionHistorySummary.total} 场已归档，${predictionHistorySummary.settled} 场已结算`
+    : "登录后读取你的历史预测";
+  const stageSummaryCards: DetailCard[] = isFinished
+    ? [
+        {
+          label: "最终比分",
+          value: `${match.homeScore} : ${match.awayScore}`,
+          detail: "比赛已结束，收藏过的比赛会保留赛后数据",
+          tone: "green",
+        },
+        {
+          label: "全场技术统计",
+          value: technicalDataStatus,
+          detail: technicalDataDetail,
+          tone: stats ? "green" : "amber",
+        },
+        {
+          label: "本场预测记录",
+          value: predictionRecordValue,
+          detail: predictionRecordDetail,
+          tone: predictionRecord?.resultStatus === "won" ? "green" : "neutral",
+        },
+        {
+          label: "历史预测归档",
+          value: historySummaryValue,
+          detail: historySummaryDetail,
+          tone:
+            predictionHistorySummary && predictionHistorySummary.hitRate >= 55 ? "green" : "neutral",
+        },
+      ]
+    : match.status === "live"
+      ? [
+          {
+            label: "实时比分",
+            value: `${match.homeScore} : ${match.awayScore}`,
+            detail: matchClockText,
+            tone: "green",
+          },
+          {
+            label: "技术统计",
+            value: technicalDataStatus,
+            detail: technicalDataDetail,
+            tone: stats ? "green" : "amber",
+          },
+          {
+            label: "盘口/赔率",
+            value: marketDataStatus,
+            detail: marketDataDetail,
+            tone: hasMarketData ? "green" : "amber",
+          },
+          {
+            label: "模型当前方向",
+            value: `${modelLeader.label} ${modelLeader.value}%`,
+            detail: recommendationChangedText,
+            tone: "green",
+          },
+        ]
+      : [
+          {
+            label: "开球时间",
+            value: `北京时间 ${match.kickOff}`,
+            detail: "赛前先看赛程、盘口和模型基准",
+            tone: "neutral",
+          },
+          {
+            label: "盘口/赔率",
+            value: marketDataStatus,
+            detail: marketDataDetail,
+            tone: hasMarketData ? "green" : "amber",
+          },
+          {
+            label: "模型赛前方向",
+            value: `${modelLeader.label} ${modelLeader.value}%`,
+            detail: `预计比分 ${prediction.predictedScore.label}，置信度 ${prediction.confidence}%`,
+            tone: "green",
+          },
+          {
+            label: "赛中数据",
+            value: "开赛后更新",
+            detail: "控球、射门、角球、牌、xG、危险进攻会在接口返回后显示",
+            tone: "neutral",
+          },
+        ];
+  const dataDetailCards: DetailCard[] =
+    match.status === "upcoming"
+      ? [
+          {
+            label: "赛前能看什么",
+            value: "时间 / 盘口 / 赔率 / 模型",
+            detail: "适合开赛前先判断这场是否值得关注",
+            tone: "green",
+          },
+          {
+            label: "开赛后才会有",
+            value: "控球 / 射门 / 角球 / 红黄牌 / xG",
+            detail: "这些来自实时统计接口，未开赛不会显示假数据",
+          },
+          {
+            label: "收藏用途",
+            value: "看实时数据和提醒",
+            detail: "收藏不会扣积分，适合盯盘和赛后复盘",
+          },
+          {
+            label: "预测池用途",
+            value: "用积分生成推荐",
+            detail: "加入预测池后才会扣积分，并写入历史预测",
+          },
+        ]
+      : isFinished
+        ? [
+            {
+              label: "控球率",
+              value: formatStatPair(stats?.possessionHome, stats?.possessionAway, "%"),
+              detail: "主队 : 客队",
+            },
+            {
+              label: "射门 / 射正",
+              value: formatStatSlash(
+                stats?.shotsHome,
+                stats?.shotsAway,
+                stats?.shotsOnTargetHome,
+                stats?.shotsOnTargetAway
+              ),
+              detail: "前面是射门，后面是射正",
+            },
+            {
+              label: "角球",
+              value: formatStatPair(stats?.cornersHome, stats?.cornersAway),
+              detail: "判断压制和持续进攻节奏",
+            },
+            {
+              label: "黄红牌",
+              value: stats
+                ? `黄 ${formatStatNumber(stats.yellowCardsHome)}-${formatStatNumber(
+                    stats.yellowCardsAway
+                  )} / 红 ${formatStatNumber(stats.redCardsHome)}-${formatStatNumber(
+                    stats.redCardsAway
+                  )}`
+                : "接口暂未返回",
+              detail: "牌会影响比赛节奏和风险",
+            },
+            {
+              label: "xG 对比",
+              value: formatStatPair(stats?.xGHome, stats?.xGAway),
+              detail: "衡量双方真实机会质量",
+            },
+            {
+              label: "射门质量",
+              value: stats ? `${shotQualityHome} / ${shotQualityAway}` : "接口暂未返回",
+              detail: "xG ÷ 射门，越高代表机会越好",
+            },
+            {
+              label: "盘口变化",
+              value: marketSignals?.pressure ?? "接口暂未返回",
+              detail: "看赛前到赛后市场方向是否变化",
+            },
+            {
+              label: "预测偏差",
+              value:
+                topSignalHit == null ? "等待结算" : topSignalHit ? "方向命中" : "方向偏离",
+              detail: topSignalHit == null ? "非胜平负玩法会按规则结算" : `赛前方向：${topSignal.label}`,
+              tone: topSignalHit ? "green" : topSignalHit === false ? "red" : "neutral",
+            },
+          ]
+        : [
+            {
+              label: "控球率",
+              value: formatStatPair(stats?.possessionHome, stats?.possessionAway, "%"),
+              detail: "主队 : 客队",
+            },
+            {
+              label: "射门 / 射正",
+              value: formatStatSlash(
+                stats?.shotsHome,
+                stats?.shotsAway,
+                stats?.shotsOnTargetHome,
+                stats?.shotsOnTargetAway
+              ),
+              detail: "前面是射门，后面是射正",
+            },
+            {
+              label: "角球",
+              value: formatStatPair(stats?.cornersHome, stats?.cornersAway),
+              detail: "角球增加通常说明压制更明显",
+            },
+            {
+              label: "黄红牌",
+              value: stats
+                ? `黄 ${formatStatNumber(stats.yellowCardsHome)}-${formatStatNumber(
+                    stats.yellowCardsAway
+                  )} / 红 ${formatStatNumber(stats.redCardsHome)}-${formatStatNumber(
+                    stats.redCardsAway
+                  )}`
+                : "接口暂未返回",
+              detail: "红牌会显著改变模型和盘口风险",
+            },
+            {
+              label: "xG",
+              value: formatStatPair(stats?.xGHome, stats?.xGAway),
+              detail: "看比分背后的真实机会质量",
+            },
+            {
+              label: "危险进攻",
+              value: formatStatPair(stats?.dangerousAttacksHome, stats?.dangerousAttacksAway),
+              detail: "用于判断临场压制和进球压力",
+            },
+            {
+              label: "盘口/赔率变化",
+              value: marketSignals?.pressure ?? "接口暂未返回",
+              detail: marketSignals ? "市场方向已同步" : "没有盘口就不计算真实价值差",
+            },
+            {
+              label: "冷门风险",
+              value: upsetSnapshotText,
+              detail: strongestMarketMove
+                ? `${strongestMarketMove.label} ${formatDelta(strongestMarketMove.delta)}`
+                : "没有可比盘口快照时只作模型观察",
+              tone: upsetRisk >= 50 ? "amber" : "neutral",
+            },
+          ];
   const predictionDataNote =
     isBaselineEstimate
       ? "当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在市场指数、近况或实时统计更新后重新校准。"
@@ -1155,83 +1454,43 @@ export default function MatchDetailPage() {
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <DetailMetric
-            label={isFinished ? "最终比分" : "实时比分"}
-            value={`${match.homeScore} : ${match.awayScore}`}
-            detail={
-              match.status === "live"
-                ? typeof match.minute === "number"
-                  ? `比赛时间 ${match.minute}'`
-                  : "进行中"
-                : isFinished
-                  ? "已结束"
-                  : "赛前等待"
-            }
-            tone={match.status === "live" ? "green" : "neutral"}
-          />
-          <DetailMetric
-            label="模型胜平负变化"
-            value={`${modelLeader.label} ${modelLeader.value}%`}
-            detail={marketSignals || stats ? "当前快照已重算" : "等待更多实时字段"}
-            tone="green"
-          />
-          <DetailMetric
-            label="冷门概率变化"
-            value={upsetSnapshotText}
-            detail={strongestMarketMove ? `${strongestMarketMove.label} ${formatDelta(strongestMarketMove.delta)}` : "当前没有可比盘口快照"}
-            tone={upsetRisk >= 50 ? "amber" : "neutral"}
-          />
-          <DetailMetric
-            label="推荐玩法是否变动"
-            value={recommendationChangedText}
-            detail={topSignal.edge == null ? "市场价值差待确认" : `价值差 ${topSignal.edge}%`}
-            tone={topSignal.edge != null && topSignal.edge > 0 ? "green" : "neutral"}
-          />
+          {stageSummaryCards.map((card) => (
+            <DetailMetric
+              key={card.label}
+              label={card.label}
+              value={card.value}
+              detail={card.detail}
+              tone={card.tone}
+            />
+          ))}
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <DetailMetric
-            label="xG 对比"
-            value={`${formatDecimal(stats?.xGHome)} : ${formatDecimal(stats?.xGAway)}`}
-            detail="优先使用 xG，未返回时不展示假值"
-          />
-          <DetailMetric
-            label="射门质量"
-            value={`${shotQualityHome} / ${shotQualityAway}`}
-            detail="xG ÷ 射门，衡量机会质量"
-          />
-          <DetailMetric
-            label="用户本场预测记录"
-            value={
-              predictionRecordLoading
-                ? "同步中"
-                : predictionRecord
-                  ? `${resultStatusLabel(predictionRecord.resultStatus)} · ${predictionRecord.market}`
-                  : "暂无记录"
-            }
-            detail={
-              predictionRecord
-                ? `${predictionRecord.direction} · 置信度 ${predictionRecord.confidence}%`
-                : "只有用积分预测过的比赛才会在这里归档"
-            }
-            tone={predictionRecord?.resultStatus === "won" ? "green" : "neutral"}
-          />
-          <DetailMetric
-            label="历史预测收益/命中率"
-            value={
-              predictionHistorySummary && predictionHistorySummary.settled > 0
-                ? `${predictionHistorySummary.hitRate}% 命中`
-                : "待结算"
-            }
-            detail={
-              predictionHistorySummary
-                ? `${predictionHistorySummary.total} 场已归档，${predictionHistorySummary.settled} 场已结算`
-                : "登录后读取你的历史预测"
-            }
-            tone={
-              predictionHistorySummary && predictionHistorySummary.hitRate >= 55 ? "green" : "neutral"
-            }
-          />
+        <div className="mt-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-xs font-semibold text-white/70">
+              {match.status === "upcoming"
+                ? "赛前 / 赛中数据说明"
+                : isFinished
+                  ? "赛后关键数据"
+                  : "赛中关键数据"}
+            </div>
+            {!stats && match.status !== "upcoming" && (
+              <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-[10px] font-semibold text-amber-100/80">
+                技术统计接口暂未返回
+              </span>
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            {dataDetailCards.map((card) => (
+              <DetailMetric
+                key={card.label}
+                label={card.label}
+                value={card.value}
+                detail={card.detail}
+                tone={card.tone}
+              />
+            ))}
+          </div>
         </div>
 
         {isFinished && (
