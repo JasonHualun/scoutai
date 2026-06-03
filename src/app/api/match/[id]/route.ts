@@ -3,6 +3,7 @@ import {
   getFixtureById,
   getLiveMatches,
   getMatchMarketSignals,
+  getMatchEvents,
   getMatchStatistics,
   getMatchOdds,
   getMarketTestMatches,
@@ -52,11 +53,12 @@ export async function GET(
   }
 
   try {
-    const [fixtureRes, statsRes, oddsRes, marketSignalsRes] = await Promise.allSettled([
+    const [fixtureRes, statsRes, oddsRes, marketSignalsRes, eventsRes] = await Promise.allSettled([
       getFixtureById(fixtureLookupId),
       getMatchStatistics(fixtureLookupId),
       getMatchOdds(fixtureLookupId),
       getMatchMarketSignals(fixtureLookupId),
+      getMatchEvents(fixtureLookupId),
     ]);
 
     let fixture = fixtureRes.status === "fulfilled" ? fixtureRes.value : null;
@@ -64,6 +66,7 @@ export async function GET(
     const odds = oddsRes.status === "fulfilled" ? oddsRes.value : null;
     const marketSignals =
       marketSignalsRes.status === "fulfilled" ? marketSignalsRes.value : null;
+    const events = eventsRes.status === "fulfilled" ? eventsRes.value : null;
 
     if (!Array.isArray(fixture?.response) || fixture.response.length === 0) {
       fixture = await findFixtureFromLists(fixtureId);
@@ -101,6 +104,7 @@ export async function GET(
       fixture,
       statistics,
       odds,
+      events,
       marketSignals,
       recentForm: {
         home: homeForm,
@@ -124,6 +128,7 @@ export async function GET(
         fixture: null,
         statistics: null,
         odds: null,
+        events: null,
         marketSignals: null,
         recentForm: { home: null, away: null },
         error: message,

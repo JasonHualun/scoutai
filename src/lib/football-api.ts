@@ -2,6 +2,7 @@ import {
   isSupportedLeague,
   translateLeague,
   translateTeam,
+  translateTeamText,
 } from "./league-translations";
 import { numericIdFromTheStats, theStatsMatchIdCandidates } from "./thestats-ids";
 import {
@@ -139,6 +140,50 @@ type TheStatsOddsPayload = {
       };
     }>;
   };
+};
+
+type TheStatsEventValue =
+  | string
+  | number
+  | null
+  | undefined
+  | { id?: string | number | null; name?: string | null; elapsed?: string | number | null; minute?: string | number | null };
+
+type TheStatsEvent = {
+  time?: TheStatsEventValue;
+  minute?: string | number | null;
+  elapsed?: string | number | null;
+  team?: TheStatsEventValue;
+  team_id?: string | number | null;
+  team_name?: string | null;
+  player?: TheStatsEventValue;
+  player_name?: string | null;
+  assist?: TheStatsEventValue;
+  assist_name?: string | null;
+  type?: string | null;
+  detail?: string | null;
+  event_type?: string | null;
+  incident_type?: string | null;
+  comments?: string | null;
+  home_score?: string | number | null;
+  away_score?: string | number | null;
+  score_home?: string | number | null;
+  score_away?: string | number | null;
+  score?: string | { home?: string | number | null; away?: string | number | null } | null;
+};
+
+type TheStatsEventsPayload = {
+  data?:
+    | TheStatsEvent[]
+    | {
+        events?: TheStatsEvent[];
+        incidents?: TheStatsEvent[];
+        timeline?: TheStatsEvent[];
+      };
+  events?: TheStatsEvent[];
+  incidents?: TheStatsEvent[];
+  timeline?: TheStatsEvent[];
+  response?: TheStatsEvent[];
 };
 
 type TheStatsMatchOdds = NonNullable<
@@ -292,6 +337,108 @@ function mapTheStatsMatch(match: TheStatsMatch, coverageOverrides: TheStatsCover
       isCoreLeague: isSupportedLeague(competition.id, competition.name),
       isFriendly,
     },
+  };
+}
+
+function extractTheStatsEvents(payload: TheStatsEventsPayload | null) {
+  const data = payload?.data;
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") {
+    return data.events ?? data.incidents ?? data.timeline ?? [];
+  }
+  return payload?.events ?? payload?.incidents ?? payload?.timeline ?? payload?.response ?? [];
+}
+
+function eventObjectName(value: TheStatsEventValue) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") return value.name ?? null;
+  return null;
+}
+
+function eventObjectId(value: TheStatsEventValue) {
+  if (value && typeof value === "object") return value.id ?? null;
+  return null;
+}
+
+function eventNumber(value: unknown) {
+  if (value && typeof value === "object") {
+    const candidate = value as { elapsed?: unknown; minute?: unknown };
+    return eventNumber(candidate.elapsed ?? candidate.minute);
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function eventScore(event: TheStatsEvent) {
+  const score = event.score;
+  if (score && typeof score === "object") {
+    return {
+      home: eventNumber(score.home),
+      away: eventNumber(score.away),
+    };
+  }
+  if (typeof score === "string") {
+    const [home, away] = score.split(/[-:]/).map((part) => eventNumber(part.trim()));
+    return { home, away };
+  }
+  return {
+    home: eventNumber(event.home_score ?? event.score_home),
+    away: eventNumber(event.away_score ?? event.score_away),
+  };
+}
+
+function eventTypeLabel(event: TheStatsEvent) {
+  const raw = [event.type, event.event_type, event.incident_type, event.detail]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (raw.includes("own")) return "乌龙球";
+  if (raw.includes("goal")) return "进球";
+  if (raw.includes("penalty")) return "点球";
+  if (raw.includes("yellow")) return "黄牌";
+  if (raw.includes("red")) return "红牌";
+  if (raw.includes("substitution") || raw.includes("sub")) return "换人";
+  if (raw.includes("var")) return "VAR";
+  return translateTeamText(event.type ?? event.event_type ?? event.incident_type ?? "事件");
+}
+
+function mapTheStatsEvents(payload: TheStatsEventsPayload | null, fixture: ReturnType<typeof mapTheStatsMatch>) {
+  const events = extractTheStatsEvents(payload);
+  return {
+    response: events.map((event) => {
+      const teamName =
+        eventObjectName(event.team) ??
+        event.team_name ??
+        (String(event.team_id) === String(fixture.teams.home.id)
+          ? fixture.teams.home.name
+          : String(event.team_id) === String(fixture.teams.away.id)
+            ? fixture.teams.away.name
+            : "");
+      const score = eventScore(event);
+
+      return {
+        time: { elapsed: eventNumber(event.time ?? event.elapsed ?? event.minute) },
+        team: {
+          id: numericIdFromTheStats(eventObjectId(event.team) ?? event.team_id),
+          name: translateTeam(teamName),
+        },
+        player: {
+          name: translateTeamText(eventObjectName(event.player) ?? event.player_name ?? ""),
+        },
+        assist: {
+          name: translateTeamText(eventObjectName(event.assist) ?? event.assist_name ?? ""),
+        },
+        type: eventTypeLabel(event),
+        detail: translateTeamText(event.detail ?? event.event_type ?? event.type ?? ""),
+        comments: translateTeamText(event.comments ?? ""),
+        score:
+          score.home !== null || score.away !== null
+            ? { home: score.home, away: score.away }
+            : undefined,
+      };
+    }),
+    results: events.length,
+    errors: {},
   };
 }
 
@@ -1118,6 +1265,43 @@ export async function getMatchOdds(fixtureId: number | string) {
   return fetchWithCache<FootballApiResponse>(`odds:${fixtureId}`, "/odds", {
     fixture: fixtureId,
   });
+}
+
+export async function getMatchEvents(fixtureId: number | string) {
+  if (shouldUseTheStats()) {
+    try {
+      let lastError: unknown = null;
+      for (const matchId of theStatsMatchIdCandidates(fixtureId)) {
+        try {
+          const [matchPayload, eventsPayload] = await Promise.all([
+            fetchTheStatsJson<TheStatsMatchPayload>({
+              path: `/football/matches/${matchId}`,
+              revalidate: 30,
+            }),
+            fetchTheStatsJson<TheStatsEventsPayload>({
+              path: `/football/matches/${matchId}/events`,
+              revalidate: 30,
+            }),
+          ]);
+          if (!matchPayload.data) continue;
+          const fixture = mapTheStatsMatch(matchPayload.data);
+          const mapped = mapTheStatsEvents(eventsPayload, fixture);
+          if ((mapped.response ?? []).length > 0) return mapped;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (lastError && isTheStatsStrictMode()) throw lastError;
+    } catch (error) {
+      console.error("[thestats] events failed:", error);
+      throwIfTheStatsStrict(error);
+    }
+  }
+
+  const numericFixtureId = numericIdFromTheStats(String(fixtureId));
+  return fetchWithCache<FootballApiResponse>(`events:${numericFixtureId}`, "/fixtures/events", {
+    fixture: numericFixtureId,
+  }, 30 * 1000);
 }
 
 export async function getHeadToHead(team1Id: number, team2Id: number) {

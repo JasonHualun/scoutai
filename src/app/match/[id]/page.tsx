@@ -371,6 +371,10 @@ function formLabel(result: "W" | "D" | "L") {
   return { W: "胜", D: "平", L: "负" }[result];
 }
 
+function formSummary(form: RecentForm) {
+  return form.length ? `近${form.length}场 ${form.map(formLabel).join(" ")}` : "接口暂未返回";
+}
+
 function mapEvents(raw: ApiMatchEvent[] | undefined | null): MatchEvent[] {
   if (!Array.isArray(raw)) return [];
 
@@ -772,6 +776,35 @@ function formatDecimal(value: number | null | undefined, digits = 2) {
   return value.toFixed(digits);
 }
 
+function formatOddsSummary(odds: OddsData | null) {
+  if (!odds) return "接口暂未返回";
+  return `主 ${odds.homeWin.toFixed(2)} / 平 ${odds.draw.toFixed(2)} / 客 ${odds.awayWin.toFixed(2)}`;
+}
+
+function formatMarketLine(odds: OddsData | null) {
+  if (!odds) return "接口暂未返回";
+  const lines = [odds.handicap, odds.overUnder].filter((item) => item && item !== "暂无");
+  return lines.length ? lines.join(" / ") : "盘口线待返回";
+}
+
+function formatMarketProbability(marketSignals: MarketSignals | null, odds: OddsData | null) {
+  if (marketSignals?.noVig) {
+    return `主 ${marketSignals.noVig.homeWin}% / 平 ${marketSignals.noVig.draw}% / 客 ${marketSignals.noVig.awayWin}%`;
+  }
+
+  if (!odds) return "接口暂未返回";
+  const raw = {
+    home: 1 / odds.homeWin,
+    draw: 1 / odds.draw,
+    away: 1 / odds.awayWin,
+  };
+  const total = raw.home + raw.draw + raw.away;
+  if (!Number.isFinite(total) || total <= 0) return "接口暂未返回";
+  return `主 ${Math.round((raw.home / total) * 1000) / 10}% / 平 ${
+    Math.round((raw.draw / total) * 1000) / 10
+  }% / 客 ${Math.round((raw.away / total) * 1000) / 10}%`;
+}
+
 function formatDelta(value: number) {
   const rounded = Math.round(value * 10) / 10;
   return `${rounded > 0 ? "+" : ""}${rounded}%`;
@@ -955,6 +988,7 @@ export default function MatchDetailPage() {
         });
       } catch {
         setStats(null);
+        setEvents([]);
         setOdds(null);
         setMarketSignals(null);
         setRecentForm(emptyForm);
@@ -1285,10 +1319,10 @@ export default function MatchDetailPage() {
         : "赛前数据准备";
   const deskDescription =
     match.status === "finished"
-      ? "比赛结束后重点看最终比分、全场技术统计、xG、盘口变化、赛前预测是否命中和偏差原因。"
+      ? "最终比分、全场技术统计、xG、盘口变化和本场预测记录已归档。"
       : match.status === "live"
-        ? "比赛进行中优先看实时比分、比赛时间、控球率、射门、射正、角球、红黄牌、xG、危险进攻和盘口变化。"
-        : "开赛前重点看开球时间、赛前盘口/赔率、模型赛前方向和预计比分；控球、射门、xG 等技术统计要开赛后才会返回。";
+        ? "实时比分、比赛时间、技术统计、事件时间线、盘口变化和模型方向持续同步。"
+        : "赛程、胜平负赔率、让球/大小球、近期状态和模型基准已同步。";
   const matchClockText =
     match.status === "live"
       ? typeof match.minute === "number"
@@ -1305,7 +1339,7 @@ export default function MatchDetailPage() {
   const technicalDataDetail = stats
     ? "控球、射门、角球、牌、xG 等字段已可查看"
     : match.status === "upcoming"
-      ? "这些是赛中数据，开赛后才会有"
+      ? "当前比赛尚未产生技术统计"
       : "当前数据源只返回比分/状态，暂未返回技术统计";
   const marketDataStatus = hasMarketData ? "已返回" : "接口暂未返回";
   const marketDataDetail = hasMarketData
@@ -1385,51 +1419,54 @@ export default function MatchDetailPage() {
           {
             label: "开球时间",
             value: `北京时间 ${match.kickOff}`,
-            detail: "赛前先看赛程、盘口和模型基准",
+            detail: "赛程已同步",
             tone: "neutral",
           },
           {
-            label: "盘口/赔率",
-            value: marketDataStatus,
-            detail: marketDataDetail,
+            label: "胜平负赔率",
+            value: formatOddsSummary(odds),
+            detail: hasMarketData ? marketDataDetail : "盘口源暂未覆盖本场",
             tone: hasMarketData ? "green" : "amber",
           },
           {
-            label: "模型赛前方向",
+            label: "让球 / 大小球",
+            value: formatMarketLine(odds),
+            detail: "亚洲让球和进球数盘口",
+            tone: odds ? "green" : "amber",
+          },
+          {
+            label: "模型基准",
             value: `${modelLeader.label} ${modelLeader.value}%`,
             detail: `预计比分 ${prediction.predictedScore.label}，置信度 ${prediction.confidence}%`,
             tone: "green",
-          },
-          {
-            label: "赛中数据",
-            value: "开赛后更新",
-            detail: "控球、射门、角球、牌、xG、危险进攻会在接口返回后显示",
-            tone: "neutral",
           },
         ];
   const dataDetailCards: DetailCard[] =
     match.status === "upcoming"
       ? [
           {
-            label: "赛前能看什么",
-            value: "时间 / 盘口 / 赔率 / 模型",
-            detail: "适合开赛前先判断这场是否值得关注",
-            tone: "green",
+            label: `${match.homeTeam} 近况`,
+            value: formSummary(recentForm.home),
+            detail: "近10场战绩",
+            tone: recentForm.home.length ? "green" : "neutral",
           },
           {
-            label: "开赛后才会有",
-            value: "控球 / 射门 / 角球 / 红黄牌 / xG",
-            detail: "这些来自实时统计接口，未开赛不会显示假数据",
+            label: `${match.awayTeam} 近况`,
+            value: formSummary(recentForm.away),
+            detail: "近10场战绩",
+            tone: recentForm.away.length ? "green" : "neutral",
           },
           {
-            label: "收藏用途",
-            value: "看实时数据和提醒",
-            detail: "收藏不会扣积分，适合盯盘和赛后复盘",
+            label: "市场概率",
+            value: formatMarketProbability(marketSignals, odds),
+            detail: marketSignals?.source ? `来源 ${marketSignals.source}` : "由盘口赔率换算",
+            tone: hasMarketData ? "green" : "amber",
           },
           {
-            label: "预测池用途",
-            value: "用积分生成推荐",
-            detail: "加入预测池后才会扣积分，并写入历史预测",
+            label: "盘口热度",
+            value: marketSignals?.pressure ?? "接口暂未返回",
+            detail: marketSignals?.exchangeLean ?? "等待盘口变化",
+            tone: marketSignals ? "green" : "amber",
           },
         ]
       : isFinished
@@ -1741,7 +1778,7 @@ export default function MatchDetailPage() {
           <div className="mb-2 flex items-center justify-between gap-3">
             <div className="text-xs font-semibold text-white/70">
               {match.status === "upcoming"
-                ? "赛前 / 赛中数据说明"
+                ? "赛前关键数据"
                 : isFinished
                   ? "赛后关键数据"
                   : "赛中关键数据"}

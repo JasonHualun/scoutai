@@ -457,11 +457,15 @@ test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await matchResponse;
 
   await expect(page.getByText("等待开赛")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("比赛还未开始，控球、射门、xG 等实时数据会在开赛后更新。")).toBeVisible({
-    timeout: 20_000,
-  });
+  await expect(page.getByText("赛前关键数据")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("胜平负赔率", { exact: true })).toBeVisible();
+  await expect(page.getByText("让球 / 大小球", { exact: true })).toBeVisible();
+  await expect(page.getByText("市场概率", { exact: true })).toBeVisible();
   await expect(page.getByText("市场指数暂未更新，价值差暂不计算。")).toBeVisible();
   await expect(page.getByText("暂无近况数据")).toHaveCount(2);
+  await expect(page.locator("body")).not.toContainText("赛前能看什么");
+  await expect(page.locator("body")).not.toContainText("收藏用途");
+  await expect(page.locator("body")).not.toContainText("预测池用途");
   await expect(page.locator("body")).not.toContainText("50%");
   await expect(page.locator("body")).not.toContainText("1.35");
 });
