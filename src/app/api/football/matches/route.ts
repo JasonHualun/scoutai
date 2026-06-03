@@ -70,7 +70,7 @@ export async function GET() {
     const [liveRes, todayRes, marketTestRes] = await Promise.allSettled([
       getLiveMatches(),
       getTodayMatches(),
-      getMarketTestMatches(3),
+      getMarketTestMatches(7),
     ]);
 
     const liveFixtures =

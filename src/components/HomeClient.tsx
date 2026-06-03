@@ -120,7 +120,6 @@ function hasTestCoverage(match: MatchCard) {
   return Boolean(
     isFriendlyTestMatch(match) &&
       match.status !== "finished" &&
-      (match.coverage?.oddsAvailable || match.coverage?.liveOddsAvailable) &&
       ["live", "upcoming"].includes(match.status)
   );
 }
@@ -450,7 +449,11 @@ export default function HomeClient({ initialMatches }: Props) {
                           )}
                           {scopeMode === "test" && (
                             <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--accent)]/25 bg-[color:var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--accent)]">
-                              {match.coverage?.liveOddsAvailable ? "实时赔率" : "赛前赔率"}
+                              {match.coverage?.liveOddsAvailable
+                                ? "实时赔率"
+                                : match.coverage?.oddsAvailable
+                                  ? "赛前赔率"
+                                  : "赔率待更新"}
                               {match.coverage?.statsAvailable ? " · 实时统计" : " · 统计待返回"}
                             </span>
                           )}

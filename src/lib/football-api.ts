@@ -1208,7 +1208,7 @@ export async function getMarketTestMatches(days = 7) {
       {
         includeUnsupported: true,
         onlyFriendlies: true,
-        requireOdds: true,
+        requireOdds: false,
         requireStats: false,
         activeOnly: true,
         maxPages: 8,
