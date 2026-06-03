@@ -466,6 +466,87 @@ test("upcoming match does not show fake realtime stats", async ({ page }) => {
   await expect(page.locator("body")).not.toContainText("1.35");
 });
 
+test("live match detail shows match situation panels", async ({ page }) => {
+  await page.route("**/api/match/12347", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fixture: {
+          response: [
+            {
+              fixture: {
+                id: 12347,
+                date: "2026-06-06T18:30:00+00:00",
+                status: { short: "1H", elapsed: 31 },
+              },
+              league: { name: "Premier League", round: "Regular Season - 37" },
+              teams: {
+                home: { id: 1, name: "Arsenal" },
+                away: { id: 2, name: "Chelsea" },
+              },
+              goals: { home: 1, away: 0 },
+            },
+          ],
+        },
+        statistics: {
+          response: [
+            {
+              team: { id: 1, name: "Arsenal" },
+              statistics: [
+                { type: "Ball Possession", value: 62 },
+                { type: "Total Shots", value: 8 },
+                { type: "Shots on Target", value: 4 },
+                { type: "Corner Kicks", value: 5 },
+                { type: "Expected Goals", value: 1.2 },
+                { type: "Dangerous Attacks", value: 36 },
+                { type: "Yellow Cards", value: 1 },
+              ],
+            },
+            {
+              team: { id: 2, name: "Chelsea" },
+              statistics: [
+                { type: "Ball Possession", value: 38 },
+                { type: "Total Shots", value: 3 },
+                { type: "Shots on Target", value: 1 },
+                { type: "Corner Kicks", value: 1 },
+                { type: "Expected Goals", value: 0.4 },
+                { type: "Dangerous Attacks", value: 16 },
+                { type: "Yellow Cards", value: 0 },
+              ],
+            },
+          ],
+        },
+        events: {
+          response: [
+            {
+              time: { elapsed: 30 },
+              team: { id: 1, name: "Arsenal" },
+              player: { name: "Bukayo Saka" },
+              assist: { name: "Martin Odegaard" },
+              type: "Goal",
+              detail: "Normal Goal",
+              score: { home: 1, away: 0 },
+            },
+          ],
+        },
+        odds: { response: [] },
+        recentForm: { home: null, away: null },
+        teamIds: { home: 1, away: 2 },
+      }),
+    });
+  });
+
+  await page.goto("/match/12347", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("赛中实时数据")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "进攻心率图" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "事件时间线" })).toBeVisible();
+  await expect(page.getByText("控球率").first()).toBeVisible();
+  await expect(page.getByText("射门 / 射正")).toBeVisible();
+  await expect(page.getByText("Goal · 1-0")).toBeVisible();
+});
+
 test("match detail keeps team and time when schedule comes from fallback list", async ({ page }) => {
   await page.route("**/api/match/92001", async (route) => {
     await route.fulfill({

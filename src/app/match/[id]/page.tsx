@@ -14,7 +14,7 @@ import {
   PRO_MONTHLY_PRICE_CNY,
   freeMembership,
 } from "@/lib/membership";
-import { translateLeague, translateTeam } from "@/lib/league-translations";
+import { translateLeague, translateTeam, translateTeamText } from "@/lib/league-translations";
 import { displayPreferenceLabel } from "@/lib/preference-options";
 import type { PredictionOrder, PredictionOrderItem } from "@/lib/prediction-orders";
 import { useAuthStore } from "@/lib/authStore";
@@ -99,6 +99,7 @@ type ApiMatchResponse = {
   fixture?: { response?: ApiFixture[] } | null;
   statistics?: { response?: ApiTeamStats[] } | null;
   odds?: { response?: Array<{ bookmakers?: Array<{ bets?: ApiBet[] }> }> } | null;
+  events?: { response?: ApiMatchEvent[] } | null;
   marketSignals?: MarketSignals | null;
   recentForm?: { home?: ApiRecentForm | null; away?: ApiRecentForm | null };
   teamIds?: { home?: number | null; away?: number | null };
@@ -131,6 +132,27 @@ type PreferencesRow = {
 type ApiBet = {
   name: string;
   values?: Array<{ value: string; odd?: string }>;
+};
+
+type ApiMatchEvent = {
+  time?: { elapsed?: number | null } | null;
+  team?: { id?: number | null; name?: string | null } | null;
+  player?: { name?: string | null } | null;
+  assist?: { name?: string | null } | null;
+  type?: string | null;
+  detail?: string | null;
+  comments?: string | null;
+  score?: { home?: number | null; away?: number | null } | null;
+};
+
+type MatchEvent = {
+  minute: number | null;
+  teamName: string;
+  type: string;
+  detail: string;
+  player?: string;
+  assist?: string;
+  score?: string;
 };
 
 type ApiRecentFixture = {
@@ -349,6 +371,32 @@ function formLabel(result: "W" | "D" | "L") {
   return { W: "胜", D: "平", L: "负" }[result];
 }
 
+function mapEvents(raw: ApiMatchEvent[] | undefined | null): MatchEvent[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((event) => {
+      const type = event.type?.trim() || event.detail?.trim() || "事件";
+      const detail = event.detail?.trim() || event.comments?.trim() || type;
+      const home = event.score?.home;
+      const away = event.score?.away;
+      return {
+        minute:
+          typeof event.time?.elapsed === "number" && Number.isFinite(event.time.elapsed)
+            ? event.time.elapsed
+            : null,
+        teamName: translateTeam(event.team?.name ?? ""),
+        type,
+        detail,
+        player: event.player?.name ? translateTeamText(event.player.name) : undefined,
+        assist: event.assist?.name ? translateTeamText(event.assist.name) : undefined,
+        score:
+          typeof home === "number" && typeof away === "number" ? `${home}-${away}` : undefined,
+      };
+    })
+    .sort((a, b) => (a.minute ?? 999) - (b.minute ?? 999));
+}
+
 function statNumber(value: number | null | undefined, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -495,6 +543,190 @@ function DetailMetric({
   );
 }
 
+function AttackPulsePanel({
+  stats,
+  match,
+}: {
+  stats: RealtimeStats | null;
+  match: Match;
+}) {
+  const hasStats = Boolean(stats);
+  const homePressure = stats
+    ? Math.round(
+        statNumber(stats.dangerousAttacksHome) * 0.8 +
+          statNumber(stats.shotsHome) * 4 +
+          statNumber(stats.shotsOnTargetHome) * 6 +
+          statNumber(stats.cornersHome) * 3 +
+          statNumber(stats.bigChancesHome) * 8 +
+          statNumber(stats.xGHome) * 12
+      )
+    : 0;
+  const awayPressure = stats
+    ? Math.round(
+        statNumber(stats.dangerousAttacksAway) * 0.8 +
+          statNumber(stats.shotsAway) * 4 +
+          statNumber(stats.shotsOnTargetAway) * 6 +
+          statNumber(stats.cornersAway) * 3 +
+          statNumber(stats.bigChancesAway) * 8 +
+          statNumber(stats.xGAway) * 12
+      )
+    : 0;
+  const maxPressure = Math.max(homePressure, awayPressure, 1);
+  const homeWidth = hasStats ? Math.max(6, (homePressure / maxPressure) * 100) : 0;
+  const awayWidth = hasStats ? Math.max(6, (awayPressure / maxPressure) * 100) : 0;
+  const homeDominance =
+    homePressure + awayPressure > 0
+      ? Math.round((homePressure / (homePressure + awayPressure)) * 100)
+      : 50;
+  const timeMarks = ["0'", "15'", "30'", "半场", "60'", "75'", "90'"];
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">进攻心率图</h3>
+          <p className="mt-1 text-[11px] text-white/45">进攻力度越大，心率越高</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[10px] text-white/50">
+          {hasStats ? "实时统计已接入" : "分时数据待返回"}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-white/6 bg-black/25 p-3">
+        <div className="grid grid-cols-7 text-center text-[10px] text-white/35">
+          {timeMarks.map((mark) => (
+            <span key={mark}>{mark}</span>
+          ))}
+        </div>
+        <div className="relative mt-3 h-28 overflow-hidden rounded-lg bg-white/[0.03]">
+          <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
+          {hasStats ? (
+            <>
+              <div
+                className="absolute left-0 top-[18%] h-8 rounded-r bg-[color:var(--accent)]/75"
+                style={{ width: `${homeWidth}%` }}
+              />
+              <div
+                className="absolute bottom-[18%] right-0 h-8 rounded-l bg-slate-400/75"
+                style={{ width: `${awayWidth}%` }}
+              />
+              <div className="absolute inset-x-3 top-1/2 flex -translate-y-1/2 items-center gap-2">
+                <div className="h-2 flex-1 rounded-full bg-[color:var(--accent)]/80" />
+                <div className="rounded-full border border-white/10 bg-black px-2 py-1 text-[10px] text-white/65">
+                  {homeDominance}% : {100 - homeDominance}%
+                </div>
+                <div className="h-2 flex-1 rounded-full bg-slate-400/80" />
+              </div>
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-white/42">
+              TheStats 暂未返回分段进攻心率；有数据后会显示每 15 分钟攻势变化。
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+        <div className="rounded-xl bg-black/25 p-3">
+          <div className="text-white/45">{match.homeTeam}</div>
+          <div className="mt-1 text-lg font-semibold text-[color:var(--accent)]">
+            {hasStats ? homePressure : "待返回"}
+          </div>
+          <div className="mt-1 text-[11px] text-white/42">综合危险进攻、射门、射正、角球和 xG</div>
+        </div>
+        <div className="rounded-xl bg-black/25 p-3">
+          <div className="text-white/45">{match.awayTeam}</div>
+          <div className="mt-1 text-lg font-semibold text-slate-200">
+            {hasStats ? awayPressure : "待返回"}
+          </div>
+          <div className="mt-1 text-[11px] text-white/42">用于快速判断哪边持续压制</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventTimeline({
+  events,
+  stats,
+  match,
+}: {
+  events: MatchEvent[];
+  stats: RealtimeStats | null;
+  match: Match;
+}) {
+  const hasEvents = events.length > 0;
+  const scoreEvents = statNumber(match.homeScore) + statNumber(match.awayScore);
+  const cardSummary = stats
+    ? `黄牌 ${formatStatNumber(stats.yellowCardsHome)}-${formatStatNumber(
+        stats.yellowCardsAway
+      )} / 红牌 ${formatStatNumber(stats.redCardsHome)}-${formatStatNumber(stats.redCardsAway)}`
+    : "牌数待返回";
+
+  return (
+    <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">事件时间线</h3>
+          <p className="mt-1 text-[11px] text-white/45">进球、点球、红黄牌、换人和 VAR</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[10px] text-white/50">
+          {hasEvents ? `${events.length} 条事件` : "事件接口待返回"}
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {hasEvents ? (
+          events.slice(0, 8).map((event, index) => (
+            <div key={`${event.minute}-${event.type}-${index}`} className="flex gap-3">
+              <div className="flex w-10 flex-col items-center">
+                <span className="rounded-full bg-[color:var(--accent)] px-2 py-1 text-[10px] font-semibold text-black">
+                  {event.minute == null ? "--" : `${event.minute}'`}
+                </span>
+                <div className="mt-1 h-full w-px bg-[color:var(--accent)]/35" />
+              </div>
+              <div className="flex-1 rounded-xl border border-white/8 bg-black/30 p-3 text-xs">
+                <div className="font-semibold text-white">
+                  {event.type}
+                  {event.score ? ` · ${event.score}` : ""}
+                </div>
+                <div className="mt-1 text-white/55">
+                  {event.teamName || "球队待返回"} {event.player ? `· ${event.player}` : ""}
+                </div>
+                {event.assist && <div className="mt-1 text-white/42">助攻：{event.assist}</div>}
+                <div className="mt-1 text-white/42">{event.detail}</div>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/10 bg-black/25 p-4 text-xs leading-6 text-white/55">
+            {scoreEvents > 0
+              ? `已同步比分 ${match.homeScore}:${match.awayScore}，但进球时间、球员和助攻明细待事件接口返回。`
+              : "暂无事件明细；开赛后会优先显示进球、红黄牌、点球、乌龙球、换人和 VAR。"}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+        <div className="rounded-xl bg-black/25 p-3">
+          <div className="text-white/45">进球</div>
+          <div className="mt-1 text-base font-semibold">{match.homeScore} : {match.awayScore}</div>
+        </div>
+        <div className="rounded-xl bg-black/25 p-3">
+          <div className="text-white/45">牌数</div>
+          <div className="mt-1 text-[11px] font-semibold text-white/75">{cardSummary}</div>
+        </div>
+        <div className="rounded-xl bg-black/25 p-3">
+          <div className="text-white/45">角球</div>
+          <div className="mt-1 text-base font-semibold">
+            {formatStatPair(stats?.cornersHome, stats?.cornersAway)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatMaybeNumber(value: number | null | undefined, suffix = "") {
   if (typeof value !== "number" || !Number.isFinite(value)) return "待返回";
   return `${value}${suffix}`;
@@ -621,6 +853,7 @@ export default function MatchDetailPage() {
   });
   const [stats, setStats] = useState<RealtimeStats | null>(null);
   const [odds, setOdds] = useState<OddsData | null>(null);
+  const [events, setEvents] = useState<MatchEvent[]>([]);
   const [marketSignals, setMarketSignals] = useState<MarketSignals | null>(null);
   const [recentForm, setRecentForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
@@ -707,6 +940,7 @@ export default function MatchDetailPage() {
 
         const nextStats = nextStatus === "upcoming" ? null : mapStats(teams);
         setStats(nextStats);
+        setEvents(mapEvents(json.events?.response));
 
         const bets = json.odds?.response?.[0]?.bookmakers?.[0]?.bets;
         const nextOdds = mapOdds(bets);
@@ -1468,6 +1702,28 @@ export default function MatchDetailPage() {
             北京时间 {match.kickOff}
           </span>
         </div>
+
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          {["赛况", "技术统计", "事件", "盘口", "模型"].map((item, index) => (
+            <span
+              key={item}
+              className={`rounded-full px-3 py-1.5 font-semibold ${
+                index === 0
+                  ? "bg-[color:var(--accent)] text-black"
+                  : "border border-white/10 bg-black/25 text-white/55"
+              }`}
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+
+        {match.status !== "upcoming" && (
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1.1fr,0.9fr]">
+            <AttackPulsePanel stats={stats} match={match} />
+            <EventTimeline events={events} stats={stats} match={match} />
+          </div>
+        )}
 
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           {stageSummaryCards.map((card) => (
