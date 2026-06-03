@@ -1339,6 +1339,22 @@ export default function MatchDetailPage() {
   const marketTags = activePrefs.preferred_markets.length
     ? activePrefs.preferred_markets.map(displayPreferenceLabel)
     : defaultPrefs.preferred_markets.map(displayPreferenceLabel);
+  const recommendationStrength =
+    topSignal.edge == null
+      ? "等待市场确认"
+      : topSignal.edge <= 0
+        ? "建议观望"
+        : topSignal.edge >= 5 && prediction.confidence >= 55
+          ? "信号较清晰"
+          : "小比例观察";
+  const recommendationStrengthDetail =
+    topSignal.edge == null
+      ? "当前没有真实市场差，先看赛况和盘口是否返回"
+      : topSignal.edge <= 0
+        ? "模型优势不明显，不适合强行做本场"
+        : topSignal.edge >= 5 && prediction.confidence >= 55
+          ? "模型概率和市场差同时支持，仍需控制单场上限"
+          : "有方向但强度一般，适合低比例观察";
   const purchaseRecommendation =
     topSignal.edge == null
       ? "市场指数暂未更新，先作为赛前观察；等待市场确认后再判断价值差。"
@@ -1868,48 +1884,53 @@ export default function MatchDetailPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="mb-2 inline-flex rounded-full border border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 px-3 py-1 text-[11px] font-semibold text-[color:var(--accent)]">
-                会员策略方案
+                Pro 单场推荐
               </div>
-              <h3 className="text-base font-semibold">本场策略参考</h3>
+              <h3 className="text-base font-semibold">本场预测推荐</h3>
               <p className="mt-1 text-xs leading-5 text-white/52">
-                按你的风险偏好和模型选择，给出本场主方案、备选方案和策略占比参考。
+                按你的风险偏好、关注市场和当前数据，给出本场优先方向、备用方向和建议参考比例。
               </p>
             </div>
             <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[11px] text-white/65">
               {prefsLoading
                 ? "正在同步会员偏好"
                 : isPro
-                  ? `${riskLabel(activePrefs.risk_level)} · 占比建议`
+                  ? `${riskLabel(activePrefs.risk_level)} · ${recommendationStrength}`
                   : "Pro 解锁后按你的设置计算"}
             </div>
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <div className="rounded-xl bg-black/25 p-3">
-              <div className="text-[11px] text-white/45">模型建议比例</div>
+              <div className="text-[11px] text-white/45">本场结论</div>
+              <div className="mt-1 text-2xl font-semibold text-[color:var(--accent)]">
+                {recommendationStrength}
+              </div>
+              <div className="mt-1 text-[11px] leading-5 text-white/45">
+                {recommendationStrengthDetail}
+              </div>
+            </div>
+            <div className="rounded-xl bg-black/25 p-3">
+              <div className="text-[11px] text-white/45">建议参考比例</div>
               <div className="mt-1 text-2xl font-semibold text-[color:var(--accent)]">
                 {recommendedPercentLabel}%
               </div>
               <div className="mt-1 text-[11px] text-white/45">
-                作为本场参考上限
+                系统按你的风险偏好自动给出
               </div>
+              {selectedExposurePercent !== recommendedExposurePercent && (
+                <div className="mt-1 text-[11px] text-amber-100/80">
+                  当前手动调整为 {selectedPercentLabel}%
+                </div>
+              )}
             </div>
             <div className="rounded-xl bg-black/25 p-3">
-              <div className="text-[11px] text-white/45">你选择的本场比例</div>
-              <div className="mt-1 text-2xl font-semibold text-white">
-                {selectedPercentLabel}%
-              </div>
-              <div className="mt-1 text-[11px] text-white/45">
-                可手动调整占比
-              </div>
-            </div>
-            <div className="rounded-xl bg-black/25 p-3">
-              <div className="text-[11px] text-white/45">单场风控上限</div>
+              <div className="text-[11px] text-white/45">单场最大上限</div>
               <div className="mt-1 text-2xl font-semibold text-white">
                 {riskCapPercent.toFixed(1).replace(".0", "")}%
               </div>
-              <div className="mt-1 text-[11px] text-white/45">
-                由 {riskLabel(activePrefs.risk_level)} 自动限制
+              <div className="mt-1 text-[11px] leading-5 text-white/45">
+                超过这个比例，系统会按 {riskLabel(activePrefs.risk_level)} 自动限制
               </div>
             </div>
           </div>
@@ -1917,7 +1938,7 @@ export default function MatchDetailPage() {
           <div className="mt-4 rounded-xl border border-white/8 bg-black/25 p-3">
             <div className="flex items-center justify-between gap-3 text-[11px] text-white/45">
               <span>0%</span>
-              <span>调整本场占比</span>
+              <span>手动调整本场参考比例</span>
               <span>{riskCapPercent.toFixed(1).replace(".0", "")}%</span>
             </div>
             <input
@@ -1934,10 +1955,10 @@ export default function MatchDetailPage() {
               <button
                 type="button"
                 disabled={!isPro || prefsLoading}
-                onClick={() => setCustomExposurePercent(null)}
-                className="rounded-full border border-white/15 bg-black/30 px-3 py-1.5 text-[11px] font-semibold text-white/65 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                使用模型建议比例
+              onClick={() => setCustomExposurePercent(null)}
+              className="rounded-full border border-white/15 bg-black/30 px-3 py-1.5 text-[11px] font-semibold text-white/65 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+                恢复系统推荐
               </button>
               {!isPro && (
                 <button
@@ -1953,28 +1974,28 @@ export default function MatchDetailPage() {
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-              <div className="text-[11px] text-white/45">主方案</div>
+              <div className="text-[11px] text-white/45">优先观察方向</div>
               <div className="mt-1 text-base font-semibold text-white">
-                {topSignal.label} · {selectedPercentLabel}% 占比
+                {topSignal.label} · 建议 {selectedPercentLabel}%
               </div>
               <div className="mt-1 text-[11px] leading-5 text-white/45">
-                模型概率 {topSignal.modelProbability}% · 模型公平指数 {topSignal.fairOdds.toFixed(2)}
-                {topSignal.edge == null ? " · 暂无市场差" : ` · 价值差 ${topSignal.edge}%`}
+                模型概率 {topSignal.modelProbability}% · 公平指数 {topSignal.fairOdds.toFixed(2)}
+                {topSignal.edge == null ? " · 等待市场差" : ` · 市场差 ${topSignal.edge}%`}
               </div>
             </div>
             <div className="rounded-xl border border-white/8 bg-black/25 p-3">
-              <div className="text-[11px] text-white/45">备选方案</div>
+              <div className="text-[11px] text-white/45">备用观察方向</div>
               <div className="mt-1 text-base font-semibold text-white">
-                {backupSignal.label} · {backupPercentLabel}% 占比
+                {backupSignal.label} · 建议 {backupPercentLabel}%
               </div>
               <div className="mt-1 text-[11px] leading-5 text-white/45">
-                备选比例 {backupPercentLabel}% · 用于主方向不够清晰时参考
+                用于主方向不够清晰、临场数据变化时参考，不建议和主方向同时重仓。
               </div>
             </div>
           </div>
 
           <div className="mt-4 rounded-xl border border-[color:var(--accent)]/20 bg-[color:var(--accent)]/10 p-3 text-xs leading-6 text-[color:var(--accent)]">
-            <span className="font-semibold">本场参考：</span>
+            <span className="font-semibold">怎么理解：</span>
             {purchaseRecommendation}
           </div>
 

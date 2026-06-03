@@ -388,8 +388,8 @@ test("match detail flow can generate a local analysis", async ({ page }) => {
     page.getByText("当前可用数据不足，以下为模型基准估算；系统会降低置信度，并在市场指数、近况或实时统计更新后重新校准。")
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "模型委员会深度预测" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "本场策略参考" })).toBeVisible();
-  await expect(page.getByText("调整本场占比")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "本场预测推荐" })).toBeVisible();
+  await expect(page.getByText("手动调整本场参考比例")).toBeVisible();
 
   await expect(page.getByText("免费版 · 模型基准估算")).toBeVisible();
   await expect(page.getByText("市场待确认").first()).toBeVisible();
